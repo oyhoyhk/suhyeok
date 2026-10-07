@@ -119,7 +119,7 @@ def components(mask):
     return label, info
 
 
-def split_strip(strip: Image.Image, n: int = 6):
+def split_strip(strip: Image.Image, n: int = 6, effects_left: bool = False):
     """Split a strip into n frames by blobs instead of straight cuts, so a hammer or cape that reaches into the
     neighbour's column stays with its own figure. Falls back to column cuts when figures touch each other."""
     small = strip.resize((strip.width // 3, strip.height // 3), Image.LANCZOS)
@@ -138,6 +138,19 @@ def split_strip(strip: Image.Image, n: int = 6):
             continue
         mid = (info[i][1] + info[i][2]) / 2
         owner[i] = min(range(n), key=lambda k: abs(centres[k] - mid))
+        if effects_left and i not in bodies:
+            # Loose pieces (impact flashes, projectiles) go to the figure whose edge they are closest to, measured
+            # edge to edge: an impact flash sits just left of its attacker even when that attacker's centre is
+            # farther away than the previous figure's.
+            lo, hi = info[i][1], info[i][2]
+            def gap(k):
+                b0, b1 = info[bodies[k]][1], info[bodies[k]][2]
+                return max(0, b0 - hi, lo - b1)
+            owner[i] = min(range(n), key=gap)
+            # Attackers face left: a loose piece to the right of its figure's centre is the next figure's flash.
+            k = owner[i]
+            if (lo + hi) / 2 > centres[k] and k + 1 < n:
+                owner[i] = k + 1
     frames = []
     for k in range(n):
         m = (owner[label] == k) & (label > 0)
@@ -306,10 +319,10 @@ def slice_work_strips(char: str, variant: str = "a"):
     return done
 
 
-def slice_strip_to(src: Path, out_dir: Path, prefix: str, height: int, by: str = "max"):
+def slice_strip_to(src: Path, out_dir: Path, prefix: str, height: int, by: str = "max", effects_left: bool = False):
     """Generic 1x6 strip -> <prefix>_{0..5}.png scaled so the tallest (or shortest) frame is `height` px."""
     strip = Image.open(src).convert("RGB")
-    cells = split_strip(strip)
+    cells = split_strip(strip, effects_left=effects_left)
     if cells is None:
         xs = cuts(strip, 6, axis=1)
         cells = []
@@ -333,7 +346,7 @@ def slice_attacks():
             out = ROOT / "out/frames" / c["id"]
             stand = Image.open(out / "walk_down_2.png").height
             # Weapons stick out sideways, not up: match by the shortest frame so the body keeps walking size.
-            slice_strip_to(src, out, "attack", stand, by="min")
+            slice_strip_to(src, out, "attack", stand, by="min", effects_left=True)
             print(c["id"], "ok")
 
 
