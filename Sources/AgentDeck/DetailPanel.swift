@@ -36,6 +36,7 @@ struct StatusCard: View {
     let character: Character?
     let close: () -> Void
     let openTerminal: () -> Void
+    @AppStorage(OpenMode.storageKey) private var openMode = OpenMode.dialogue.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -72,7 +73,9 @@ struct StatusCard: View {
             Button {
                 openTerminal()
             } label: {
-                Label(session.hostedName == nil ? "터미널 보기" : "터미널 열기 (조작 가능)", systemImage: "terminal").frame(maxWidth: .infinity)
+                Label(openMode == OpenMode.dialogue.rawValue ? "대화하기" : "터미널 보기",
+                      systemImage: openMode == OpenMode.dialogue.rawValue ? "bubble.left.and.bubble.right.fill" : "terminal")
+                    .frame(maxWidth: .infinity)
             }
             .controlSize(.large)
             .disabled(session.pid == nil && session.transcriptPath == nil)

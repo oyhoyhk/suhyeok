@@ -28,7 +28,14 @@ suhyeok                            # 앱 실행
 - 사이드바 = 월드 · 목록 · 수혁 세션 · 다른 터미널 · 최근 대화
 - 수혁 세션 = 앱 안 내장 터미널(SwiftTerm)에서 직접 조작. 키 입력 · 권한 확인 메뉴 · 단축키 모두 그대로
 - 수혁을 종료·재시작해도 세션 유지 (tmux 서버가 실행 주체). 급할 때 다른 터미널에서 `tmux -L suhyeok attach -t <이름>`
-- 다른 터미널(cmux·Orca 등) 세션 = 보기 전용 + "수혁에서 이어서 열기"(`--resume`). 이어서 연 뒤 원래 탭은 `/exit`로 종료
+- 세션 여는 방식(설정 ⌘,): **대화창(기본)** 또는 터미널
+  - 대화창 = RPG NPC 대화처럼 큰 창에 일러스트 · 에이전트 답 · 내 지시를 교차로 표시. 입력 → 그 세션 터미널로 전달
+  - 권한 확인·선택지 메뉴 = 빠른 키(↑ ↓ ⏎ Esc 1 2 3) + "화면 보기"로 응답
+  - 월드에서 캐릭터 클릭 → "대화하기" → 맵 위에 대화창
+- 마이그레이션(사이드바 "다른 터미널" → "수혁으로 옮기기…"): cmux·Orca·tmux 세션을 골라 수혁으로 이전
+  - 원래 세션에 `/exit` 전송 → 종료 확인 → 수혁에서 `--resume`으로 대화 기록 전체를 이어받음
+  - 작업 중인 세션은 끊지 않도록 제외. 원래 터미널에 입력할 수 없는 경우는 이어서 열기만 하고 안내
+- 지시 전달 경로: tmux(`paste-buffer`, 여러 줄 유지) · cmux(`send`, 한 줄로 합침, 소켓 password 모드 필요) · Orca(`terminal send`)
 - 최근 대화(7일) → "이어서" 한 번으로 수혁 세션으로 복귀
 - tmux 접두키 없음(Claude Code의 ctrl+b 유지), 상태줄 숨김 — 설정 파일 `~/Library/Application Support/Suhyeok/tmux.conf`
 
@@ -82,6 +89,7 @@ open 수혁.app
 - 화면 없이 확인: `수혁.app/Contents/MacOS/AgentDeck --snapshot out.png`
 - 새 버전 배포(관리자): `./publish.sh 0.1.2 "변경 요약"` → 빌드 · GitHub 릴리스 · tap Formula 갱신까지 한 번에
 - 업데이트 확인: `수혁.app/Contents/MacOS/AgentDeck --check-update`
+- 명령줄 대화: `--send <세션ID> "지시"` · `--press <세션ID> escape` · `--migrate <세션ID>` · `--snapshot-dialogue <세션ID> out.png`
 - 명령줄 세션 관리: `--new-session <Claude|Codex> <폴더> [지시]` · `--list-sessions` · `--kill-session <이름>` · `--snapshot-hosted <이름> out.png`
 
 ## 터미널 보기 — 어떤 터미널이든 동작

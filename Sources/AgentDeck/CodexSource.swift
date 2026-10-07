@@ -38,7 +38,8 @@ enum CodexSource {
                 lastAssistant: rollout.assistant,
                 estimated: true,
                 action: rollout.action,
-                transcriptPath: column(stmt, 1)
+                transcriptPath: column(stmt, 1),
+                conversationId: id
             ))
         }
         return sessions

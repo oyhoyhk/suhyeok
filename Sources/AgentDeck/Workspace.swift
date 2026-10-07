@@ -81,6 +81,7 @@ struct WorkspaceView: View {
     @ObservedObject var store: SessionStore
     @ObservedObject private var updater = Updater.shared
     @State private var showNew = false
+    @State private var showMigrate = false
     @State private var confirmUpdate = false
 
     var body: some View {
@@ -101,10 +102,16 @@ struct WorkspaceView: View {
                             .tag(Pane.hosted(h.name))
                     }
                 }
-                Section("다른 터미널") {
+                Section {
                     ForEach(store.sessions.filter { $0.hostedName == nil }) { s in
                         SessionRow(title: s.name, subtitle: s.agent.rawValue + " · " + s.project, session: s, store: store)
                             .tag(Pane.external(s.id))
+                    }
+                } header: {
+                    HStack {
+                        Text("다른 터미널")
+                        Spacer()
+                        Button("수혁으로 옮기기…") { showMigrate = true }.buttonStyle(.borderless).font(.caption)
                     }
                 }
                 Section("최근 대화") {
@@ -138,6 +145,7 @@ struct WorkspaceView: View {
             }
         }
         .sheet(isPresented: $showNew) { NewSessionSheet(store: store) }
+        .sheet(isPresented: $showMigrate) { MigrationSheet(store: store) }
         .onAppear { updater.start() }
         .confirmationDialog("수혁을 업데이트할까요?", isPresented: $confirmUpdate) {
             Button("업데이트 후 다시 열기") { updater.upgrade() }
@@ -187,10 +195,28 @@ struct SessionRow: View {
     }
 }
 
+/// [대화 | 터미널] switch shared by session pages; starts from the Settings default.
+struct ModePicker: View {
+    @Binding var mode: OpenMode?
+    @AppStorage(OpenMode.storageKey) private var defaultMode = OpenMode.dialogue.rawValue
+
+    var body: some View {
+        Picker("", selection: Binding(get: { mode ?? OpenMode(rawValue: defaultMode) ?? .dialogue }, set: { mode = $0 })) {
+            ForEach(OpenMode.allCases, id: \.self) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented).fixedSize()
+    }
+
+    static func effective(_ mode: OpenMode?) -> OpenMode {
+        mode ?? OpenMode(rawValue: UserDefaults.standard.string(forKey: OpenMode.storageKey) ?? "") ?? .dialogue
+    }
+}
+
 struct HostedSessionView: View {
     @ObservedObject var store: SessionStore
     let name: String
     @State private var confirmKill = false
+    @State private var mode: OpenMode?
 
     var body: some View {
         let h = store.hosted.first { $0.name == name }
@@ -204,6 +230,7 @@ struct HostedSessionView: View {
                     Label(a.detail, systemImage: a.symbol).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
+                if s != nil { ModePicker(mode: $mode) }
                 Text((h?.cwd ?? "").replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Button(role: .destructive) { confirmKill = true } label: { Image(systemName: "stop.circle") }
@@ -213,7 +240,10 @@ struct HostedSessionView: View {
             Divider()
             if h == nil {
                 Text("종료된 세션").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let s, ModePicker.effective(mode) == .dialogue {
+                DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).padding(10)
             } else {
+                // Codex sessions and agents still starting have no registry entry yet: terminal only.
                 EmbeddedTerminal(name: name).id(name)
             }
         }
@@ -229,6 +259,7 @@ struct ExternalSessionView: View {
     @ObservedObject var store: SessionStore
     let id: String
     @State private var confirmMove = false
+    @State private var mode: OpenMode?
 
     var body: some View {
         if let s = store.sessions.first(where: { $0.id == id }) {
@@ -238,20 +269,22 @@ struct ExternalSessionView: View {
                     Text(store.agentName(for: s)).font(.headline)
                     Text(s.name).lineLimit(1)
                     Spacer()
+                    ModePicker(mode: $mode)
                     if s.conversationId != nil {
-                        Button("수혁에서 이어서 열기") { confirmMove = true }
+                        Button("수혁으로 옮기기") { confirmMove = true }
                     }
                 }
-                Text("다른 터미널에서 실행 중인 세션 — 여기서는 보기만 가능")
+                Text(SessionInput.canSend(s) ? "다른 터미널에서 실행 중인 세션 — 지시는 그 터미널로 전달됨"
+                                             : "다른 터미널에서 실행 중인 세션 — 이 터미널은 입력을 받을 수 없어 보기만 가능")
                     .font(.caption).foregroundStyle(.secondary)
-                TerminalPanel(session: s)
+                if ModePicker.effective(mode) == .dialogue {
+                    DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal })
+                } else {
+                    TerminalPanel(session: s)
+                }
             }
             .padding(12)
-            .confirmationDialog("수혁에서 이 대화를 이어서 열까요?", isPresented: $confirmMove) {
-                Button("이어서 열기") { store.resume(conversationOf: s) }
-            } message: {
-                Text("원래 터미널의 세션은 아직 실행 중임. 같은 대화를 두 곳에서 동시에 쓰면 기록이 꼬일 수 있으니, 연 뒤 원래 탭에서 /exit 로 종료할 것.")
-            }
+            .sheet(isPresented: $confirmMove) { MigrationSheet(store: store, only: s.id) }
         } else {
             Text("종료된 세션").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -314,5 +347,81 @@ struct NewSessionSheet: View {
         panel.canChooseFiles = false
         panel.directoryURL = URL(fileURLWithPath: cwd)
         if panel.runModal() == .OK, let url = panel.url { cwd = url.path }
+    }
+}
+
+/// Pick sessions running in other terminals (cmux, Orca, tmux…) and continue them inside 수혁.
+struct MigrationSheet: View {
+    @ObservedObject var store: SessionStore
+    var only: String? = nil  // preselect a single session
+    @Environment(\.dismiss) private var dismiss
+    @State private var picked: Set<String> = []
+    @State private var closeOriginal = true
+    @State private var running = false
+    @State private var results: [SessionStore.MigrationResult] = []
+
+    private var candidates: [AgentSession] { store.sessions.filter { $0.hostedName == nil } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("수혁으로 옮기기").font(.title2.bold())
+            Text("대화 기록 전체를 이어받아 수혁 안에서 계속함. 작업 중인 세션은 끊기지 않게 제외됨.")
+                .font(.caption).foregroundStyle(.secondary)
+            if results.isEmpty {
+                List(candidates) { s in
+                    let busy = s.activity == .working
+                    Toggle(isOn: Binding(get: { picked.contains(s.id) },
+                                         set: { if $0 { picked.insert(s.id) } else { picked.remove(s.id) } })) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("\(store.agentName(for: s)) · \(s.name)").lineLimit(1)
+                            Text("\(s.agent.rawValue) · \(s.project) · \(host(s))\(busy ? " · 작업 중이라 제외" : "")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(busy || s.conversationId == nil)
+                }
+                .frame(minHeight: 240)
+                Toggle("원래 세션 종료 (/exit 전송 후 종료 확인) — 같은 대화를 두 곳에서 쓰지 않도록 권장", isOn: $closeOriginal)
+            } else {
+                List(results) { r in
+                    Label(r.name + " — " + r.message, systemImage: r.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(r.ok ? Color.primary : Color.orange)
+                }
+                .frame(minHeight: 240)
+            }
+            HStack {
+                if running { ProgressView().controlSize(.small); Text("옮기는 중…").font(.caption) }
+                Spacer()
+                Button(results.isEmpty ? "취소" : "닫기") { dismiss() }.keyboardShortcut(.cancelAction).disabled(running)
+                if results.isEmpty {
+                    Button("옮기기 (\(picked.count))") { run() }
+                        .keyboardShortcut(.defaultAction).disabled(picked.isEmpty || running)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+        .onAppear {
+            let movable = candidates.filter { $0.activity != .working && $0.conversationId != nil }.map(\.id)
+            picked = Set(only.map { [$0] } ?? movable).intersection(movable)
+        }
+    }
+
+    private func host(_ s: AgentSession) -> String {
+        guard let pid = s.pid else { return "터미널 정보 없음" }
+        let env = ProcessEnv.of(pid)
+        if env["TMUX"] != nil { return "tmux" }
+        if env["ORCA_TERMINAL_HANDLE"] != nil { return "Orca" }
+        if env["CMUX_SURFACE_ID"] != nil { return "cmux" }
+        return "기타 터미널"
+    }
+
+    private func run() {
+        running = true
+        let targets = candidates.filter { picked.contains($0.id) }
+        Task {
+            results = await store.migrate(targets, closeOriginal: closeOriginal)
+            running = false
+        }
     }
 }

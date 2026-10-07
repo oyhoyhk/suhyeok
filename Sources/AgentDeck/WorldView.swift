@@ -49,6 +49,8 @@ struct WorldView: View {
     @ObservedObject var store: SessionStore
     @State private var selectedId: String?
     @State private var hoveredId: String?
+    @State private var dialogueId: String?
+    @AppStorage(OpenMode.storageKey) private var openMode = OpenMode.dialogue.rawValue
 
     init(store: SessionStore, initialSelection: String? = nil) {
         self.store = store
@@ -113,10 +115,28 @@ struct WorldView: View {
                 if let id = selectedId, let item = items.first(where: { $0.session.id == id }) {
                     StatusCard(session: item.session, agentName: store.agentName(for: item.session),
                                character: item.character, close: { selectedId = nil },
-                               openTerminal: { store.selection = store.pane(for: item.session) })
+                               openTerminal: {
+                                   if openMode == OpenMode.dialogue.rawValue {
+                                       dialogueId = item.session.id
+                                       selectedId = nil
+                                   } else {
+                                       store.selection = store.pane(for: item.session)
+                                   }
+                               })
                         .fixedSize()
                         .position(cardCenter(item.point, cardSize: CGSize(width: 320, height: 340),
                                              map: size, origin: origin, bounds: geo.size))
+                }
+                // NPC-style conversation over the lower part of the map.
+                if let id = dialogueId {
+                    DialogueView(store: store, sessionId: id, onClose: { dialogueId = nil },
+                                 onTerminal: {
+                                     if let s = store.sessions.first(where: { $0.id == id }) { store.selection = store.pane(for: s) }
+                                     dialogueId = nil
+                                 })
+                        .frame(width: geo.size.width * 0.94, height: geo.size.height * 0.72)
+                        .position(x: geo.size.width / 2, y: geo.size.height * 0.62)
+                        .shadow(radius: 16)
                 }
             }
         }
