@@ -10,6 +10,16 @@ from process import key_background
 
 ROOT = Path(__file__).parent
 ROWS = ["walk_down", "walk_left", "walk_up", "hammer", "type", "read"]
+# Which way each generated "walk left" frame really faces (L left, R right, F front, B back), checked by eye.
+# The model often ignored the row's direction; R frames are mirrored, F/B frames replaced by an L frame.
+SIDE = {
+    "knight": "LLL", "mage": "LFL", "ranger": "LLR", "alchemist": "LFL", "bard": "LLL", "cleric": "LLR",
+    "rogue": "LFF", "blacksmith": "LFL", "paladin": "LFL", "necro": "LLL", "monk": "LLL", "pirate": "LFL",
+    "engineer": "LLB", "druid": "LLB", "samurai": "RFR", "merchant": "LFL", "archer": "LLL", "chef": "LLR",
+    "viking": "LFB", "witch": "LLB", "scholar": "LLL", "ninja": "FFF", "astronomer": "LLL", "farmer": "LFL",
+    "guard": "LLL", "jester": "LFL", "miner": "LFL", "golem": "LFF", "robot": "LFL", "fox": "LLL",
+    "cat": "LLL", "panda": "LFF",
+}
 # Frames the model left without the character (anvil only); reuse a good frame of the same row instead.
 REUSE = {"necro": {"hammer_2": "hammer_0"}, "miner": {"hammer_2": "hammer_0"}, "robot": {"hammer_2": "hammer_0"}}
 STAND_H = 128  # height of the standing front frame; every frame of a character shares its scale
@@ -43,6 +53,42 @@ def drop_floor_shadow(img: Image.Image) -> Image.Image:
     return out.crop(out.getbbox())
 
 
+def fix_side_row(cells: dict, facing: str):
+    """Make all three walk_left frames face left; with no side view at all, walk sideways facing front."""
+    frames = [cells[f"walk_left_{c}"] for c in range(3)]
+    for c, f in enumerate(facing):
+        if f == "R":
+            frames[c] = frames[c].transpose(Image.FLIP_LEFT_RIGHT)
+    good = [c for c, f in enumerate(facing) if f in "LR"]
+    if not good:
+        for c in range(3):
+            cells[f"walk_left_{c}"] = cells[f"walk_down_{c}"]
+        return
+    for c in range(3):
+        if facing[c] not in "LR":
+            frames[c] = frames[min(good, key=lambda g: abs(g - c))]
+        cells[f"walk_left_{c}"] = frames[c]
+
+
+def align_row(frames: list) -> list:
+    """Same canvas for every frame of a row: feet on the bottom edge, body centre (alpha mass) in the middle,
+    so the sprite does not jump between frames."""
+    def centre(img):
+        a = np.asarray(img)[..., 3].astype(float)
+        cols = a.sum(axis=0)
+        return (cols * np.arange(len(cols))).sum() / max(cols.sum(), 1)
+    cs = [centre(f) for f in frames]
+    left = max(cs)
+    right = max(f.width - c for f, c in zip(frames, cs))
+    w, h = int(left + right) + 2, max(f.height for f in frames)
+    out = []
+    for f, c in zip(frames, cs):
+        canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        canvas.alpha_composite(f, (int(round(left - c)), h - f.height))
+        out.append(canvas)
+    return out
+
+
 def slice_sheet(char: str, variant: str):
     sheet = Image.open(ROOT / f"raw/sheet_{char}-{variant}_seedream_5_0_flash.webp").convert("RGB")
     ys, xs = cuts(sheet, 6, axis=0), cuts(sheet, 3, axis=1)
@@ -54,6 +100,7 @@ def slice_sheet(char: str, variant: str):
             cells[f"{row}_{c}"] = drop_floor_shadow(key_background(cell))
     for bad, good in REUSE.get(char, {}).items():
         cells[bad] = cells[good]
+    fix_side_row(cells, SIDE.get(char, "LLL"))
     walk_scale = STAND_H / cells["walk_down_1"].height
     # The model draws work rows smaller; scale each work row so its tallest frame matches the standing height.
     row_scale = {row: walk_scale if row.startswith("walk") else
@@ -61,9 +108,14 @@ def slice_sheet(char: str, variant: str):
     out = ROOT / "out/frames" / char
     out.mkdir(parents=True, exist_ok=True)
     warnings = []
+    scaled = {}
     for name, img in cells.items():
         scale = row_scale[name.rsplit("_", 1)[0]]
-        frame = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.NEAREST)
+        scaled[name] = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.NEAREST)
+    for row in ROWS:
+        for c, f in enumerate(align_row([scaled[f"{row}_{c}"] for c in range(3)])):
+            scaled[f"{row}_{c}"] = f
+    for name, frame in scaled.items():
         # Pixel art fits a 256-color palette; about 4x smaller than RGBA PNGs.
         frame.quantize(256, method=Image.Quantize.FASTOCTREE).save(out / f"{name}.png", optimize=True)
         if frame.height > STAND_H * 1.6 or frame.height < STAND_H * 0.6:

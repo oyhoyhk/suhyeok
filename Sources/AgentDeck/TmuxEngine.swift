@@ -49,7 +49,7 @@ enum TmuxEngine {
     }
 
     /// Starts an agent in a new detached session and returns its name.
-    static func create(agent: Agent, cwd: String, prompt: String?, resume: String? = nil) -> String? {
+    static func create(agent: Agent, cwd: String, prompt: String?, resume: String? = nil, extraArgs: [String] = []) -> String? {
         guard let tmux else { return nil }
         let name = "sh-" + String(UUID().uuidString.lowercased().prefix(6))
         var cmd: [String]
@@ -59,6 +59,7 @@ enum TmuxEngine {
         case .codex:
             cmd = ["codex"] + (resume.map { ["resume", $0] } ?? [])
         }
+        cmd += extraArgs
         if let p = prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty { cmd.append(p) }
         // Login + interactive zsh so PATH matches the user's terminals; keep a shell after the agent exits.
         let inner = cmd.map(quote).joined(separator: " ")

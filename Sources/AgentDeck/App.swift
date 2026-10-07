@@ -30,7 +30,7 @@ struct AgentDeckApp: App {
         }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
-        for flag in ["--send", "--press", "--migrate", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
+        for flag in ["--send", "--press", "--migrate", "--end", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
             }
@@ -180,10 +180,17 @@ final class SessionStore: ObservableObject {
                 results.append(.init(id: s.id, name: label, message: "대화 ID를 몰라 이어서 열 수 없음", ok: false)); continue
             }
             var note = ""
+            let flags = Self.permissionFlags(s)  // read before the original process is gone
             if closeOriginal {
                 note = await Task.detached { Self.closeOriginal(s) }.value
+                if !note.isEmpty, let pid = s.pid, Darwin.kill(pid, 0) == 0 {
+                    // Still running (e.g. an unsent draft): do not open a second copy of the conversation.
+                    results.append(.init(id: s.id, name: label, message: note, ok: false)); continue
+                }
             }
-            let name = await Task.detached { TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: conversation) }.value
+            let name = await Task.detached {
+                TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: conversation, extraArgs: flags)
+            }.value
             results.append(.init(id: s.id, name: label,
                                  message: name == nil ? "수혁에서 여는 데 실패" : (note.isEmpty ? "옮김" : "옮김 — " + note),
                                  ok: name != nil))
@@ -205,18 +212,45 @@ final class SessionStore: ObservableObject {
         return note.isEmpty ? nil : note
     }
 
+    /// Permission options the original process was started with, so a migrated session behaves the same.
+    nonisolated static func permissionFlags(_ s: AgentSession) -> [String] {
+        guard let pid = s.pid,
+              let cmd = TerminalSource.run("/bin/ps", ["-o", "command=", "-p", String(pid)]) else { return [] }
+        let words = cmd.split(separator: " ").map(String.init)
+        var flags: [String] = []
+        if words.contains("--dangerously-skip-permissions") { flags.append("--dangerously-skip-permissions") }
+        if let i = words.firstIndex(of: "--permission-mode"), i + 1 < words.count { flags += ["--permission-mode", words[i + 1]] }
+        return flags
+    }
+
     /// Sends the agent's quit command to its terminal and waits for the process to end.
+    /// Refuses when the input box holds unsent text: typing /exit would append to it and submit the draft.
     nonisolated private static func closeOriginal(_ s: AgentSession) -> String {
         guard let pid = s.pid, SessionInput.canSend(s) else {
             return "원래 세션을 닫지 못함 — 원래 터미널에서 직접 종료할 것"
         }
-        _ = SessionInput.press(s, .escape)  // leave any open menu or half-typed input first
+        guard case .text(let screen, _) = TerminalSource.read(pid: pid, lines: 40) else {
+            return "화면을 읽지 못해 종료하지 않음 — 원래 터미널에서 직접 종료할 것"
+        }
+        if let draft = inputDraft(screen) {
+            return "입력칸에 보내지 않은 글이 있어 종료하지 않음(\(oneLine(draft, limit: 30))) — 원래 터미널에서 정리 후 다시 시도"
+        }
         _ = SessionInput.send(s, text: s.agent == .claude ? "/exit" : "/quit")
         for _ in 0..<30 {
             if Darwin.kill(pid, 0) != 0 { return "" }
             usleep(500_000)
         }
         return "원래 세션이 15초 안에 끝나지 않음 — 원래 터미널에서 확인할 것"
+    }
+
+    /// Text typed into the agent's input box, if any. The box is the last line starting with "❯";
+    /// the grey "Try …" hint of an empty box counts as empty.
+    nonisolated static func inputDraft(_ screen: String) -> String? {
+        guard let line = screen.split(separator: "\n").last(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("❯") })
+        else { return nil }
+        let text = line.trimmingCharacters(in: .whitespaces).dropFirst().trimmingCharacters(in: .whitespaces)
+        if text.isEmpty || text.hasPrefix("Try \"") { return nil }
+        return text
     }
 
     func kill(_ name: String) {
@@ -391,6 +425,13 @@ enum Snapshot {
         case "--press":
             let key = SessionInput.Key.allCases.first { $0.tmux.lowercased() == arg?.lowercased() }
             print(key.map { SessionInput.press(s, $0) ? "pressed" : "FAILED" } ?? "unknown key")
+        case "--end":
+            let done = DispatchSemaphore(value: 0)
+            Task { @MainActor in
+                print(await store.end(s) ?? "ended")
+                done.signal()
+            }
+            while done.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         case "--migrate":
             let done = DispatchSemaphore(value: 0)
             Task { @MainActor in
