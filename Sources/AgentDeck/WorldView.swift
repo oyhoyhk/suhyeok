@@ -16,6 +16,24 @@ enum Zone {
         [0.09, 0.15, 0.22, 0.29].map { x in CGPoint(x: x, y: y) }
     }
 
+    /// Work stations on art/out/map.png; agents walk to the one that matches what they are doing.
+    static func stations(for kind: AgentAction.Kind) -> [CGPoint] {
+        switch kind {
+        case .shell:  // around the anvil in the forge
+            return [CGPoint(x: 0.50, y: 0.36), CGPoint(x: 0.60, y: 0.36), CGPoint(x: 0.47, y: 0.27), CGPoint(x: 0.63, y: 0.27)]
+        case .reading:  // in front of the quest boards on the walls
+            return [0.16, 0.57].flatMap { y in [0.10, 0.20, 0.29].map { CGPoint(x: $0, y: y) } }
+        case .web:  // by the guild hall's front door, looking out
+            return [CGPoint(x: 0.80, y: 0.15), CGPoint(x: 0.86, y: 0.15), CGPoint(x: 0.74, y: 0.15)]
+        case .delegating:  // around the round tables
+            return [CGPoint(x: 0.12, y: 0.80), CGPoint(x: 0.28, y: 0.80), CGPoint(x: 0.17, y: 0.88), CGPoint(x: 0.24, y: 0.88)]
+        case .thinking:  // pacing in the corridor between the halls
+            return [CGPoint(x: 0.375, y: 0.45), CGPoint(x: 0.375, y: 0.62), CGPoint(x: 0.40, y: 0.53)]
+        case .editing, .replying, .other:
+            return deskSeats
+        }
+    }
+
     /// Spreads `count` slots over the zone in a grid that follows the zone's shape.
     static func slot(_ index: Int, of count: Int, in r: CGRect, aspect: CGFloat) -> CGPoint {
         let ratio = (r.width * aspect) / r.height
@@ -56,7 +74,7 @@ struct WorldView: View {
                         ZStack(alignment: .topLeading) {
                             ForEach(items, id: \.session.id) { item in
                                 let p = positions[item.session.id] ?? item.point
-                                Avatar(session: item.session, character: item.character,
+                                Avatar(session: item.session, character: item.character, station: store.station(for: item.session),
                                        agentName: store.agentName(for: item.session), time: t,
                                        height: size.width * 0.07, selected: item.session.id == selectedId,
                                        walking: p != item.point)
@@ -143,13 +161,24 @@ struct WorldView: View {
 
     private func placed() -> [Placed] {
         var out: [Placed] = []
-        let groups = Dictionary(grouping: store.sessions) { $0.activity }
-        for (activity, members) in groups {
-            let sorted = members.sorted { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
+        let byStart: (AgentSession, AgentSession) -> Bool = { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
+        // Working agents: grouped by station; a crowded station overflows in small steps.
+        let working = Dictionary(grouping: store.sessions.filter { store.station(for: $0) != nil }) { store.station(for: $0)! }
+        let pace = Int(Date().timeIntervalSince1970 / 3) % 2  // thinkers turn around every few seconds
+        for (kind, members) in working {
+            let spots = Zone.stations(for: kind)
+            for (i, s) in members.sorted(by: byStart).enumerated() {
+                var p = spots[i % spots.count]
+                p.x += CGFloat(i / spots.count) * 0.03
+                if kind == .thinking { p.y += (pace + i) % 2 == 0 ? -0.06 : 0.06 }
+                out.append(Placed(session: s, character: store.character(for: s), point: p))
+            }
+        }
+        let others = Dictionary(grouping: store.sessions.filter { store.station(for: $0) == nil }) { $0.activity }
+        for (activity, members) in others {
+            let sorted = members.sorted(by: byStart)
             for (i, s) in sorted.enumerated() {
-                let p = activity == .working && i < Zone.deskSeats.count
-                    ? Zone.deskSeats[i]
-                    : Zone.slot(i, of: sorted.count, in: Zone.rect(for: activity), aspect: mapAspect)
+                let p = Zone.slot(i, of: sorted.count, in: Zone.rect(for: activity), aspect: mapAspect)
                 out.append(Placed(session: s, character: store.character(for: s), point: p))
             }
         }
@@ -183,6 +212,7 @@ final class Walker {
 struct Avatar: View {
     let session: AgentSession
     let character: Character?
+    let station: AgentAction.Kind?
     let agentName: String
     let time: TimeInterval
     let height: CGFloat
@@ -196,11 +226,12 @@ struct Avatar: View {
             ZStack(alignment: .topTrailing) {
                 sprite
                     .frame(height: height)
+                    // Looking around while scouting the web: face left and right in turns.
+                    .scaleEffect(x: station == .web && !walking && Int(time / 1.5) % 2 == 1 ? -1 : 1)
                     .offset(y: bob(phase))
                     .rotationEffect(.degrees(swing(phase)), anchor: .bottom)
-                if session.activity == .working, !walking {
-                    WorkEffect(action: session.action ?? AgentAction(kind: session.status == .shell ? .shell : .other, detail: ""),
-                               time: time + phase, height: height)
+                if station == .shell, !walking {
+                    Sparks(time: time + phase, height: height)
                 }
                 if session.activity == .waiting {
                     // Speech bubble: waiting for the next instruction.
@@ -233,10 +264,10 @@ struct Avatar: View {
 
     private func swing(_ phase: Double) -> Double {
         if walking { return sin(time * 12) * 5 }
-        guard session.activity == .working else { return 0 }
-        switch session.action?.kind ?? (session.status == .shell ? .shell : .other) {
-        case .shell: return max(0, sin(time * 6 + phase)) * 10 - 3  // hammer strikes
-        case .reading: return sin(time * 1.5 + phase) * 3           // nodding over a page
+        switch station {
+        case .shell?: return max(0, sin(time * 6 + phase)) * 12 - 3   // hammer strikes on the anvil
+        case .reading?: return sin(time * 1.2 + phase) * 3            // nodding along the board
+        case .delegating?: return sin(time * 4 + phase) * 4           // animated discussion
         default: return 0
         }
     }
@@ -245,10 +276,11 @@ struct Avatar: View {
         if walking { return -CGFloat(abs(sin(time * 12))) * height * 0.08 }
         switch session.activity {
         case .working:
-            switch session.action?.kind {
-            case .shell?: return 0  // swings instead (rotation)
-            case .reading?, .thinking?: return CGFloat(sin(time * 2 + phase)) * height * 0.02
-            default: return -CGFloat(abs(sin(time * 9 + phase))) * height * 0.05  // typing
+            switch station {
+            case .shell?, .reading?, .web?: return 0
+            case .delegating?: return -CGFloat(abs(sin(time * 5 + phase))) * height * 0.05
+            case .thinking?: return CGFloat(sin(time * 2 + phase)) * height * 0.015
+            default: return -CGFloat(abs(sin(time * 9 + phase))) * height * 0.05  // typing at the desk
             }
         case .waiting: return CGFloat(sin(time * 3 + phase)) * height * 0.02
         case .resting: return CGFloat(sin(time * 1.2 + phase)) * height * 0.012
@@ -276,59 +308,24 @@ extension Activity {
     }
 }
 
-/// Floating action icon plus particles above a working avatar.
-struct WorkEffect: View {
-    let action: AgentAction
+/// Sparks flying off the anvil in front of a hammering avatar.
+struct Sparks: View {
     let time: TimeInterval
     let height: CGFloat
 
     var body: some View {
         ZStack {
-            ForEach(0..<4, id: \.self) { i in particle(i) }
-            Image(systemName: action.symbol)
-                .font(.system(size: height * 0.18, weight: .bold))
-                .foregroundStyle(tint)
-                .padding(height * 0.06)
-                .background(.white, in: Circle())
-                .scaleEffect(1 + 0.08 * sin(time * 4))
-                .offset(y: -height * 0.62)
+            ForEach(0..<5, id: \.self) { i in
+                let t = (time * 1.6 + Double(i) / 5).truncatingRemainder(dividingBy: 1)
+                let angle = -Double.pi / 2 + (Double(i) - 2) * 0.45
+                Circle()
+                    .fill(i % 2 == 0 ? Color.yellow : Color.orange)
+                    .frame(width: height * 0.045, height: height * 0.045)
+                    .offset(x: CGFloat(cos(angle) * t) * height * 0.4,
+                            y: height * 0.35 + CGFloat(sin(angle) * t) * height * 0.4)
+                    .opacity(1 - t)
+            }
         }
         .allowsHitTesting(false)
-    }
-
-    private var tint: Color {
-        switch action.kind {
-        case .shell: return .orange
-        case .editing: return .blue
-        case .reading: return .brown
-        case .web: return .teal
-        case .delegating: return .purple
-        case .thinking: return .pink
-        default: return .green
-        }
-    }
-
-    /// Each particle loops on its own phase: sparks burst for shell, keys pop for typing, dots drift otherwise.
-    private func particle(_ i: Int) -> some View {
-        let t = (time * 1.4 + Double(i) / 4).truncatingRemainder(dividingBy: 1)
-        let angle = Double(i) * .pi / 2 + 0.6
-        let size = height * (action.kind == .shell ? 0.05 : 0.04)
-        let dx: CGFloat, dy: CGFloat
-        switch action.kind {
-        case .shell:
-            dx = CGFloat(cos(angle) * t) * height * 0.35
-            dy = height * 0.1 - CGFloat(abs(sin(angle)) * t) * height * 0.35
-        case .editing, .replying, .other:
-            dx = CGFloat(Double(i) - 1.5) * height * 0.1
-            dy = height * 0.05 - CGFloat(t) * height * 0.3
-        default:
-            dx = CGFloat(sin(t * .pi * 2 + Double(i))) * height * 0.08
-            dy = -height * 0.3 - CGFloat(t) * height * 0.2
-        }
-        return RoundedRectangle(cornerRadius: action.kind == .shell ? size : size * 0.2)
-            .fill(action.kind == .shell ? Color.yellow : tint.opacity(0.8))
-            .frame(width: size, height: size)
-            .offset(x: dx, y: dy)
-            .opacity(1 - t)
     }
 }

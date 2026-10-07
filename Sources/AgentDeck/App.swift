@@ -56,6 +56,10 @@ final class SessionStore: ObservableObject {
     @Published var selection: Pane = .world
     @Published var hosted: [TmuxEngine.Hosted] = []
     @Published var recent: [RecentConversation] = []
+    /// Where each working agent stands; only moves after the new kind of work lasts a while.
+    @Published private var stations: [String: AgentAction.Kind] = [:]
+    private var pendingStations: [String: (kind: AgentAction.Kind, since: Date)] = [:]
+    private let stationDwell: TimeInterval = 3
     private var lastRecentLoad = Date.distantPast
     private var assigner = CharacterAssigner()
     private var timer: Timer?
@@ -76,6 +80,37 @@ final class SessionStore: ObservableObject {
     func agentName(for session: AgentSession) -> String { names[session.id] ?? "모험가" }
 
     func session(hosted name: String) -> AgentSession? { sessions.first { $0.hostedName == name } }
+
+    func station(for s: AgentSession) -> AgentAction.Kind? { stations[s.id] }
+
+    /// Raw kind of work right now; writing replies and unknown tools happen at the desk.
+    private func workKind(_ s: AgentSession) -> AgentAction.Kind? {
+        guard s.activity == .working else { return nil }
+        switch s.action?.kind {
+        case nil: return s.status == .shell ? .shell : .editing
+        case .replying?, .other?: return .editing
+        case let k?: return k
+        }
+    }
+
+    private func updateStations(_ all: [AgentSession]) {
+        let now = Date()
+        var next: [String: AgentAction.Kind] = [:]
+        for s in all {
+            guard let kind = workKind(s) else { pendingStations[s.id] = nil; continue }
+            guard let current = stations[s.id] else { next[s.id] = kind; continue }  // just started: go straight there
+            if kind == current { pendingStations[s.id] = nil; next[s.id] = current; continue }
+            let pending = pendingStations[s.id]
+            if pending?.kind == kind, now.timeIntervalSince(pending!.since) >= stationDwell {
+                next[s.id] = kind
+                pendingStations[s.id] = nil
+            } else {
+                if pending?.kind != kind { pendingStations[s.id] = (kind, now) }
+                next[s.id] = current
+            }
+        }
+        stations = next
+    }
 
     /// Where a session's terminal lives in the main window.
     func pane(for s: AgentSession) -> Pane { s.hostedName.map(Pane.hosted) ?? .external(s.id) }
@@ -130,6 +165,7 @@ final class SessionStore: ObservableObject {
                 self.hosted = hosted
                 if let recent { self.recent = recent; self.lastRecentLoad = Date() }
                 self.sessions = all
+                self.updateStations(all)
                 self.assignments = self.assigner.update(all)
                 self.names = AgentNames.assign(all)
                 self.lastRefresh = Date()
