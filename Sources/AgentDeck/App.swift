@@ -94,6 +94,27 @@ struct AgentDeckApp: App {
         }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
+        // `AgentDeck --snapshot-sidebar out.png`: the workspace window (sidebar + world) offscreen.
+        if let i = args.firstIndex(of: "--snapshot-sidebar"), i + 1 < args.count {
+            let store = Snapshot.loadedStorePublic()
+            // The sidebar List is AppKit-backed and does not cache-render, so draw the same rows in a stack.
+            let rows = VStack(alignment: .leading, spacing: 8) {
+                ForEach(store.sessions) { s in
+                    SessionRow(title: s.name, subtitle: s.agent.rawValue + " · " + s.project, session: s, store: store)
+                }
+            }
+            .padding(12).frame(width: 300, alignment: .leading).background(Color(white: 0.95))
+            let host = NSHostingView(rootView: rows.frame(width: 300, height: 800, alignment: .top))
+            let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 300, height: 800),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            RunLoop.main.run(until: Date().addingTimeInterval(3))
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
+            }
+            exit(0)
+        }
         if args.contains("--reopen-permissions") {
             Snapshot.reopenPermissions()
         }
@@ -219,6 +240,11 @@ final class SessionStore: ObservableObject {
         let place = ground(for: s).map { $0.label } ?? "대기소"
         let run = p.run().map { String(format: " · 연속 %.1f시간", $0 / 3600) } ?? ""
         return "\(place)\(run) · 결정 \(p.crystals)"
+    }
+
+    /// Newest thing the agent did: its last log entry, else the last status change.
+    func lastActivity(for s: AgentSession) -> Date? {
+        [hunt[s.id]?.last, s.updatedAt].compactMap { $0 }.max()
     }
 
     var totalCrystals: Int { sessions.reduce(0) { $0 + (hunt[$1.id]?.crystals ?? 0) } }
@@ -537,6 +563,8 @@ struct MenuBarContent: View {
 /// Offscreen checks that never touch the user's screen.
 @MainActor
 enum Snapshot {
+    static func loadedStorePublic() -> SessionStore { loadedStore() }
+
     private static func loadedStore() -> SessionStore {
         let store = SessionStore()
         // Let the first background refresh land.

@@ -202,7 +202,32 @@ struct SessionRow: View {
                 }
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
+            Spacer(minLength: 4)
+            if let s = session {
+                // Time since the agent last did anything (newest log entry), refreshed every 30 s.
+                TimelineView(.periodic(from: .now, by: 30)) { _ in
+                    let last = store.lastActivity(for: s)
+                    Text(s.status == .busy ? "작업 중" : last.map(Self.ago) ?? "")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(s.status == .busy ? Color.green : Self.staleColor(last))
+                        .help(last.map { "마지막 동작 " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "")
+                }
+            }
         }
+    }
+
+    static func ago(_ d: Date) -> String {
+        let m = max(0, Int(-d.timeIntervalSinceNow / 60))
+        if m < 1 { return "방금" }
+        if m < 60 { return "\(m)분 전" }
+        if m < 60 * 24 { return "\(m / 60)시간 전" }
+        return "\(m / 1440)일 전"
+    }
+
+    /// Recent activity reads normal; anything idle for over an hour (the hunt reset) fades.
+    static func staleColor(_ d: Date?) -> Color {
+        guard let d else { return .secondary }
+        return -d.timeIntervalSinceNow < 3600 ? .primary : .secondary
     }
 }
 
