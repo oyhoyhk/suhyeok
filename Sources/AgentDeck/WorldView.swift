@@ -27,7 +27,7 @@ enum Zone {
             return [CGPoint(x: 0.80, y: 0.15), CGPoint(x: 0.86, y: 0.15), CGPoint(x: 0.74, y: 0.15)]
         case .delegating:  // around the round tables
             return [CGPoint(x: 0.12, y: 0.80), CGPoint(x: 0.28, y: 0.80), CGPoint(x: 0.17, y: 0.88), CGPoint(x: 0.24, y: 0.88)]
-        case .thinking:  // pacing in the corridor between the halls
+        case .thinking:  // standing in the corridor between the halls, deep in thought
             return [CGPoint(x: 0.375, y: 0.45), CGPoint(x: 0.375, y: 0.62), CGPoint(x: 0.40, y: 0.53)]
         case .editing, .replying, .other:
             return deskSeats
@@ -222,13 +222,11 @@ struct WorldView: View {
         let byStart: (AgentSession, AgentSession) -> Bool = { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
         // Working agents: grouped by station; a crowded station overflows in small steps.
         let working = Dictionary(grouping: store.sessions.filter { store.station(for: $0) != nil }) { store.station(for: $0)! }
-        let pace = Int(Date().timeIntervalSince1970 / 3) % 2  // thinkers turn around every few seconds
         for (kind, members) in working {
             let spots = Zone.stations(for: kind)
             for (i, s) in members.sorted(by: byStart).enumerated() {
                 var p = spots[i % spots.count]
                 p.x += CGFloat(i / spots.count) * 0.03
-                if kind == .thinking { p.y += (pace + i) % 2 == 0 ? -0.06 : 0.06 }
                 out.append(Placed(session: s, character: store.character(for: s), point: p))
             }
         }
@@ -246,11 +244,13 @@ struct WorldView: View {
 
 /// Moves each avatar toward its zone slot at walking speed, frame by frame.
 /// SwiftUI implicit animations stall when the TimelineView rebuilds the tree every tick.
-enum Facing { case down, up, left, right }
+enum Facing: String { case down, up, left, right }
 
 final class Walker {
     private var current: [String: CGPoint] = [:]
     private(set) var facing: [String: Facing] = [:]  // kept after arriving, so agents face where they walked
+    /// Debug hook (--trace-walk): receives every step.
+    nonisolated(unsafe) static var trace: (([String: CGPoint], [String: Facing], TimeInterval) -> Void)?
     private var lastTick: TimeInterval?
     private let speed: CGFloat = 0.12  // map widths per second
 
@@ -272,6 +272,7 @@ final class Walker {
             }
         }
         current = next
+        if let trace = Walker.trace { trace(next, facing, now) }
         return next
     }
 }
@@ -349,8 +350,34 @@ struct Avatar: View {
                 .frame(maxWidth: height * 2.2)
         }
         .padding(4)
-        .background(selected ? Color.white.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Color.white : .clear, lineWidth: 2))
+    }
+
+    private struct Offset: Hashable { let x: CGFloat; let y: CGFloat }
+
+    private static func ring(_ w: CGFloat) -> [Offset] {
+        (0..<8).map { k in
+            let a = Double(k) * .pi / 4
+            return Offset(x: CGFloat(cos(a)) * w, y: CGFloat(sin(a)) * w)
+        }
+    }
+
+    /// The sprite with a gold outline that follows its silhouette when selected:
+    /// gold-tinted copies nudged in eight directions sit behind the real sprite.
+    @ViewBuilder private func outlined(_ img: NSImage, height h: CGFloat, mirrored: Bool) -> some View {
+        let base = Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+        let tinted = Image(nsImage: img).renderingMode(.template).resizable().interpolation(.none)
+            .aspectRatio(contentMode: .fit).foregroundStyle(Color(red: 1, green: 0.82, blue: 0.2))
+        ZStack {
+            if selected {
+                ForEach(Self.ring(max(2, h * 0.025)), id: \.self) { o in
+                    tinted.offset(x: o.x, y: o.y)
+                }
+            }
+            base
+        }
+        .frame(height: h)
+        .shadow(color: selected ? Color(red: 1, green: 0.8, blue: 0.2).opacity(0.8) : .clear, radius: selected ? 6 : 0)
+        .scaleEffect(x: mirrored ? -1 : 1)
     }
 
     private func swing(_ phase: Double) -> Double {
@@ -383,12 +410,9 @@ struct Avatar: View {
         let (name, mirrored) = frame(phase)
         if let c = character, frames, let img = Art.image("frames/\(c.id)/\(name)") {
             // Frames share one scale per character: a 128px-tall standing frame maps to `height`.
-            Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
-                .frame(height: height * img.size.height / 128)
-                .scaleEffect(x: mirrored ? -1 : 1)
+            outlined(img, height: height * img.size.height / 128, mirrored: mirrored)
         } else if let c = character, let img = Art.image("sprites/\(c.id)") {
-            Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
-                .frame(height: height)
+            outlined(img, height: height, mirrored: false)
         } else {
             Circle().fill(session.activity.color)
                 .overlay(Text(String(agentName.prefix(1))).font(.headline).foregroundStyle(.white))

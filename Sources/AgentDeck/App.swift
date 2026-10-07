@@ -8,6 +8,10 @@ struct AgentDeckApp: App {
     init() {
         // `AgentDeck --snapshot out.png [selectedSessionId]` renders the world offscreen and exits (for checks without touching the screen).
         let args = CommandLine.arguments
+        // `AgentDeck --trace-walk <seconds>` runs the world offscreen and logs positions/facing twice a second.
+        if let i = args.firstIndex(of: "--trace-walk"), i + 1 < args.count, let secs = Double(args[i + 1]) {
+            Snapshot.traceWalk(seconds: secs)
+        }
         // `AgentDeck --snapshot-poses <characterId> out.png` renders one character's walk/work frames.
         if let i = args.firstIndex(of: "--snapshot-poses"), i + 2 < args.count {
             Snapshot.poses(character: args[i + 1], path: args[i + 2])
@@ -82,8 +86,10 @@ final class SessionStore: ObservableObject {
     @Published var recent: [RecentConversation] = []
     /// Where each working agent stands; only moves after the new kind of work lasts a while.
     @Published private var stations: [String: AgentAction.Kind] = [:]
-    private var pendingStations: [String: (kind: AgentAction.Kind, since: Date)] = [:]
-    private let stationDwell: TimeInterval = 3
+    /// Recent kinds of work per session (one sample per refresh); the station follows the majority,
+    /// so agents do not shuttle between forge, board and desk every time the tool changes.
+    private var workSamples: [String: [(Date, AgentAction.Kind)]] = [:]
+    private let stationWindow: TimeInterval = 45
     private var lastRecentLoad = Date.distantPast
     private var assigner = CharacterAssigner()
     private var timer: Timer?
@@ -121,18 +127,17 @@ final class SessionStore: ObservableObject {
         let now = Date()
         var next: [String: AgentAction.Kind] = [:]
         for s in all {
-            guard let kind = workKind(s) else { pendingStations[s.id] = nil; continue }
+            guard let kind = workKind(s) else { workSamples[s.id] = nil; continue }
+            var samples = (workSamples[s.id] ?? []).filter { now.timeIntervalSince($0.0) < stationWindow }
+            samples.append((now, kind))
+            workSamples[s.id] = samples
             guard let current = stations[s.id] else { next[s.id] = kind; continue }  // just started: go straight there
-            if kind == current { pendingStations[s.id] = nil; next[s.id] = current; continue }
-            let pending = pendingStations[s.id]
-            if pending?.kind == kind, now.timeIntervalSince(pending!.since) >= stationDwell {
-                next[s.id] = kind
-                pendingStations[s.id] = nil
-            } else {
-                if pending?.kind != kind { pendingStations[s.id] = (kind, now) }
-                next[s.id] = current
-            }
+            let counts = Dictionary(grouping: samples, by: \.1).mapValues(\.count)
+            let leader = counts.max { $0.value < $1.value }!
+            // Move only when another kind clearly dominates the window; ties keep the agent where it is.
+            next[s.id] = leader.key != current && leader.value > (counts[current] ?? 0) ? leader.key : current
         }
+        workSamples = workSamples.filter { next[$0.key] != nil }
         stations = next
     }
 
@@ -362,6 +367,27 @@ enum Snapshot {
            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             try? png.write(to: URL(fileURLWithPath: path))
         }
+        exit(0)
+    }
+
+    static func traceWalk(seconds: Double) {
+        let store = loadedStore()
+        var last: TimeInterval = 0
+        let start = Date().timeIntervalSinceReferenceDate
+        Walker.trace = { pos, facing, now in
+            guard now - last >= 0.5 else { return }
+            last = now
+            let row = pos.keys.sorted().map { id in
+                let p = pos[id]!
+                return "\(id.suffix(5)):\(String(format: "%.3f,%.3f", p.x, p.y)):\(facing[id]?.rawValue.prefix(1) ?? "-")"
+            }
+            print(String(format: "%5.1f ", now - start) + row.joined(separator: " "))
+        }
+        let host = NSHostingView(rootView: WorldView(store: store).frame(width: 1400, height: 820))
+        let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 1400, height: 820),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
         exit(0)
     }
 
