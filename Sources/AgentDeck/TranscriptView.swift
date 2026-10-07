@@ -10,10 +10,49 @@ struct ChatItem: Identifiable, Equatable {
 
 /// Reads the tail of a Claude or Codex conversation log; feeds both the chat view and the terminal-style view.
 enum TranscriptRenderer {
-    static func items(path: String, agent: Agent, maxBytes: Int = 2 * 1024 * 1024) -> [ChatItem] {
-        let lines = JSONLTail.lines(path: path, maxBytes: maxBytes)
-        let raw = agent == .claude ? claude(lines) : codex(lines)
-        return raw.enumerated().map { ChatItem(id: $0.offset, role: $0.element.0, text: $0.element.1) }
+    /// Parsed entries per log, extended incrementally as the file grows (logs only ever get appended to).
+    private struct Cached { var offset: UInt64; var entries: [(ChatItem.Role, String)] }
+    private static var cache: [String: Cached] = [:]
+    private static let lock = NSLock()
+    /// How far back the first read goes. Screenshots make single lines over 1 MB, so a small tail
+    /// can hold no conversation at all; the window is wide and huge lines are skipped unparsed.
+    private static let window: UInt64 = 32 * 1024 * 1024
+    private static let hugeLine = 256 * 1024
+    private static let keep = 600
+
+    static func items(path: String, agent: Agent) -> [ChatItem] {
+        lock.lock(); defer { lock.unlock() }
+        guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        var c = cache[path] ?? Cached(offset: size > window ? size - window : 0, entries: [])
+        if c.offset > size { c = Cached(offset: size > window ? size - window : 0, entries: []) }  // file was replaced
+        let fresh = c.offset == 0 || cache[path] == nil
+        if size > c.offset {
+            try? handle.seek(toOffset: c.offset)
+            let data = handle.readData(ofLength: Int(size - c.offset))
+            // Only complete lines; a half-written last line is read again next time.
+            guard let lastNL = data.lastIndex(of: UInt8(ascii: "\n")) else { cache[path] = c; return wrap(c.entries) }
+            var chunks = data[data.startIndex...lastNL].split(separator: UInt8(ascii: "\n"))
+            if fresh, c.offset > 0, !chunks.isEmpty { chunks.removeFirst() }  // started mid-line
+            var parsed: [[String: Any]] = []
+            for chunk in chunks {
+                if chunk.count > hugeLine {
+                    parsed.append(["type": "huge"])  // an image-heavy tool result; shown as a placeholder
+                } else if let obj = (try? JSONSerialization.jsonObject(with: Data(chunk))) as? [String: Any] {
+                    parsed.append(obj)
+                }
+            }
+            c.entries += agent == .claude ? claude(parsed) : codex(parsed)
+            if c.entries.count > keep { c.entries.removeFirst(c.entries.count - keep) }
+            c.offset += UInt64(data.distance(from: data.startIndex, to: lastNL) + 1)
+        }
+        cache[path] = c
+        return wrap(c.entries)
+    }
+
+    private static func wrap(_ e: [(ChatItem.Role, String)]) -> [ChatItem] {
+        e.enumerated().map { ChatItem(id: $0.offset, role: $0.element.0, text: $0.element.1) }
     }
 
     static func render(path: String, agent: Agent, maxBlocks: Int = 120) -> String {
@@ -29,6 +68,7 @@ enum TranscriptRenderer {
     private static func claude(_ lines: [[String: Any]]) -> [(ChatItem.Role, String)] {
         var out: [(ChatItem.Role, String)] = []
         for line in lines {
+            if line["type"] as? String == "huge" { out.append((.result, "  ⎿ (이미지 등 큰 결과)")); continue }
             // Messages typed while the agent was busy are stored as queued_command attachments.
             if let a = line["attachment"] as? [String: Any], a["type"] as? String == "queued_command",
                (a["origin"] as? [String: Any])?["kind"] as? String == "human", let p = a["prompt"] as? String {
