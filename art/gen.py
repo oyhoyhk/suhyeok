@@ -32,11 +32,21 @@ ICON = ("Pixel art app icon, a single bold emblem centered on a rounded square d
         "commander's pennant flag on a short pole with one small white star above it. Thick dark outline, very simple "
         "shapes, high contrast, readable at 16 pixels, flat colors, no gradients. No text, no letters, no border frame.")
 
+LOGOFRAME = ("Ornate 16-bit pixel art logo banner for a fantasy RPG title screen: a wide golden ribbon banner across "
+             "the middle, a royal golden crown on top, two crossed golden pennant flags behind it, small white sparkles, "
+             "deep navy blue background, rich gold and crimson accents, thick dark outline. The center of the ribbon is a "
+             "large EMPTY flat gold area with absolutely no text, no letters, no symbols.")
+LOGOTEXT = ("Ornate 16-bit pixel art fantasy RPG title logo that reads exactly \"SUHYEOK\" in large bold golden pixel "
+            "letters with a thick dark outline and a warm glow, a royal golden crown above the word, two crossed golden "
+            "pennant flags behind it, small white sparkles, deep navy blue background. The only text in the image is "
+            "SUHYEOK, spelled S-U-H-Y-E-O-K, seven letters.")
+
 def run(kind, model, cid):
     if kind == "map":
         prompt, aspect, out = MAP, "16:9", f"map_{model}"
-    elif kind in ("hero", "icon"):
-        prompt, aspect = (HERO, "16:9") if kind == "hero" else (ICON, "1:1")
+    elif kind in ("hero", "icon", "logoframe", "logotext"):
+        prompt, aspect = {"hero": (HERO, "16:9"), "icon": (ICON, "1:1"),
+                          "logoframe": (LOGOFRAME, "16:9"), "logotext": (LOGOTEXT, "16:9")}[kind]
         out = f"{kind}_{cid}_{model}"
     else:
         tmpl = SPRITE if kind == "sprite" else PORTRAIT

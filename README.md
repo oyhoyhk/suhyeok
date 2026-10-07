@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/icon.png" width="120" alt="수혁 아이콘"></p>
+<p align="center"><img src="assets/logo.png" width="640" alt="SUHYEOK"></p>
 
 # 수혁 — 로컬 에이전트 세션을 한 화면에서 지휘하는 맥 앱
 
