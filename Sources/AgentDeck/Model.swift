@@ -6,11 +6,14 @@ enum Agent: String {
 }
 
 enum SessionStatus: String {
-    case busy, shell, idle, unknown
+    /// Claude Code registry values: busy = in a turn, waiting = asking you (permission / question menu),
+    /// shell = turn over but background shells still running, idle = done.
+    case busy, waiting, shell, idle, unknown
 
     var label: String {
         switch self {
         case .busy: return "작업 중"
+        case .waiting: return "선택 기다리는 중"
         case .shell: return "셸 실행"
         case .idle: return "대기"
         case .unknown: return "알 수 없음"
@@ -19,6 +22,7 @@ enum SessionStatus: String {
 
     var sortRank: Int {
         switch self {
+        case .waiting: return 0
         case .busy: return 0
         case .shell: return 1
         case .idle: return 2
@@ -110,6 +114,8 @@ extension AgentSession {
     var activity: Activity {
         switch status {
         case .busy: return .working
+        // Blocked on a permission prompt or a question: not working, needs you.
+        case .waiting: return .waiting
         // Claude Code reports "shell" when its turn is over but background shells it started are still
         // running (the "N shells still running" footer). The agent itself is waiting for you.
         case .shell, .idle, .unknown:

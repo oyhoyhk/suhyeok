@@ -634,11 +634,12 @@ struct Avatar: View {
                     Sparks(time: time + phase, height: height)
                 }
                 if session.activity == .waiting {
-                    // Speech bubble: waiting for the next instruction.
-                    Text("…").font(.system(size: height * 0.2, weight: .heavy))
-                        .foregroundStyle(.black)
+                    // "…" waiting for the next instruction; a red "!" when it is blocked on your choice.
+                    let ask = session.status == .waiting
+                    Text(ask ? "!" : "…").font(.system(size: height * (ask ? 0.26 : 0.2), weight: .heavy))
+                        .foregroundStyle(ask ? .white : .black)
                         .padding(.horizontal, height * 0.06)
-                        .background(.white, in: Capsule())
+                        .background(ask ? Color.red : Color.white, in: Capsule())
                         .opacity(0.6 + 0.4 * abs(sin(time * 2 + phase)))
                         .offset(x: height * 0.2, y: -height * 0.12)
                 }
