@@ -1,0 +1,71 @@
+"""Slice generated 3x6 sprite sheets into animation frames under out/frames/<character>/.
+usage: python3 sheet.py <character>=<variant> ...   e.g. knight=b fox=b
+Rows: walk_down, walk_left, walk_up, hammer, type, read; 3 frames each.
+"""
+import sys
+from pathlib import Path
+import numpy as np
+from PIL import Image
+from process import key_background
+
+ROOT = Path(__file__).parent
+ROWS = ["walk_down", "walk_left", "walk_up", "hammer", "type", "read"]
+STAND_H = 128  # height of the standing front frame; every frame of a character shares its scale
+
+
+def cuts(sheet: Image.Image, n: int, axis: int) -> list:
+    """Boundaries between n sprites along an axis. The generated grid is not exact (feet spill into the
+    next row), so each cut moves to the emptiest line within ±30% of a cell around its expected spot."""
+    rgb = np.asarray(sheet).astype(np.int16)
+    bg = np.median(np.concatenate([rgb[0], rgb[-1]]), axis=0)
+    fg = np.sqrt(((rgb - bg) ** 2).sum(axis=2)) > 70
+    profile = fg.sum(axis=1 - axis)  # foreground pixels per row (axis 0) or column (axis 1)
+    size = len(profile) / n
+    out = [0]
+    for k in range(1, n):
+        lo, hi = int((k - 0.3) * size), int((k + 0.3) * size)
+        out.append(lo + int(np.argmin(profile[lo:hi])))
+    return out + [len(profile)]
+
+
+def drop_floor_shadow(img: Image.Image) -> Image.Image:
+    """The model paints a dark magenta floor shadow despite "no shadows"; clear magenta-hued pixels in the
+    bottom strip only, so purple clothing higher up stays."""
+    a = np.asarray(img).copy()
+    r, g, b = (a[..., i].astype(int) for i in range(3))
+    strip = np.zeros(a.shape[:2], bool)
+    strip[int(a.shape[0] * 0.92):] = True
+    magenta = (r > g + 40) & (b > g + 40) & (abs(r - b) < 90)
+    a[strip & magenta, 3] = 0
+    out = Image.fromarray(a, "RGBA")
+    return out.crop(out.getbbox())
+
+
+def slice_sheet(char: str, variant: str):
+    sheet = Image.open(ROOT / f"raw/sheet_{char}-{variant}_seedream_5_0_flash.webp").convert("RGB")
+    ys, xs = cuts(sheet, 6, axis=0), cuts(sheet, 3, axis=1)
+    cells = {}
+    for r, row in enumerate(ROWS):
+        for c in range(3):
+            cell = sheet.crop((xs[c], ys[r], xs[c + 1], ys[r + 1]))
+            cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)  # speed + collapse AI dither
+            cells[f"{row}_{c}"] = drop_floor_shadow(key_background(cell))
+    walk_scale = STAND_H / cells["walk_down_1"].height
+    # The model draws work rows smaller; scale each work row so its tallest frame matches the standing height.
+    row_scale = {row: walk_scale if row.startswith("walk") else
+                 STAND_H / max(cells[f"{row}_{c}"].height for c in range(3)) for row in ROWS}
+    out = ROOT / "out/frames" / char
+    out.mkdir(parents=True, exist_ok=True)
+    warnings = []
+    for name, img in cells.items():
+        scale = row_scale[name.rsplit("_", 1)[0]]
+        frame = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.NEAREST)
+        frame.save(out / f"{name}.png")
+        if frame.height > STAND_H * 1.6 or frame.height < STAND_H * 0.6:
+            warnings.append(f"{name} height {frame.height}")
+    print(char, "ok" if not warnings else "CHECK: " + ", ".join(warnings))
+
+
+if __name__ == "__main__":
+    for arg in sys.argv[1:]:
+        slice_sheet(*arg.split("="))

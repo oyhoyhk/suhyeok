@@ -71,7 +71,7 @@ struct WorldView: View {
                 ZStack(alignment: .topLeading) {
                     mapBackground.frame(width: size.width, height: size.height)
                         .contentShape(Rectangle())
-                        .onTapGesture { selectedId = nil }
+                        .onTapGesture { selectedId = nil; dialogueId = nil }  // clicking the world closes cards and the dialogue
                     TimelineView(.periodic(from: .now, by: 0.1)) { ctx in
                         let t = ctx.date.timeIntervalSinceReferenceDate
                         let positions = walker.step(targets: items.map { ($0.session.id, $0.point) }, now: t)
@@ -81,9 +81,10 @@ struct WorldView: View {
                                 Avatar(session: item.session, character: item.character, station: store.station(for: item.session),
                                        agentName: store.agentName(for: item.session), time: t,
                                        height: size.width * 0.07, selected: item.session.id == selectedId,
-                                       walking: p != item.point)
+                                       walking: p != item.point,
+                                       facing: p != item.point ? (walker.facing[item.session.id] ?? .down) : .down)
                                     .position(x: p.x * size.width, y: p.y * size.height)
-                                    .onTapGesture { selectedId = item.session.id == selectedId ? nil : item.session.id }
+                                    .onTapGesture { dialogueId = nil; selectedId = item.session.id == selectedId ? nil : item.session.id }
                             }
                         }
                         .frame(width: size.width, height: size.height)
@@ -215,8 +216,11 @@ struct WorldView: View {
 
 /// Moves each avatar toward its zone slot at walking speed, frame by frame.
 /// SwiftUI implicit animations stall when the TimelineView rebuilds the tree every tick.
+enum Facing { case down, up, left, right }
+
 final class Walker {
     private var current: [String: CGPoint] = [:]
+    private(set) var facing: [String: Facing] = [:]  // kept after arriving, so agents face where they walked
     private var lastTick: TimeInterval?
     private let speed: CGFloat = 0.12  // map widths per second
 
@@ -230,6 +234,12 @@ final class Walker {
             let dist = sqrt(dx * dx + dy * dy)
             let move = speed * dt
             next[id] = dist <= move ? target : CGPoint(x: p.x + dx / dist * move, y: p.y + dy / dist * move)
+            if dist > move {
+                // Map y grows downward; compare in screen proportions (the map is 16:9).
+                facing[id] = abs(dx) * 16 / 9 > abs(dy) ? (dx < 0 ? .left : .right) : (dy < 0 ? .up : .down)
+            } else if dist == 0, facing[id] == nil {
+                facing[id] = .down
+            }
         }
         current = next
         return next
@@ -245,14 +255,38 @@ struct Avatar: View {
     let height: CGFloat
     let selected: Bool
     var walking = false
+    var facing: Facing = .down
+
+    /// Generated animation frames (art/frames/<id>); characters without them use the single sprite.
+    private var frames: Bool { character.map { Art.image("frames/\($0.id)/walk_down_1") != nil } ?? false }
+
+    /// Current frame name and whether to mirror it (right = mirrored left).
+    private func frame(_ phase: Double) -> (String, Bool) {
+        let cycle = [0, 1, 2, 1]
+        if walking {
+            let f = cycle[Int(time * 8) % 4]
+            switch facing {
+            case .down: return ("walk_down_\(f)", false)
+            case .up: return ("walk_up_\(f)", false)
+            case .left: return ("walk_left_\(f)", false)
+            case .right: return ("walk_left_\(f)", true)
+            }
+        }
+        guard session.activity == .working else { return ("walk_down_1", false) }
+        switch station {
+        case .shell?: return ("hammer_\(cycle[Int(time * 6 + phase) % 4])", false)
+        case .editing?, .replying?, .other?: return ("type_\(cycle[Int(time * 6 + phase) % 4])", false)
+        case .reading?: return ("read_\(cycle[Int(time * 1.5 + phase) % 4])", false)
+        default: return ("walk_down_1", false)
+        }
+    }
 
     var body: some View {
         // Per-session phase so characters don't move in lockstep.
         let phase = Double(abs(session.id.hashValue % 100)) / 15
         VStack(spacing: 2) {
             ZStack(alignment: .topTrailing) {
-                sprite
-                    .frame(height: height)
+                sprite(phase)
                     // Looking around while scouting the web: face left and right in turns.
                     .scaleEffect(x: station == .web && !walking && Int(time / 1.5) % 2 == 1 ? -1 : 1)
                     .offset(y: bob(phase))
@@ -290,7 +324,8 @@ struct Avatar: View {
     }
 
     private func swing(_ phase: Double) -> Double {
-        if walking { return sin(time * 12) * 5 }
+        if walking { return frames ? 0 : sin(time * 12) * 5 }
+        if frames, [.shell, .reading].contains(station) { return 0 }  // drawn into the frames
         switch station {
         case .shell?: return max(0, sin(time * 6 + phase)) * 12 - 3   // hammer strikes on the anvil
         case .reading?: return sin(time * 1.2 + phase) * 3            // nodding along the board
@@ -300,27 +335,35 @@ struct Avatar: View {
     }
 
     private func bob(_ phase: Double) -> CGFloat {
-        if walking { return -CGFloat(abs(sin(time * 12))) * height * 0.08 }
+        if walking { return frames ? 0 : -CGFloat(abs(sin(time * 12))) * height * 0.08 }
         switch session.activity {
         case .working:
             switch station {
             case .shell?, .reading?, .web?: return 0
             case .delegating?: return -CGFloat(abs(sin(time * 5 + phase))) * height * 0.05
             case .thinking?: return CGFloat(sin(time * 2 + phase)) * height * 0.015
-            default: return -CGFloat(abs(sin(time * 9 + phase))) * height * 0.05  // typing at the desk
+            default: return frames ? 0 : -CGFloat(abs(sin(time * 9 + phase))) * height * 0.05  // typing at the desk
             }
         case .waiting: return CGFloat(sin(time * 3 + phase)) * height * 0.02
         case .resting: return CGFloat(sin(time * 1.2 + phase)) * height * 0.012
         }
     }
 
-    @ViewBuilder private var sprite: some View {
-        if let c = character, let img = Art.image("sprites/\(c.id)") {
+    @ViewBuilder private func sprite(_ phase: Double) -> some View {
+        let (name, mirrored) = frame(phase)
+        if let c = character, frames, let img = Art.image("frames/\(c.id)/\(name)") {
+            // Frames share one scale per character: a 128px-tall standing frame maps to `height`.
             Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                .frame(height: height * img.size.height / 128)
+                .scaleEffect(x: mirrored ? -1 : 1)
+        } else if let c = character, let img = Art.image("sprites/\(c.id)") {
+            Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                .frame(height: height)
         } else {
             Circle().fill(session.activity.color)
                 .overlay(Text(String(agentName.prefix(1))).font(.headline).foregroundStyle(.white))
                 .aspectRatio(1, contentMode: .fit)
+                .frame(height: height)
         }
     }
 }

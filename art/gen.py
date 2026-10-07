@@ -41,9 +41,41 @@ LOGOTEXT = ("Ornate 16-bit pixel art fantasy RPG title logo that reads exactly \
             "pennant flags behind it, small white sparkles, deep navy blue background. The only text in the image is "
             "SUHYEOK, spelled S-U-H-Y-E-O-K, seven letters.")
 
+SHEET = ("16-bit pixel art RPG character sprite sheet of EXACTLY the same character as the reference image ({visual}). "
+         "Same outfit, colors and proportions in every cell. A strict grid of 3 columns and 6 rows of equal cells, "
+         "one full-body chibi pose per cell, all the same size, on a plain flat bright magenta background (#FF00FF), "
+         "no grid lines, no shadows, no text. "
+         "Row 1: walking toward the viewer (front view), 3 frames: left foot forward, standing, right foot forward. "
+         "Row 2: walking to the left (side view facing left), 3 frames: left foot forward, standing, right foot forward. "
+         "Row 3: walking away from the viewer (back view), 3 frames: left foot forward, standing, right foot forward. "
+         "Row 4: front view swinging a blacksmith hammer down onto a small anvil, 3 frames: raised, mid swing, striking. "
+         "Row 5: front view sitting at a small wooden desk typing on a keyboard, 3 frames with hands at different keys. "
+         "Row 6: front view reading an open book held in both hands, 3 frames: reading, turning a page, reading. "
+         "Correct anatomy, exactly two arms and two legs.")
+
+def upload(path):
+    """Upload once and remember the media id (logs/uploads.json)."""
+    cache_path = ROOT / "logs/uploads.json"
+    cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
+    if path.name in cache:
+        return cache[path.name]
+    out = subprocess.run(["npx", "-y", "-p", "@higgsfield/cli", "higgsfield", "upload", "create", str(path), "--json"],
+                         capture_output=True, text=True).stdout
+    m = re.search(r'"id"\s*:\s*"([^"]+)"', out)
+    if not m:
+        raise SystemExit("upload failed: " + out[-300:])
+    cache[path.name] = m.group(1)
+    cache_path.write_text(json.dumps(cache, indent=1))
+    return m.group(1)
+
 def run(kind, model, cid):
     if kind == "map":
         prompt, aspect, out = MAP, "16:9", f"map_{model}"
+    elif kind == "sheet":
+        # cid = "<character>-<variant>"; the character's front sprite is the identity reference.
+        char = cid.rsplit("-", 1)[0]
+        prompt, aspect = SHEET.format(visual=ROSTER[char]["visual"]), "9:16"
+        out = f"sheet_{cid}_{model}"
     elif kind in ("hero", "icon", "logoframe", "logotext"):
         prompt, aspect = {"hero": (HERO, "16:9"), "icon": (ICON, "1:1"),
                           "logoframe": (LOGOFRAME, "16:9"), "logotext": (LOGOTEXT, "16:9")}[kind]
@@ -57,6 +89,9 @@ def run(kind, model, cid):
            "--wait", "--wait-timeout", "30m", "--json"]
     if model != "z_image":  # z_image rejects unknown params
         cmd[8:8] = ["--resolution", "2k"]
+    if kind == "sheet":
+        ref = ROOT / f"raw/sprite_{cid.rsplit('-', 1)[0]}_seedream_5_0_flash.webp"
+        cmd[8:8] = ["--image-references", upload(ref)]
     p = subprocess.run(cmd, capture_output=True, text=True)
     text = p.stdout + p.stderr
     (ROOT / f"logs/{out}.json").write_text(text)

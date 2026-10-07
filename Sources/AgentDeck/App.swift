@@ -8,6 +8,10 @@ struct AgentDeckApp: App {
     init() {
         // `AgentDeck --snapshot out.png [selectedSessionId]` renders the world offscreen and exits (for checks without touching the screen).
         let args = CommandLine.arguments
+        // `AgentDeck --snapshot-poses <characterId> out.png` renders one character's walk/work frames.
+        if let i = args.firstIndex(of: "--snapshot-poses"), i + 2 < args.count {
+            Snapshot.poses(character: args[i + 1], path: args[i + 2])
+        }
         // `AgentDeck --snapshot-hosted <name> out.png` renders the embedded terminal offscreen.
         if let i = args.firstIndex(of: "--snapshot-hosted"), i + 2 < args.count {
             Snapshot.hosted(name: args[i + 1], path: args[i + 2])
@@ -311,6 +315,39 @@ enum Snapshot {
         if let img = renderer.nsImage, let tiff = img.tiffRepresentation,
            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             try? png.write(to: URL(fileURLWithPath: path))
+        }
+        exit(0)
+    }
+
+    static func poses(character id: String, path: String) {
+        guard let c = Art.roster.first(where: { $0.id == id }) else { print("unknown character"); exit(1) }
+        func session(_ status: SessionStatus) -> AgentSession {
+            AgentSession(id: "pose", agent: .claude, name: "pose", cwd: "/tmp", status: status, startedAt: Date(),
+                         updatedAt: Date(), lastUser: nil, lastAssistant: nil, estimated: false)
+        }
+        let cases: [(String, Bool, Facing, AgentAction.Kind?, Double)] = [
+            ("↓ 걷기", true, .down, nil, 0.0), ("← 걷기", true, .left, nil, 0.13), ("→ 걷기", true, .right, nil, 0.26),
+            ("↑ 걷기", true, .up, nil, 0.39), ("망치질", false, .down, .shell, 0.2), ("타이핑", false, .down, .editing, 0.2),
+            ("읽기", false, .down, .reading, 0.9),
+        ]
+        let view = HStack(alignment: .bottom, spacing: 24) {
+            ForEach(Array(cases.enumerated()), id: \.offset) { _, k in
+                VStack {
+                    Avatar(session: session(.busy), character: c, station: k.3, agentName: k.0, time: k.4,
+                           height: 110, selected: false, walking: k.1, facing: k.2)
+                }
+            }
+        }
+        .padding(30).background(Color(red: 0.45, green: 0.3, blue: 0.18))
+        let host = NSHostingView(rootView: view)
+        host.frame.size = host.fittingSize
+        let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -5000, y: -5000), size: host.fittingSize),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         }
         exit(0)
     }
