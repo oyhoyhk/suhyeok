@@ -53,6 +53,109 @@ def drop_floor_shadow(img: Image.Image) -> Image.Image:
     return out.crop(out.getbbox())
 
 
+def isolate(img: Image.Image) -> Image.Image:
+    """Strips pack frames tightly, so a cut can carry a slice of the neighbouring frame (a cape edge, a sword tip).
+    Keep the biggest blob (the character) and any blob that does not touch the left or right edge of the cell."""
+    a = np.asarray(img).copy()
+    mask = a[..., 3] > 0
+    h, w = mask.shape
+    label = np.zeros((h, w), np.int32)
+    sizes, touches = [0], [False]
+    n = 0
+    for y0 in range(h):
+        for x0 in range(w):
+            if not mask[y0, x0] or label[y0, x0]:
+                continue
+            n += 1
+            label[y0, x0] = n
+            stack, size, edge = [(y0, x0)], 0, False
+            while stack:
+                y, x = stack.pop()
+                size += 1
+                edge = edge or x == 0 or x == w - 1
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and not label[ny, nx]:
+                            label[ny, nx] = n
+                            stack.append((ny, nx))
+            sizes.append(size)
+            touches.append(edge)
+    if n <= 1:
+        return img
+    main = int(np.argmax(sizes))
+    keep = np.zeros(n + 1, bool)
+    for i in range(1, n + 1):
+        keep[i] = i == main or (not touches[i] and sizes[i] >= 4)
+    a[..., 3] = np.where(keep[label], a[..., 3], 0)
+    out = Image.fromarray(a, "RGBA")
+    return out.crop(out.getbbox())
+
+
+def components(mask):
+    """Connected blobs (8-neighbour) of a boolean mask -> (label image, list of (size, x0, x1))."""
+    h, w = mask.shape
+    label = np.zeros((h, w), np.int32)
+    info = [None]
+    n = 0
+    for y0 in range(h):
+        for x0 in np.nonzero(mask[y0] & (label[y0] == 0))[0]:
+            if label[y0, x0]:
+                continue
+            n += 1
+            label[y0, x0] = n
+            stack, size, lo, hi = [(y0, x0)], 0, x0, x0
+            while stack:
+                y, x = stack.pop()
+                size += 1
+                lo, hi = min(lo, x), max(hi, x)
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and not label[ny, nx]:
+                            label[ny, nx] = n
+                            stack.append((ny, nx))
+            info.append((size, lo, hi))
+    return label, info
+
+
+def split_strip(strip: Image.Image, n: int = 6):
+    """Split a strip into n frames by blobs instead of straight cuts, so a hammer or cape that reaches into the
+    neighbour's column stays with its own figure. Falls back to column cuts when figures touch each other."""
+    small = strip.resize((strip.width // 3, strip.height // 3), Image.LANCZOS)
+    keyed = drop_floor_shadow_full(key_background(small, crop=False))
+    a = np.asarray(keyed)
+    label, info = components(a[..., 3] > 0)
+    bodies = sorted(range(1, len(info)), key=lambda i: -info[i][0])[:n]
+    if len(bodies) < n or info[bodies[-1]][0] < info[bodies[0]][0] * 0.35:
+        return None  # merged figures: let the caller cut by columns
+    bodies.sort(key=lambda i: info[i][1])
+    centres = [(info[b][1] + info[b][2]) / 2 for b in bodies]
+    owner = np.zeros(len(info), np.int32)
+    for i in range(1, len(info)):
+        if info[i][0] < 3:
+            owner[i] = -1  # specks
+            continue
+        mid = (info[i][1] + info[i][2]) / 2
+        owner[i] = min(range(n), key=lambda k: abs(centres[k] - mid))
+    frames = []
+    for k in range(n):
+        m = (owner[label] == k) & (label > 0)
+        f = a.copy()
+        f[..., 3] = np.where(m, a[..., 3], 0)
+        img = Image.fromarray(f, "RGBA")
+        frames.append(img.crop(img.getbbox()))
+    return frames
+
+
+def drop_floor_shadow_full(img):
+    a = np.asarray(img).copy()
+    r, g, b = (a[..., i].astype(int) for i in range(3))
+    magenta = (r > g + 40) & (b > g + 40) & (abs(r - b) < 90)
+    a[magenta, 3] = 0
+    return Image.fromarray(a, "RGBA")
+
+
 def fix_side_row(cells: dict, facing: str):
     """Make all three walk_left frames face left; with no side view at all, walk sideways facing front."""
     frames = [cells[f"walk_left_{c}"] for c in range(3)]
@@ -159,12 +262,14 @@ def slice_strips(char: str, variant: str = "a"):
     stand = Image.open(out / "walk_down_1.png") if (out / "walk_down_1.png").exists() else None
     for view, src in srcs.items():
         strip = Image.open(src).convert("RGB")
-        xs = cuts(strip, 6, axis=1)
-        cells = []
-        for c in range(6):
-            cell = strip.crop((xs[c], 0, xs[c + 1], strip.height))
-            cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
-            cells.append(drop_floor_shadow(key_background(cell)))
+        cells = split_strip(strip)
+        if cells is None:
+            xs = cuts(strip, 6, axis=1)
+            cells = []
+            for c in range(6):
+                cell = strip.crop((xs[c], 0, xs[c + 1], strip.height))
+                cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
+                cells.append(isolate(drop_floor_shadow(key_background(cell))))
         target = stand.height if stand else STAND_H
         scale = target / max(f.height for f in cells)
         frames = [f.resize((max(1, round(f.width * scale)), max(1, round(f.height * scale))), Image.NEAREST) for f in cells]
@@ -183,12 +288,14 @@ def slice_work_strips(char: str, variant: str = "a"):
         if not src.exists():
             continue
         strip = Image.open(src).convert("RGB")
-        xs = cuts(strip, 6, axis=1)
-        cells = []
-        for c in range(6):
-            cell = strip.crop((xs[c], 0, xs[c + 1], strip.height))
-            cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
-            cells.append(drop_floor_shadow(key_background(cell)))
+        cells = split_strip(strip)
+        if cells is None:
+            xs = cuts(strip, 6, axis=1)
+            cells = []
+            for c in range(6):
+                cell = strip.crop((xs[c], 0, xs[c + 1], strip.height))
+                cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
+                cells.append(isolate(drop_floor_shadow(key_background(cell))))
         # Raised hammers stick out above the head: scale smithing by the shortest frame (hammer down).
         body = min(f.height for f in cells) if act == "smith" else max(f.height for f in cells)
         scale = stand.height / body

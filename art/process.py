@@ -12,7 +12,7 @@ SPRITE_MODEL, PORTRAIT_MODEL, MAP_MODEL = "seedream_5_0_flash", "seedream_5_0_fl
 SPRITE_H = 128  # display uses nearest-neighbor scaling, so keep sprites small and crisp
 
 
-def key_background(img: Image.Image, tol: float = 70) -> Image.Image:
+def key_background(img: Image.Image, tol: float = 70, crop: bool = True) -> Image.Image:
     """Flood-fill from the borders over pixels close to the border color, so magenta-ish
     clothing inside the character is never keyed out."""
     rgb = np.asarray(img.convert("RGB")).astype(np.int16)
@@ -40,7 +40,7 @@ def key_background(img: Image.Image, tol: float = 70) -> Image.Image:
     mask |= edge & (dist < tol * 1.6)
     rgba = np.dstack([rgb.astype(np.uint8), np.where(mask, 0, 255).astype(np.uint8)])
     out = Image.fromarray(rgba, "RGBA")
-    return out.crop(out.getbbox())
+    return out.crop(out.getbbox()) if crop else out
 
 
 def main():
