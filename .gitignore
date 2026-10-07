@@ -9,3 +9,4 @@ art/logs/
 art/__pycache__/
 README.preview.html
 art/raw_rejected/
+.DS_Store

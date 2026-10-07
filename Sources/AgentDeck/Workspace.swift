@@ -197,7 +197,15 @@ struct SessionRow: View {
             Circle().fill(session?.activity.color ?? .secondary).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    if let s = session { Text(store.agentName(for: s)).bold() }
+                    if let s = session {
+                        // Same pill as the name tag on the map: colored by the agent's working folder.
+                        Text(store.agentName(for: s))
+                            .font(.callout.bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(projectColor(s.cwd).opacity(0.85), in: Capsule())
+                            .fixedSize()
+                    }
                     Text(title).lineLimit(1)
                 }
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)

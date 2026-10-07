@@ -60,6 +60,10 @@ struct AgentDeckApp: App {
                 }
             }
         }
+        // `AgentDeck --snapshot-sidebar out.png`: the sidebar's session rows, offscreen.
+        if let i = args.firstIndex(of: "--snapshot-sidebar"), i + 1 < args.count {
+            Snapshot.sidebar(path: args[i + 1])
+        }
         // `AgentDeck --snapshot-world out.png [seconds]` renders the live world (walking included) offscreen.
         if let i = args.firstIndex(of: "--snapshot-world"), i + 1 < args.count {
             Snapshot.world(path: args[i + 1], wait: args.dropFirst(i + 2).first.flatMap(Double.init) ?? 3)
@@ -112,6 +116,23 @@ struct AgentDeckApp: App {
             if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                 host.cacheDisplay(in: host.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
+            }
+            exit(0)
+        }
+        // `AgentDeck --serve-mobile <seconds>`: run the phone server on 127.0.0.1 (no tunnel) and print the code.
+        if let i = args.firstIndex(of: "--serve-mobile"), i + 1 < args.count, let secs = Double(args[i + 1]) {
+            let store = Snapshot.loadedStorePublic()
+            MobileServer.shared.start(store: store)
+            print("code", MobileServer.shared.pairingCode)
+            fflush(stdout)
+            let end = Date().addingTimeInterval(secs)
+            while Date() < end {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+                if FileManager.default.fileExists(atPath: "/tmp/suhyeok-newcode") {
+                    try? FileManager.default.removeItem(atPath: "/tmp/suhyeok-newcode")
+                    MobileServer.shared.newCode(); print("code", MobileServer.shared.pairingCode); fflush(stdout)
+                }
+                store.refresh()
             }
             exit(0)
         }
@@ -208,6 +229,9 @@ final class SessionStore: ObservableObject {
 
     init() {
         refresh()
+        if UserDefaults.standard.bool(forKey: "mobileEnabled"), !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }) {
+            Task { @MainActor in MobileServer.shared.start(store: self); MobileTunnel.shared.start() }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -240,6 +264,21 @@ final class SessionStore: ObservableObject {
         let place = ground(for: s).map { $0.label } ?? "대기소"
         let run = p.run().map { String(format: " · 연속 %.1f시간", $0 / 3600) } ?? ""
         return "\(place)\(run) · 결정 \(p.crystals)"
+    }
+
+    /// Where every agent stands: its hunting ground's attack spots, or the camp. Shared by the map and the phone.
+    func placements() -> [(session: AgentSession, point: CGPoint, tier: Hunt.Tier?)] {
+        let byStart: (AgentSession, AgentSession) -> Bool = { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
+        var groups: [Hunt.Tier?: [AgentSession]] = [:]
+        for s in sessions { groups[ground(for: s), default: []].append(s) }
+        var out: [(session: AgentSession, point: CGPoint, tier: Hunt.Tier?)] = []
+        for (tier, members) in groups {
+            let spots = tier.map(World.attackSpots) ?? World.campSpots
+            for (i, s) in members.sorted(by: byStart).enumerated() {
+                out.append((s, Pathfinder.shared.nearest(World.spot(spots, i)), tier))
+            }
+        }
+        return out
     }
 
     /// Newest thing the agent did: its last log entry, else the last status change.
@@ -582,6 +621,29 @@ enum Snapshot {
         if let img = renderer.nsImage, let tiff = img.tiffRepresentation,
            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             try? png.write(to: URL(fileURLWithPath: path))
+        }
+        exit(0)
+    }
+
+    static func sidebar(path: String) {
+        let store = loadedStore()
+        let until = Date().addingTimeInterval(40)
+        while store.sessions.isEmpty, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+        let view = VStack(alignment: .leading, spacing: 10) {
+            ForEach(store.sessions.prefix(12)) { s in
+                SessionRow(title: s.name, subtitle: s.agent.rawValue + " · " + s.project, session: s, store: store)
+            }
+        }
+        .padding(14).frame(width: 300, alignment: .leading).background(Color(nsColor: .windowBackgroundColor))
+        let host = NSHostingView(rootView: view)
+        host.frame.size = host.fittingSize
+        let w = NSWindow(contentRect: NSRect(origin: CGPoint(x: -5000, y: -5000), size: host.fittingSize),
+                         styleMask: [.borderless], backing: .buffered, defer: false)
+        w.contentView = host
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         }
         exit(0)
     }

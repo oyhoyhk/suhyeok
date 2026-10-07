@@ -1,3 +1,4 @@
+import CoreImage
 import SwiftUI
 
 /// How a session opens by default; set in Settings (⌘,).
@@ -33,6 +34,8 @@ struct SettingsView: View {
             }
             Text("대화는 그대로 이어서 열림. 작업 중이거나 입력칸에 보내지 않은 글이 있는 세션은 건너뜀.")
                 .font(.caption).foregroundStyle(.secondary)
+            Divider()
+            MobileSettings()
             Divider()
             Picker("세션 여는 방식", selection: $openMode) {
                 ForEach(OpenMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
@@ -456,5 +459,58 @@ struct DialogueView: View {
 
     private func markdown(_ s: String) -> AttributedString {
         (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+    }
+}
+
+
+/// Settings section: phone access through a Cloudflare quick tunnel, guarded by a pairing code.
+struct MobileSettings: View {
+    @EnvironmentObject private var store: SessionStore
+    @ObservedObject private var server = MobileServer.shared
+    @ObservedObject private var tunnel = MobileTunnel.shared
+    @AppStorage("mobileEnabled") private var enabled = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("모바일 접속 (외부 인터넷)", isOn: $enabled)
+                .onChange(of: enabled) { _, on in
+                    if on { server.start(store: store); tunnel.start() } else { tunnel.stop(); server.stop() }
+                }
+            Text("폰 브라우저로 지도·대화·지시 보내기. Cloudflare 임시 주소로 열리며, 처음 연결할 때 아래 6자리 코드가 필요함. 주소는 앱을 다시 켜면 바뀜.")
+                .font(.caption).foregroundStyle(.secondary)
+            if enabled {
+                if let e = tunnel.error { Text(e).font(.caption).foregroundStyle(.orange) }
+                HStack(alignment: .top, spacing: 14) {
+                    if let url = tunnel.url, let qr = Self.qr(url) {
+                        Image(nsImage: qr).interpolation(.none).resizable().frame(width: 120, height: 120)
+                    } else {
+                        ProgressView().frame(width: 120, height: 120)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(tunnel.url ?? "주소 만드는 중…").font(.caption.monospaced()).textSelection(.enabled)
+                        HStack {
+                            Text("연결 코드").font(.caption).foregroundStyle(.secondary)
+                            Text(server.pairingCode).font(.title3.monospacedDigit().bold()).textSelection(.enabled)
+                            Button("새 코드") { server.newCode() }.controlSize(.small)
+                        }
+                        Text("코드는 10분 동안 한 번만 쓸 수 있음 · 연결된 기기 \(server.pairedDevices)대")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Button("연결된 기기 모두 끊기") { server.forgetDevices() }.controlSize(.small)
+                            .disabled(server.pairedDevices == 0)
+                    }
+                }
+            }
+        }
+    }
+
+    static func qr(_ text: String) -> NSImage? {
+        guard let f = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        f.setValue(Data(text.utf8), forKey: "inputMessage")
+        f.setValue("M", forKey: "inputCorrectionLevel")
+        guard let out = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)) else { return nil }
+        let rep = NSCIImageRep(ciImage: out)
+        let img = NSImage(size: rep.size)
+        img.addRepresentation(rep)
+        return img
     }
 }

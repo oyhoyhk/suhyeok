@@ -436,18 +436,9 @@ struct WorldView: View {
 
     /// Hunting grounds by continuous activity; agents that have rested an hour sit at the camp fire.
     private func placed() -> [Placed] {
-        var out: [Placed] = demoWalkers()
-        let byStart: (AgentSession, AgentSession) -> Bool = { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
-        var groups: [Hunt.Tier?: [AgentSession]] = [:]
-        for s in store.sessions { groups[store.ground(for: s), default: []].append(s) }
-        for (tier, members) in groups {
-            let spots = tier.map(World.attackSpots) ?? World.campSpots
-            for (i, s) in members.sorted(by: byStart).enumerated() {
-                out.append(Placed(session: s, character: store.character(for: s),
-                                  point: Pathfinder.shared.nearest(World.spot(spots, i)), tier: tier))
-            }
+        demoWalkers() + store.placements().map {
+            Placed(session: $0.session, character: store.character(for: $0.session), point: $0.point, tier: $0.tier)
         }
-        return out
     }
 }
 
