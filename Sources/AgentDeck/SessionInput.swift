@@ -129,6 +129,10 @@ struct TerminalMenu: Equatable {
     struct Option: Equatable { let label: String; let detail: String? }
     let options: [Option]
     let selected: Int
+    /// What is being asked, read from the screen above the options: the question line
+    /// ("Do you want to proceed?") and the context block (tool, command, file) under the last border.
+    var question: String? = nil
+    var context: String? = nil
 
     /// Finds the menu just above a footer hint like "Enter to confirm · Esc to cancel".
     /// The highlighted option starts with "❯" at some column; the others start two columns further in,
@@ -168,7 +172,20 @@ struct TerminalMenu: Equatable {
                 options[options.count - 1] = Option(label: last.label, detail: [last.detail, d].compactMap { $0 }.joined(separator: " "))
             }
         }
-        return options.count >= 2 ? TerminalMenu(options: options, selected: selected) : nil
+        guard options.count >= 2 else { return nil }
+        // Context: lines between the box's top border (───) and the first option, minus tips and separators.
+        let top = lines[..<first].lastIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix("──") } ?? max(0, first - 30)
+        var ctx = lines[(top + 1)..<first].map { l -> String in
+            var t = l.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("│") { t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces) }
+            return t
+        }.filter { t in
+            !t.isEmpty && !t.hasPrefix("╌") && !t.hasPrefix("──") && !t.hasPrefix("Tip:") && !t.hasPrefix("⎿  Tip")
+        }
+        var question: String?
+        if let q = ctx.last, q.hasSuffix("?") { question = q; ctx.removeLast() }
+        return TerminalMenu(options: options, selected: selected, question: question,
+                            context: ctx.isEmpty ? nil : ctx.suffix(14).joined(separator: "\n"))
     }
 
     private static func indentOf(_ l: String) -> Int? {

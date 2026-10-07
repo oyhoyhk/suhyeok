@@ -4,6 +4,7 @@ import SwiftUI
 struct HoverCard: View {
     let session: AgentSession
     let agentName: String
+    var huntLine: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -14,6 +15,7 @@ struct HoverCard: View {
             }
             Text(session.name).font(.callout.weight(.semibold)).lineLimit(2)
             Text(session.project).font(.caption.monospaced()).foregroundStyle(projectColor(session.cwd))
+            if let huntLine { Label(huntLine, systemImage: "diamond.fill").font(.caption).foregroundStyle(.cyan) }
             if session.activity == .working, let a = session.action {
                 Label(a.detail, systemImage: a.symbol).font(.caption.weight(.semibold)).lineLimit(1)
             }
@@ -33,6 +35,7 @@ struct HoverCard: View {
 struct StatusCard: View {
     let session: AgentSession
     let agentName: String
+    var huntLine: String? = nil
     let character: Character?
     let close: () -> Void
     let openTerminal: () -> Void
@@ -69,6 +72,7 @@ struct StatusCard: View {
             }
             Text(session.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                 .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            if let huntLine { Label(huntLine, systemImage: "diamond.fill").font(.caption.weight(.semibold)).foregroundStyle(.cyan) }
             if let u = session.lastUser { line("person.fill", u, 2) }
             if let a = session.lastAssistant { line("sparkle", a, 4) }
             Button {

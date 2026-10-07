@@ -306,8 +306,51 @@ def slice_work_strips(char: str, variant: str = "a"):
     return done
 
 
+def slice_strip_to(src: Path, out_dir: Path, prefix: str, height: int, by: str = "max"):
+    """Generic 1x6 strip -> <prefix>_{0..5}.png scaled so the tallest (or shortest) frame is `height` px."""
+    strip = Image.open(src).convert("RGB")
+    cells = split_strip(strip)
+    if cells is None:
+        xs = cuts(strip, 6, axis=1)
+        cells = []
+        for c in range(6):
+            cell = strip.crop((xs[c], 0, xs[c + 1], strip.height))
+            cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
+            cells.append(isolate(drop_floor_shadow(key_background(cell))))
+    ref = max(f.height for f in cells) if by == "max" else min(f.height for f in cells)
+    scale = height / ref
+    frames = [f.resize((max(1, round(f.width * scale)), max(1, round(f.height * scale))), Image.NEAREST) for f in cells]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for c, f in enumerate(align_row(frames)):
+        f.quantize(256, method=Image.Quantize.FASTOCTREE).save(out_dir / f"{prefix}_{c}.png", optimize=True)
+
+
+def slice_attacks():
+    import json
+    for c in json.loads((ROOT / "roster.json").read_text()):
+        src = ROOT / f"raw/attack_{c['id']}-a_seedream_5_0_flash.webp"
+        if src.exists():
+            out = ROOT / "out/frames" / c["id"]
+            stand = Image.open(out / "walk_down_2.png").height
+            # Weapons stick out sideways, not up: match by the shortest frame so the body keeps walking size.
+            slice_strip_to(src, out, "attack", stand, by="min")
+            print(c["id"], "ok")
+
+
+def slice_bosses():
+    for b in ("low", "mid", "high"):
+        src = ROOT / f"raw/boss_{b}-a_seedream_5_0_flash.webp"
+        if src.exists():
+            slice_strip_to(src, ROOT / "out/bosses", b, 256)
+            print(b, "ok")
+
+
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["workstrips"]:
+    if sys.argv[1:2] == ["attacks"]:
+        slice_attacks()
+    elif sys.argv[1:2] == ["bosses"]:
+        slice_bosses()
+    elif sys.argv[1:2] == ["workstrips"]:
         import json
         for c in json.loads((ROOT / "roster.json").read_text()):
             if slice_work_strips(c["id"]): print(c["id"], "ok")
@@ -322,6 +365,7 @@ if __name__ == "__main__":
     else:
         for arg in sys.argv[1:]:
             slice_sheet(*arg.split("="))
+
 
 
 

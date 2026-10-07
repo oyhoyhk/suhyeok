@@ -66,12 +66,12 @@ def main():
             img = Image.open(f).convert("RGB")
             img.thumbnail((768, 1024), Image.LANCZOS)
             img.save(OUT / f"portraits/{cid}.jpg", quality=86)  # photos-like art: jpg is ~10x smaller than png
-    # The town map (one 4K image): full size for zooming in, 2K for the minimap.
-    town = RAW / "town_b_gpt_image_2.webp"
-    if town.exists():
-        img = Image.open(town).convert("RGB")
-        img.save(OUT / "town_4k.jpg", quality=88)
-        img.resize((2048, 1152), Image.LANCZOS).save(OUT / "town.jpg", quality=90)
+    # The field map (one 4K image): full size for zooming in, 2K for the minimap.
+    field = RAW / "town2_b_gpt_image_2.webp"
+    if field.exists():
+        img = Image.open(field).convert("RGB")
+        img.save(OUT / "field_4k.jpg", quality=88)
+        img.resize((2048, 1152), Image.LANCZOS).save(OUT / "field.jpg", quality=90)
     print(sorted(str(p.relative_to(OUT)) for p in OUT.rglob("*.png")))
 
 

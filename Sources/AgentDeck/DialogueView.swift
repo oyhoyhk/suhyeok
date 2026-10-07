@@ -177,7 +177,7 @@ struct DialogueView: View {
         case .agent:
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.agentName(for: s)).font(.caption.bold()).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
-                Text(markdown(item.text)).textSelection(.enabled)
+                MarkdownView(text: item.text).textSelection(.enabled)
                     .padding(10)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
             }
@@ -187,6 +187,16 @@ struct DialogueView: View {
         case .result:
             EmptyView()  // outputs stay in the terminal view; the chat shows only what was done
         }
+    }
+
+    /// Common Claude Code prompts in Korean; anything else is shown as written.
+    static func translate(_ q: String) -> String {
+        let known = ["Do you want to proceed?": "이대로 진행할까요?",
+                     "Do you want to make this edit": "이 파일을 수정할까요?",
+                     "Do you want to create": "이 파일을 만들까요?",
+                     "Do you want to allow": "허용할까요?"]
+        for (en, ko) in known where q.hasPrefix(en) { return ko + " — " + q }
+        return q
     }
 
     struct Pending: Identifiable, Equatable {
@@ -258,8 +268,15 @@ struct DialogueView: View {
     /// The agent is asking to pick one option (permission prompt, question): clickable choices.
     private func menuCard(_ m: TerminalMenu, _ s: AgentSession) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("선택해 주세요", systemImage: "list.bullet.circle.fill").font(.caption.bold())
+            Label(m.question.map(Self.translate) ?? "선택해 주세요", systemImage: "list.bullet.circle.fill").font(.callout.bold())
                 .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
+            if let c = m.context {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(c).font(.system(size: 11.5, design: .monospaced)).textSelection(.enabled)
+                        .fixedSize().padding(8)
+                }
+                .background(Color.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+            }
             ForEach(Array(m.options.enumerated()), id: \.offset) { i, o in
                 Button {
                     menu = nil

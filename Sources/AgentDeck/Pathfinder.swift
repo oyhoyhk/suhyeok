@@ -11,6 +11,8 @@ final class Pathfinder {
     let corridors: [CGRect]
     private let walkable: [Bool]
     private let namedSpots: [String: [CGPoint]]
+    /// Boss footprints (world units) keyed "low" / "mid" / "high".
+    let bosses: [String: CGRect]
 
     /// Standing spots picked by art/walkmap.py (world units), in fill order.
     func spots(_ name: String) -> [CGPoint] { namedSpots[name] ?? [] }
@@ -19,6 +21,8 @@ final class Pathfinder {
         struct File: Decodable {
             let res: Int; let cols: Int; let rows: Int; let corridors: [[Double]]; let cells: [String]
             let spots: [String: [[Double]]]?
+            struct Boss: Decodable { let center: [Double]; let half: [Double] }
+            let bosses: [String: Boss]?
         }
         if let url = Art.dir?.appendingPathComponent("walkmap.json"),
            let data = try? Data(contentsOf: url),
@@ -27,8 +31,12 @@ final class Pathfinder {
             corridors = f.corridors.map { CGRect(x: $0[0], y: $0[2], width: $0[1] - $0[0], height: $0[3] - $0[2]) }
             walkable = f.cells.flatMap { $0.map { $0 == "." } }
             namedSpots = (f.spots ?? [:]).mapValues { $0.map { CGPoint(x: $0[0], y: $0[1]) } }
+            bosses = (f.bosses ?? [:]).mapValues {
+                CGRect(x: $0.center[0] - $0.half[0], y: $0.center[1] - $0.half[1], width: 2 * $0.half[0], height: 2 * $0.half[1])
+            }
         } else {
             namedSpots = [:]
+            bosses = [:]
             // No grid shipped: everything is walkable and agents walk straight.
             res = 1; cols = 0; rows = 0; corridors = []; walkable = []
         }
@@ -71,7 +79,7 @@ final class Pathfinder {
     func route(from a: CGPoint, to b: CGPoint) -> [CGPoint] {
         guard enabled else { return [b] }
         let start = cell(nearest(a)), goal = cell(nearest(b))
-        if start == goal || clear(a, b) { return [b] }
+        if start == goal { return [b] }
         let n = cols * rows
         var g = [Float](repeating: .infinity, count: n)
         var from = [Int32](repeating: -1, count: n)
@@ -79,8 +87,8 @@ final class Pathfinder {
         let si = start.1 * cols + start.0, gi = goal.1 * cols + goal.0
         g[si] = 0
         open.push(si, h(start, goal))
-        let steps: [(Int, Int, Float)] = [(1, 0, 1), (-1, 0, 1), (0, 1, 1), (0, -1, 1),
-                                          (1, 1, 1.414), (1, -1, 1.414), (-1, 1, 1.414), (-1, -1, 1.414)]
+        // Four directions only, like classic Korean MMORPGs: agents walk along rows and columns.
+        let steps: [(Int, Int, Float)] = [(1, 0, 1), (-1, 0, 1), (0, 1, 1), (0, -1, 1)]
         var found = false
         while let cur = open.pop() {
             if cur == gi { found = true; break }
@@ -102,17 +110,22 @@ final class Pathfinder {
         var i = gi
         while i != si { cellsPath.append(centre(i % cols, i / cols)); i = Int(from[i]) }
         cellsPath.reverse()
-        // String-pull: keep only the turns that are needed to stay on walkable cells.
+        // Keep only the corners: straight runs along a row or column collapse to their end points.
+        let start0 = centre(start.0, start.1)
         var out: [CGPoint] = []
-        var anchor = a
-        var k = 0
-        while k < cellsPath.count {
-            var far = k
-            while far + 1 < cellsPath.count && clear(anchor, cellsPath[far + 1]) { far += 1 }
-            out.append(cellsPath[far]); anchor = cellsPath[far]; k = far + 1
+        var prev = start0
+        for (i, p) in cellsPath.enumerated() {
+            let next = i + 1 < cellsPath.count ? cellsPath[i + 1] : nil
+            let turning = next.map { n in (abs(p.x - prev.x) > 1e-6) != (abs(n.x - p.x) > 1e-6) } ?? true
+            if turning { out.append(p) }
+            prev = p
         }
-        if let last = out.last, clear(last, b) { out[out.count - 1] = b } else { out.append(b) }
-        return out
+        // Step onto the first cell centre, then follow the corners; the final hop is axis-aligned too.
+        var path = [start0] + out
+        let end = path.last ?? start0
+        if abs(b.x - end.x) > 1e-6 && abs(b.y - end.y) > 1e-6 { path.append(CGPoint(x: b.x, y: end.y)) }
+        path.append(b)
+        return path
     }
 
     private func h(_ a: (Int, Int), _ b: (Int, Int)) -> Float {

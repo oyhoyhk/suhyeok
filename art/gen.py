@@ -123,6 +123,36 @@ ACTIONS = {
     "study": "the character standing, seen from the front, reading an open book held in both hands: reading, eyes moving, "
              "turning a page with one hand, page flipping over, reading again, small nod",
 }
+ATTACK = ("16-bit pixel art RPG character attack animation strip of EXACTLY the same character as the reference image "
+          "({visual}). ONE single horizontal row of 6 frames side by side, equal spacing, every frame the same size on the same "
+          "baseline, plain flat bright magenta background (#FF00FF), no grid lines, no shadows, no text, no enemy. "
+          "ALL 6 frames show the character seen from the side, facing LEFT, attacking toward the left with their own "
+          "signature weapon or skill ({weapon}). The 6 frames are one strong, readable attack in order: ready stance, "
+          "wind-up pulling back, lunge forward, strike at full extension with a bright impact effect on the left, "
+          "follow-through, return to ready stance. The head, face, hair and clothes stay identical in every frame. "
+          "Correct anatomy, exactly two arms and two legs.")
+BOSS = ("16-bit pixel art RPG boss monster sprite animation strip: {boss}. ONE single horizontal row of 6 frames side by side, "
+        "equal spacing, same size, same baseline, facing the viewer, plain flat bright magenta background (#FF00FF), "
+        "no grid lines, no shadows, no text. The 6 frames are a looping idle animation: breathing, a menacing sway, glowing "
+        "accents pulsing. Big, imposing, detailed, crisp pixels, thick dark outline.")
+BOSSES = {
+    "low": "a giant mossy forest slime king with a small golden crown and leaves stuck in its jelly body, green and teal",
+    "mid": "a hulking cave stone golem covered in glowing blue crystals, heavy fists, dark grey rock body",
+    "high": "an ancient fire dragon lord with dark red scales, burning wings folded, glowing magma cracks and fiery eyes",
+}
+TOWN2 = ("Highly detailed top-down 16-bit pixel art Korean classic MMORPG field map in the style of old Korean online RPGs, "
+         "seen from directly above at a slight angle. One coherent world split into four regions joined by dirt roads that "
+         "meet at a crossroads in the very center. "
+         "TOP-LEFT region: a cozy resting camp with a big crackling bonfire torch in its middle, wooden benches, tents, "
+         "lanterns, a stone ring around the fire, wide open ground. "
+         "TOP-RIGHT region: an easy hunting ground, a bright green forest clearing with grass and flowers, a large empty "
+         "round clearing in its center (an arena space for a boss), trees around the edges. "
+         "BOTTOM-LEFT region: a medium hunting ground, a dark crystal cave floor with glowing blue crystals, a large empty "
+         "round stone arena in its center, rock walls around the edges. "
+         "BOTTOM-RIGHT region: a hard hunting ground, a volcanic ruined altar with lava cracks, a large empty round "
+         "scorched arena in its center, broken pillars around the edges. "
+         "Each region has wide walkable open ground, consistent scale and lighting, crisp pixels, rich detail. "
+         "No characters, no monsters, no people, no text, no letters, no UI.")
 VIEWS = {"down": "walking toward the viewer, seen from the front",
          "left": "walking to the left, seen from the side, facing left",
          "up": "walking away from the viewer, seen from the back"}
@@ -156,6 +186,16 @@ def run(kind, model, cid):
         char, act, _ = cid.rsplit("-", 2)
         prompt, aspect = WORKSTRIP.format(visual=ROSTER[char]["visual"], action=ACTIONS[act]), "21:9"
         out = f"workstrip_{cid}_{model}"
+    elif kind == "attack":
+        char = cid.rsplit("-", 1)[0]
+        prompt, aspect = ATTACK.format(visual=ROSTER[char]["visual"], weapon=ROSTER[char].get("weapon", "their weapon")), "21:9"
+        out = f"attack_{cid}_{model}"
+    elif kind == "boss":
+        b = cid.rsplit("-", 1)[0]
+        prompt, aspect = BOSS.format(boss=BOSSES[b]), "21:9"
+        out = f"boss_{cid}_{model}"
+    elif kind == "town2":
+        prompt, aspect, out = TOWN2, "16:9", f"town2_{cid}_{model}"
     elif kind == "strip":
         # cid = "<character>-<view>-<variant>"
         char, view, _ = cid.rsplit("-", 2)
@@ -186,10 +226,10 @@ def run(kind, model, cid):
            "--prompt", prompt, "--aspect_ratio", aspect,
            "--wait", "--wait-timeout", "30m", "--json"]
     if model != "z_image":  # z_image rejects unknown params
-        cmd[8:8] = ["--resolution", "4k" if kind == "town" else "2k"]
+        cmd[8:8] = ["--resolution", "4k" if kind in ("town", "town2") else "2k"]
     if model == "gpt_image_2":
         cmd[8:8] = ["--quality", "medium"]
-    if kind in ("sheet", "work", "walk6", "strip", "workstrip"):
+    if kind in ("sheet", "work", "walk6", "strip", "workstrip", "attack"):
         ref = ROOT / f"raw/sprite_{cid.split('-')[0]}_seedream_5_0_flash.webp"
         cmd[8:8] = ["--image-references", upload(ref)]
     p = subprocess.run(cmd, capture_output=True, text=True)

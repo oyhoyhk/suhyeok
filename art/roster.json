@@ -2,161 +2,193 @@
  {
   "id": "knight",
   "name": "Sir Bolt",
-  "visual": "armored knight in silver plate armor with a blue cape and a short sword, round helmet with a visor"
+  "visual": "armored knight in silver plate armor with a blue cape and a short sword, round helmet with a visor",
+  "weapon": "slashing a short sword"
  },
  {
   "id": "mage",
   "name": "Mira",
-  "visual": "young wizard girl with a purple pointed hat, long purple robe with star patterns, wooden staff with a glowing crystal"
+  "visual": "young wizard girl with a purple pointed hat, long purple robe with star patterns, wooden staff with a glowing crystal",
+  "weapon": "casting a purple arcane bolt from the crystal staff"
  },
  {
   "id": "ranger",
   "name": "Fen",
-  "visual": "forest ranger in a green hooded cloak, brown leather vest, longbow on the back"
+  "visual": "forest ranger in a green hooded cloak, brown leather vest, longbow on the back",
+  "weapon": "shooting an arrow from the longbow"
  },
  {
   "id": "alchemist",
   "name": "Pip",
-  "visual": "alchemist with round goggles on the forehead, brown apron, holding a bubbling green potion flask"
+  "visual": "alchemist with round goggles on the forehead, brown apron, holding a bubbling green potion flask",
+  "weapon": "throwing an exploding green potion flask"
  },
  {
   "id": "bard",
   "name": "Lute",
-  "visual": "cheerful bard with a red feathered cap, orange tunic, holding a small lute"
+  "visual": "cheerful bard with a red feathered cap, orange tunic, holding a small lute",
+  "weapon": "blasting golden musical notes from the lute"
  },
  {
   "id": "cleric",
   "name": "Sola",
-  "visual": "cleric in a white and gold robe, golden sun emblem on the chest, holding a small mace"
+  "visual": "cleric in a white and gold robe, golden sun emblem on the chest, holding a small mace",
+  "weapon": "smashing with the mace and a burst of holy light"
  },
  {
   "id": "rogue",
   "name": "Nyx",
-  "visual": "rogue in a dark navy hooded outfit with a scarf over the mouth, twin daggers at the belt"
+  "visual": "rogue in a dark navy hooded outfit with a scarf over the mouth, twin daggers at the belt",
+  "weapon": "a quick double stab with twin daggers"
  },
  {
   "id": "blacksmith",
   "name": "Brann",
-  "visual": "stout bearded dwarf blacksmith with a leather apron, rolled sleeves, carrying a big hammer"
+  "visual": "stout bearded dwarf blacksmith with a leather apron, rolled sleeves, carrying a big hammer",
+  "weapon": "a heavy overhead smash with the big hammer"
  },
  {
   "id": "paladin",
   "name": "Aria",
-  "visual": "paladin woman in gold-trimmed white armor, ponytail, carrying a large shield with a cross emblem"
+  "visual": "paladin woman in gold-trimmed white armor, ponytail, carrying a large shield with a cross emblem",
+  "weapon": "a shield bash followed by a holy strike"
  },
  {
   "id": "necro",
   "name": "Vex",
-  "visual": "pale scholar in a black robe with green trim, holding an old book with a glowing green rune"
+  "visual": "pale scholar in a black robe with green trim, holding an old book with a glowing green rune",
+  "weapon": "launching a green skull spell from the rune book"
  },
  {
   "id": "monk",
   "name": "Tao",
-  "visual": "bald monk in an orange robe, prayer beads around the neck, barefoot"
+  "visual": "bald monk in an orange robe, prayer beads around the neck, barefoot",
+  "weapon": "a fast flying palm strike with a chi burst"
  },
  {
   "id": "pirate",
   "name": "Coral",
-  "visual": "pirate captain with a tricorn hat, red coat, eye patch, cutlass"
+  "visual": "pirate captain with a tricorn hat, red coat, eye patch, cutlass",
+  "weapon": "a slashing cutlass strike"
  },
  {
   "id": "engineer",
   "name": "Gizmo",
-  "visual": "gnome engineer with a yellow hard hat, blue overalls, giant wrench"
+  "visual": "gnome engineer with a yellow hard hat, blue overalls, giant wrench",
+  "weapon": "swinging the giant wrench"
  },
  {
   "id": "druid",
   "name": "Moss",
-  "visual": "druid with antlers headdress, leaf-green robe, staff covered in vines"
+  "visual": "druid with antlers headdress, leaf-green robe, staff covered in vines",
+  "weapon": "summoning thorny vines from the vine staff"
  },
  {
   "id": "samurai",
   "name": "Ren",
-  "visual": "samurai in red lacquered armor, topknot hair, katana at the hip"
+  "visual": "samurai in red lacquered armor, topknot hair, katana at the hip",
+  "weapon": "a fast iaido katana draw slash"
  },
  {
   "id": "merchant",
   "name": "Goldie",
-  "visual": "plump merchant with a green turban, purple vest, carrying a heavy coin sack"
+  "visual": "plump merchant with a green turban, purple vest, carrying a heavy coin sack",
+  "weapon": "throwing a heavy coin sack"
  },
  {
   "id": "archer",
   "name": "Lyra",
-  "visual": "elf archer with long blonde hair, pointed ears, light green tunic, quiver of arrows"
+  "visual": "elf archer with long blonde hair, pointed ears, light green tunic, quiver of arrows",
+  "weapon": "shooting a glowing arrow from the bow"
  },
  {
   "id": "chef",
   "name": "Bun",
-  "visual": "tavern cook with a tall white chef hat, white apron, holding a ladle"
+  "visual": "tavern cook with a tall white chef hat, white apron, holding a ladle",
+  "weapon": "swinging the ladle with a splash of hot soup"
  },
  {
   "id": "viking",
   "name": "Thor",
-  "visual": "viking warrior with a horned helmet, braided red beard, fur cloak, round wooden shield"
+  "visual": "viking warrior with a horned helmet, braided red beard, fur cloak, round wooden shield",
+  "weapon": "a big axe-like swing with the shield charge"
  },
  {
   "id": "witch",
   "name": "Hazel",
-  "visual": "witch with a wide black hat, dark green dress, broom in hand, black cat on the shoulder"
+  "visual": "witch with a wide black hat, dark green dress, broom in hand, black cat on the shoulder",
+  "weapon": "casting a dark green hex spark from the hand, broom in the other hand"
  },
  {
   "id": "scholar",
   "name": "Quill",
-  "visual": "scholar with round glasses, brown academic robe, stack of scrolls under the arm"
+  "visual": "scholar with round glasses, brown academic robe, stack of scrolls under the arm",
+  "weapon": "hurling a glowing magic scroll"
  },
  {
   "id": "ninja",
   "name": "Kage",
-  "visual": "ninja in a black outfit with a red headband, throwing star in hand"
+  "visual": "ninja in a black outfit with a red headband, throwing star in hand",
+  "weapon": "throwing a spinning throwing star"
  },
  {
   "id": "astronomer",
   "name": "Stella",
-  "visual": "astronomer in a deep blue robe with silver moons, brass telescope"
+  "visual": "astronomer in a deep blue robe with silver moons, brass telescope",
+  "weapon": "firing a beam of starlight from the brass telescope"
  },
  {
   "id": "farmer",
   "name": "Hay",
-  "visual": "farmer with a straw hat, overalls, pitchfork, carrot sticking out of the pocket"
+  "visual": "farmer with a straw hat, overalls, pitchfork, carrot sticking out of the pocket",
+  "weapon": "thrusting the pitchfork"
  },
  {
   "id": "guard",
   "name": "Rook",
-  "visual": "city guard in chainmail with a teal tabard, holding a spear"
+  "visual": "city guard in chainmail with a teal tabard, holding a spear",
+  "weapon": "a straight spear thrust"
  },
  {
   "id": "jester",
   "name": "Jingle",
-  "visual": "cheerful jester in a red and yellow harlequin outfit with a bell hat, juggling three colorful balls"
+  "visual": "cheerful jester in a red and yellow harlequin outfit with a bell hat, juggling three colorful balls",
+  "weapon": "juggling balls thrown as exploding confetti"
  },
  {
   "id": "miner",
   "name": "Flint",
-  "visual": "miner with a helmet lamp, dusty grey clothes, pickaxe over the shoulder"
+  "visual": "miner with a helmet lamp, dusty grey clothes, pickaxe over the shoulder",
+  "weapon": "a powerful pickaxe swing"
  },
  {
   "id": "golem",
   "name": "Pebble",
-  "visual": "small friendly stone golem with mossy shoulders and glowing blue eyes"
+  "visual": "small friendly stone golem with mossy shoulders and glowing blue eyes",
+  "weapon": "a heavy stone fist punch"
  },
  {
   "id": "robot",
   "name": "Cog",
-  "visual": "small brass clockwork robot with a round head, gear on the chest, antenna"
+  "visual": "small brass clockwork robot with a round head, gear on the chest, antenna",
+  "weapon": "firing a small laser from the chest gear"
  },
  {
   "id": "fox",
   "name": "Kit",
-  "visual": "anthropomorphic orange fox adventurer with a brown satchel and a green scarf"
+  "visual": "anthropomorphic orange fox adventurer with a brown satchel and a green scarf",
+  "weapon": "a quick dagger slash with a spin of the tail"
  },
  {
   "id": "cat",
   "name": "Mochi",
-  "visual": "anthropomorphic white cat mage with a tiny blue wizard hat and a magic wand"
+  "visual": "anthropomorphic white cat mage with a tiny blue wizard hat and a magic wand",
+  "weapon": "casting a sparkling blue spell from the magic wand"
  },
  {
   "id": "panda",
   "name": "Bao",
-  "visual": "anthropomorphic panda martial artist in a red vest with a bamboo staff"
+  "visual": "anthropomorphic panda martial artist in a red vest with a bamboo staff",
+  "weapon": "a spinning bamboo staff strike"
  }
 ]

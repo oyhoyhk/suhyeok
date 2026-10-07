@@ -28,6 +28,23 @@ struct AgentDeckApp: App {
             print("tts frames", frames)
             exit(0)
         }
+        // `AgentDeck --snapshot-markdown <file.md> out.png`: render a reply through the markdown viewer offscreen.
+        if let i = args.firstIndex(of: "--snapshot-markdown"), i + 2 < args.count,
+           let md = try? String(contentsOfFile: args[i + 1], encoding: .utf8) {
+            let host = NSHostingView(rootView: MarkdownView(text: md).padding(14).frame(width: 760)
+                .background(Color(red: 0.07, green: 0.10, blue: 0.22)).environment(\.colorScheme, .dark))
+            host.frame.size = CGSize(width: 760, height: 1600)
+            let w = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 760, height: 1600), styleMask: [.borderless], backing: .buffered, defer: false)
+            w.contentView = host
+            RunLoop.main.run(until: Date().addingTimeInterval(4))
+            host.frame.size = host.fittingSize
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 2]))
+            }
+            exit(0)
+        }
         // `AgentDeck --snapshot-world out.png [seconds]` renders the live world (walking included) offscreen.
         if let i = args.firstIndex(of: "--snapshot-world"), i + 1 < args.count {
             Snapshot.world(path: args[i + 1], wait: args.dropFirst(i + 2).first.flatMap(Double.init) ?? 3)
@@ -58,7 +75,7 @@ struct AgentDeckApp: App {
         }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
-        for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--clone", "--summary", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
+        for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--clone", "--summary", "--hunt", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
             }
@@ -151,6 +168,27 @@ final class SessionStore: ObservableObject {
     func agentName(for session: AgentSession) -> String { names[session.id] ?? "모험가" }
 
     func session(hosted name: String) -> AgentSession? { sessions.first { $0.hostedName == name } }
+
+    // MARK: hunting
+
+    @Published var hunt: [String: Hunt.Progress] = [:]
+
+    /// Hunting ground for a session, or nil for the camp. Working agents always hunt (a fresh run starts low).
+    func ground(for s: AgentSession) -> Hunt.Tier? {
+        let p = hunt[s.id] ?? Hunt.Progress()
+        if let t = p.tier() { return t }
+        return s.status == .busy ? .low : nil
+    }
+
+    /// "중급 사냥터 · 연속 6.2시간 · 결정 31" for cards.
+    func huntLine(for s: AgentSession) -> String {
+        let p = hunt[s.id] ?? Hunt.Progress()
+        let place = ground(for: s).map { $0.label } ?? "대기소"
+        let run = p.run().map { String(format: " · 연속 %.1f시간", $0 / 3600) } ?? ""
+        return "\(place)\(run) · 결정 \(p.crystals)"
+    }
+
+    var totalCrystals: Int { sessions.reduce(0) { $0 + (hunt[$1.id]?.crystals ?? 0) } }
 
     func station(for s: AgentSession) -> AgentAction.Kind? { stations[s.id] }
 
@@ -356,6 +394,8 @@ final class SessionStore: ObservableObject {
                 return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast)
             }
             let hosted = TmuxEngine.list()
+            var hunt: [String: Hunt.Progress] = [:]
+            for s in all { if let p = s.transcriptPath { hunt[s.id] = HuntClock.progress(path: p) } }
             let reloadRecent = await MainActor.run { Date().timeIntervalSince(self.lastRecentLoad) > 30 }
             let recent = reloadRecent
                 ? RecentSource.load(excluding: Set(all.compactMap { $0.conversationId ?? $0.id.replacingOccurrences(of: "codex-", with: "") }))
@@ -368,6 +408,7 @@ final class SessionStore: ObservableObject {
                     return s
                 }
                 self.hosted = hosted
+                self.hunt = hunt
                 if let recent { self.recent = recent; self.lastRecentLoad = Date() }
                 self.sessions = all
                 self.updateStations(all)
@@ -500,15 +541,18 @@ enum Snapshot {
             AgentSession(id: "pose", agent: .claude, name: "pose", cwd: "/tmp", status: status, startedAt: Date(),
                          updatedAt: Date(), lastUser: nil, lastAssistant: nil, estimated: false)
         }
-        let cases: [(String, Bool, Facing, AgentAction.Kind?, Double)] = [
-            ("↓ 걷기", true, .down, nil, 0.0), ("← 걷기", true, .left, nil, 0.13), ("→ 걷기", true, .right, nil, 0.26),
-            ("↑ 걷기", true, .up, nil, 0.39), ("망치질", false, .down, .shell, 0.2), ("타이핑", false, .down, .editing, 0.2),
-            ("읽기", false, .down, .reading, 0.9),
+        // Attack frames at 0.0/0.2/0.45/0.55/0.75 s show ready, wind-up, strike, impact, follow-through.
+        let cases: [(String, Bool, Facing, Avatar.Pose, Double)] = [
+            ("↓ 걷기", true, .down, .camp, 0.0), ("← 걷기", true, .left, .camp, 0.13), ("→ 걷기", true, .right, .camp, 0.26),
+            ("↑ 걷기", true, .up, .camp, 0.39), ("공격 준비", false, .down, .attack(faceRight: false), 0.0),
+            ("공격 ①", false, .down, .attack(faceRight: false), 0.25), ("공격 ②", false, .down, .attack(faceRight: false), 0.45),
+            ("공격 ③", false, .down, .attack(faceRight: false), 0.55), ("공격 ④", false, .down, .attack(faceRight: false), 0.75),
+            ("→ 공격", false, .down, .attack(faceRight: true), 0.55),
         ]
         let view = HStack(alignment: .bottom, spacing: 24) {
             ForEach(Array(cases.enumerated()), id: \.offset) { _, k in
                 VStack {
-                    Avatar(session: session(.busy), character: c, station: k.3, agentName: k.0, time: k.4,
+                    Avatar(session: session(.busy), character: c, pose: k.3, agentName: k.0, time: 120 + k.4 - Double(abs("pose".hashValue % 100)) / 15,
                            height: 110, selected: false, walking: k.1, facing: k.2)
                 }
             }
@@ -575,6 +619,11 @@ enum Snapshot {
                 }
                 usleep(500_000)
             }
+        case "--hunt":
+            let t0 = Date()
+            let p = s.transcriptPath.map { HuntClock.progress(path: $0) } ?? Hunt.Progress()
+            let run = p.run().map { String(format: "%.1fh", $0 / 3600) } ?? "resting"
+            print("run \(run) tier \(p.tier()?.label ?? "대기소") active \(Int(p.activeSeconds / 60))m crystals \(p.crystals) (\(String(format: "%.2f", Date().timeIntervalSince(t0)))s)")
         case "--clone":
             store.clone(s)
             let deadline = Date().addingTimeInterval(5)

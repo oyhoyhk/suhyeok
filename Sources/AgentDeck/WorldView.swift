@@ -5,36 +5,21 @@ import SwiftUI
 /// Standing spots and the walk grid come from art/walkmap.py (walkmap.json).
 enum World {
     static let size = CGSize(width: 1, height: 9.0 / 16.0)
-    static let image = "town_4k"
-    /// Avatar height in world units, matched to the furniture scale of the town map.
+    static let image = "field_4k"
+    static let minimap = "field"
+    /// Avatar height in world units.
     static let avatarHeight: CGFloat = 0.034
-    /// The forge anvil on the town map (world units); smiths turn toward it.
-    static let anvil = CGPoint(x: 0.174, y: 0.28 * 9 / 16)
 
-    static func stations(for kind: AgentAction.Kind) -> [CGPoint] {
-        switch kind {
-        case .shell: return Pathfinder.shared.spots("shell")
-        case .web: return Pathfinder.shared.spots("web")
-        case .delegating: return Pathfinder.shared.spots("delegating")
-        case .reading: return Pathfinder.shared.spots("reading")
-        case .thinking: return Pathfinder.shared.spots("thinking")
-        case .editing, .replying, .other: return Pathfinder.shared.spots("editing")
-        }
-    }
-
-    static func spots(for activity: Activity) -> [CGPoint] {
-        switch activity {
-        case .working: return stations(for: .editing)
-        case .waiting: return Pathfinder.shared.spots("waiting")
-        case .resting: return Pathfinder.shared.spots("resting")
-        }
-    }
+    static func key(_ t: Hunt.Tier) -> String { ["low", "mid", "high"][t.rawValue] }
+    static func boss(_ t: Hunt.Tier) -> CGRect { Pathfinder.shared.bosses[key(t)] ?? .zero }
+    static func attackSpots(_ t: Hunt.Tier) -> [CGPoint] { Pathfinder.shared.spots("attack_" + key(t)) }
+    static var campSpots: [CGPoint] { Pathfinder.shared.spots("camp") }
 
     /// Spot i of a list; past the end, agents stand in small steps beside the earlier ones.
     static func spot(_ list: [CGPoint], _ i: Int) -> CGPoint {
         guard !list.isEmpty else { return CGPoint(x: 0.5, y: 0.27) }
         var p = list[i % list.count]
-        p.x += CGFloat(i / list.count) * 0.012
+        p.y += CGFloat(i / list.count) * 0.012
         return p
     }
 }
@@ -114,17 +99,24 @@ struct WorldView: View {
                         let t = ctx.date.timeIntervalSinceReferenceDate
                         let positions = walker.step(targets: items.map { ($0.session.id, $0.point) }, now: t)
                         ZStack(alignment: .topLeading) {
+                            ForEach(Hunt.Tier.allCases, id: \.self) { tier in
+                                let r = World.boss(tier)
+                                let attackers = items.filter { $0.tier == tier && $0.session.status == .busy
+                                    && positions[$0.session.id] == $0.point }
+                                BossView(tier: tier, time: t, size: CGSize(width: r.width * cam.scale, height: r.height * cam.scale),
+                                         attackers: attackers.map { (cam.screen($0.point, in: size), Double(abs($0.session.id.hashValue % 100)) / 15) },
+                                         center: cam.screen(CGPoint(x: r.midX, y: r.midY), in: size))
+                            }
                             // Lower on the map = closer to the viewer = drawn on top.
                             ForEach(items.sorted { (positions[$0.session.id] ?? $0.point).y < (positions[$1.session.id] ?? $1.point).y },
                                     id: \.session.id) { item in
                                 let p = positions[item.session.id] ?? item.point
                                 let sp = cam.screen(p, in: size)
-                                Avatar(session: item.session, character: item.character, station: station(for: item),
+                                Avatar(session: item.session, character: item.character, pose: pose(for: item, at: p),
                                        agentName: store.agentName(for: item.session), time: t,
                                        height: cam.scale * World.avatarHeight, selected: item.session.id == selectedId,
                                        walking: p != item.point,
                                        facing: p != item.point ? (walker.facing[item.session.id] ?? .down) : .down)
-                                    .modifier(AnvilSide(on: p.x < World.anvil.x))
                                     .position(sp)
                                     .onTapGesture { dialogueId = nil; selectedId = item.session.id == selectedId ? nil : item.session.id }
                                     .contextMenu {
@@ -208,7 +200,7 @@ struct WorldView: View {
                 edgeMarkers(items, cam: cam, size: size)
                 // Agent count per state, top-right of whatever part of the map is visible.
                 let mapRight = size.width
-                HStack { Spacer(); StatusCounts(sessions: store.sessions).fixedSize() }
+                HStack { Spacer(); StatusCounts(store: store).fixedSize() }
                     .frame(width: max(0, mapRight - 12))
                     .offset(y: 12)
                 zoomControls(cam: cam, size: size)
@@ -223,13 +215,13 @@ struct WorldView: View {
 
                 // Cards live outside the clipped map so they can overflow its edges.
                 if let id = hoveredId, id != selectedId, let item = items.first(where: { $0.session.id == id }) {
-                    HoverCard(session: item.session, agentName: store.agentName(for: item.session))
+                    HoverCard(session: item.session, agentName: store.agentName(for: item.session), huntLine: store.huntLine(for: item.session))
                         .fixedSize()
                         .position(cardCenter(cam.screen(drawn[id] ?? item.point, in: size), cardSize: CGSize(width: 240, height: 120),
                                              avatar: cam.scale * World.avatarHeight, bounds: size))
                 }
                 if let id = selectedId, let item = items.first(where: { $0.session.id == id }) {
-                    StatusCard(session: item.session, agentName: store.agentName(for: item.session),
+                    StatusCard(session: item.session, agentName: store.agentName(for: item.session), huntLine: store.huntLine(for: item.session),
                                character: item.character, close: { selectedId = nil },
                                openTerminal: {
                                    if openMode == OpenMode.dialogue.rawValue {
@@ -390,49 +382,42 @@ struct WorldView: View {
         withAnimation(.easeInOut(duration: 0.2)) { input.camera = c }
     }
 
-    private struct Placed { let session: AgentSession; let character: Character?; let point: CGPoint }
+    struct Placed { let session: AgentSession; let character: Character?; let point: CGPoint; var tier: Hunt.Tier? = nil }
 
-    /// Demo agents (defaults key `demoWalkers`, e.g. "knight,fox") for checking animation in the app:
-    /// every 8 s they switch between walking to a station and working there — forge, desk, library in turn.
+    /// Demo agents (defaults key `demoWalkers`, e.g. "knight,fox"): every 16 s they walk to the next
+    /// hunting ground (low → mid → high → camp) and attack its boss, to check the animation in the app.
     private func demoWalkers() -> [Placed] {
         guard let ids = UserDefaults.standard.string(forKey: "demoWalkers"), !ids.isEmpty else { return [] }
-        let tick = Int(Date().timeIntervalSince1970 / 8)
+        let tick = Int(Date().timeIntervalSince1970 / 16)
         return ids.split(separator: ",").enumerated().compactMap { k, id in
             guard let c = Art.roster.first(where: { $0.id == String(id) }) else { return nil }
-            let stop = Self.demoStops[(tick / 2 + k) % Self.demoStops.count]
-            let s = AgentSession(id: "demo-\(id)", agent: .claude, name: "시연 · \(c.name)", cwd: "/demo", status: .busy,
-                                 startedAt: Date(), updatedAt: Date(), lastUser: nil, lastAssistant: nil, estimated: true)
-            return Placed(session: s, character: c, point: World.spot(World.stations(for: stop), k + 1))
+            let stop: Hunt.Tier? = [Hunt.Tier.low, .mid, .high, nil][(tick + k) % 4]
+            let s = AgentSession(id: "demo-\(id)", agent: .claude, name: "시연 · \(c.name)", cwd: "/demo",
+                                 status: stop == nil ? .idle : .busy, startedAt: Date(), updatedAt: Date(),
+                                 lastUser: nil, lastAssistant: nil, estimated: true)
+            let spots = stop.map(World.attackSpots) ?? World.campSpots
+            return Placed(session: s, character: c, point: World.spot(spots, k + 6), tier: stop)
         }
     }
 
-    private static let demoStops: [AgentAction.Kind] = [.shell, .editing, .reading]
-
-    /// Station shown for an agent; demo agents work at whatever station they are heading to.
-    private func station(for item: Placed) -> AgentAction.Kind? {
-        guard item.session.id.hasPrefix("demo-") else { return store.station(for: item.session) }
-        let k = (UserDefaults.standard.string(forKey: "demoWalkers") ?? "").split(separator: ",")
-            .firstIndex { "demo-\($0)" == item.session.id } ?? 0
-        return Self.demoStops[(Int(Date().timeIntervalSince1970 / 8) / 2 + k) % Self.demoStops.count]
+    /// At a hunting ground agents face the boss: attacking while their turn runs, standing guard otherwise.
+    private func pose(for item: Placed, at p: CGPoint) -> Avatar.Pose {
+        guard let tier = item.tier else { return .camp }
+        let faceRight = p.x < World.boss(tier).midX
+        return item.session.status == .busy ? .attack(faceRight: faceRight) : .guarding(faceRight: faceRight)
     }
 
+    /// Hunting grounds by continuous activity; agents that have rested an hour sit at the camp fire.
     private func placed() -> [Placed] {
         var out: [Placed] = demoWalkers()
         let byStart: (AgentSession, AgentSession) -> Bool = { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
-        let working = Dictionary(grouping: store.sessions.filter { store.station(for: $0) != nil }) { store.station(for: $0)! }
-        for (kind, members) in working {
-            let spots = World.stations(for: kind)
+        var groups: [Hunt.Tier?: [AgentSession]] = [:]
+        for s in store.sessions { groups[store.ground(for: s), default: []].append(s) }
+        for (tier, members) in groups {
+            let spots = tier.map(World.attackSpots) ?? World.campSpots
             for (i, s) in members.sorted(by: byStart).enumerated() {
                 out.append(Placed(session: s, character: store.character(for: s),
-                                  point: Pathfinder.shared.nearest(World.spot(spots, i))))
-            }
-        }
-        let others = Dictionary(grouping: store.sessions.filter { store.station(for: $0) == nil }) { $0.activity }
-        for (activity, members) in others {
-            let spots = World.spots(for: activity)
-            for (i, s) in members.sorted(by: byStart).enumerated() {
-                out.append(Placed(session: s, character: store.character(for: s),
-                                  point: Pathfinder.shared.nearest(World.spot(spots, i))))
+                                  point: Pathfinder.shared.nearest(World.spot(spots, i)), tier: tier))
             }
         }
         return out
@@ -452,7 +437,7 @@ struct Minimap: View {
             ZStack(alignment: .topLeading) {
                 Color.black.opacity(0.75)
                 Group {
-                    if let img = Art.image("town") { Image(nsImage: img).resizable() } else { Color.gray }
+                    if let img = Art.image(World.minimap) { Image(nsImage: img).resizable() } else { Color.gray }
                 }
                 .frame(width: World.size.width * k, height: World.size.height * k)
                 .opacity(0.85)
@@ -562,15 +547,14 @@ final class Walker {
 struct Avatar: View {
     let session: AgentSession
     let character: Character?
-    let station: AgentAction.Kind?
+    enum Pose: Equatable { case camp, attack(faceRight: Bool), guarding(faceRight: Bool) }
+    let pose: Pose
     let agentName: String
     let time: TimeInterval
     let height: CGFloat
     let selected: Bool
     var walking = false
     var facing: Facing = .down
-    /// Standing left of the anvil: face right (the smith frames face left), so mirror them.
-    @Environment(\.anvilOnRight) private var anvilOnRight
 
     /// Generated animation frames (art/frames/<id>); characters without them use the single sprite.
     private var frames: Bool { character.map { Art.image("frames/\($0.id)/walk_down_1") != nil } ?? false }
@@ -591,29 +575,24 @@ struct Avatar: View {
             }
         }
         let standing = six ? "walk_down_2" : "walk_down_1"  // strips: frame 2 has both feet together
-        guard session.activity == .working else { return (standing, false) }
-        // Prop-free work frames (write/smith/study) suit the map's own furniture; older sheets fall back to
-        // the frames with drawn-in desks only when a character has no work sheet yet.
-        let hasWork = character.map { Art.image("frames/\($0.id)/write_1") != nil } ?? false
-        // Six-frame work strips when present, otherwise the three-frame sheets.
-        let work6 = character.map { Art.image("frames/\($0.id)/write_5") != nil } ?? false
-        switch station {
-        case .shell?:
-            if work6 { return ("smith_\(Int(time * 7 + phase) % 6)", anvilOnRight) }
-            // Raise slowly, strike fast: hold the raised frame longer than the swing.
-            let beat = [0, 0, 1, 2, 2][Int(time * 5 + phase) % 5]
-            return hasWork ? ("smith_\(beat)", anvilOnRight) : ("hammer_\(cycle[Int(time * 6 + phase) % 4])", false)
-        case .editing?, .replying?, .other?:
-            if work6 { return ("write_\(Int(time * 4 + phase) % 6)", false) }
-            return hasWork ? ("write_\([0, 1, 2, 1][Int(time * 2.5 + phase) % 4])", false)
-                           : ("type_\(cycle[Int(time * 6 + phase) % 4])", false)
-        case .reading?:
-            if work6 { return ("study_\(Int(time * 2 + phase) % 6)", false) }
-            return hasWork ? ("study_\([0, 0, 0, 1, 2, 2, 2, 1][Int(time * 1.5 + phase) % 8])", false)
-                           : ("read_\(cycle[Int(time * 1.5 + phase) % 4])", false)
-        default: return (standing, false)
+        switch pose {
+        case .camp:
+            return (standing, false)
+        case .guarding(let faceRight):
+            // Side-on toward the boss; frames face left, so mirror when the boss is to the right.
+            return (six ? "walk_left_2" : "walk_left_1", faceRight)
+        case .attack(let faceRight):
+            let hasAttack = character.map { Art.image("frames/\($0.id)/attack_5") != nil } ?? false
+            guard hasAttack else { return ("smith_\(Int(time * 7 + phase) % 6)", faceRight) }
+            return ("attack_\(Self.attackFrame(time + phase))", faceRight)
         }
     }
+
+    /// One swing every 1.2 s: hold the ready stance, wind up, then the strike frames go by fast.
+    static let attackBeat: [Int] = [0, 0, 1, 1, 2, 3, 3, 4, 5, 5, 0, 0]
+    static func attackFrame(_ t: TimeInterval) -> Int { attackBeat[Int(t * 10) % attackBeat.count] }
+    /// True on the beats where the weapon connects (for hit effects on the boss).
+    static func isImpact(_ t: TimeInterval) -> Bool { attackFrame(t) == 3 }
 
     var body: some View {
         // Per-session phase so characters don't move in lockstep.
@@ -626,13 +605,8 @@ struct Avatar: View {
                             .frame(width: height * 0.42, height: height * 0.11)
                             .offset(y: height * 0.04)
                     }
-                    // Looking around while scouting the web: face left and right in turns.
-                    .scaleEffect(x: station == .web && !walking && Int(time / 1.5) % 2 == 1 ? -1 : 1)
                     .offset(y: bob(phase))
                     .rotationEffect(.degrees(swing(phase)), anchor: .bottom)
-                if station == .shell, !walking {
-                    Sparks(time: time + phase, height: height)
-                }
                 if session.activity == .waiting {
                     // "…" waiting for the next instruction; a red "!" when it is blocked on your choice.
                     let ask = session.status == .waiting
@@ -643,7 +617,7 @@ struct Avatar: View {
                         .opacity(0.6 + 0.4 * abs(sin(time * 2 + phase)))
                         .offset(x: height * 0.2, y: -height * 0.12)
                 }
-                if session.activity == .resting {
+                if pose == .camp, session.activity != .working {
                     Text("z").font(.system(size: height * 0.22, weight: .heavy, design: .rounded))
                         .foregroundStyle(.white)
                         .opacity(0.4 + 0.6 * abs(sin(time + phase)))
@@ -689,29 +663,14 @@ struct Avatar: View {
         .scaleEffect(x: mirrored ? -1 : 1)
     }
 
-    private func swing(_ phase: Double) -> Double {
-        if walking { return frames ? 0 : sin(time * 12) * 5 }
-        if frames, [.shell, .reading].contains(station) { return 0 }  // drawn into the frames
-        switch station {
-        case .shell?: return max(0, sin(time * 6 + phase)) * 12 - 3   // hammer strikes on the anvil
-        case .reading?: return sin(time * 1.2 + phase) * 3            // nodding along the board
-        case .delegating?: return sin(time * 4 + phase) * 4           // animated discussion
-        default: return 0
-        }
-    }
+    private func swing(_ phase: Double) -> Double { walking && !frames ? sin(time * 12) * 5 : 0 }
 
     private func bob(_ phase: Double) -> CGFloat {
         if walking { return frames ? 0 : -CGFloat(abs(sin(time * 12))) * height * 0.08 }
-        switch session.activity {
-        case .working:
-            switch station {
-            case .shell?, .reading?, .web?: return 0
-            case .delegating?: return -CGFloat(abs(sin(time * 5 + phase))) * height * 0.05
-            case .thinking?: return CGFloat(sin(time * 2 + phase)) * height * 0.015
-            default: return frames ? 0 : -CGFloat(abs(sin(time * 9 + phase))) * height * 0.05  // typing at the desk
-            }
-        case .waiting: return CGFloat(sin(time * 3 + phase)) * height * 0.02
-        case .resting: return CGFloat(sin(time * 1.2 + phase)) * height * 0.012
+        switch pose {
+        case .attack: return 0
+        case .guarding: return CGFloat(sin(time * 3 + phase)) * height * 0.015
+        case .camp: return CGFloat(sin(time * 1.2 + phase)) * height * 0.012  // breathing by the fire
         }
     }
 
@@ -850,19 +809,20 @@ struct Corridors: View {
 }
 
 
-/// Small pill with the number of agents in each state.
+/// Small pill: agents at the camp and at each hunting ground, and crystals collected.
 struct StatusCounts: View {
-    let sessions: [AgentSession]
+    @ObservedObject var store: SessionStore
 
     var body: some View {
+        let grounds = store.sessions.map { store.ground(for: $0) }
         HStack(spacing: 10) {
-            ForEach(Activity.allCases, id: \.self) { a in
-                HStack(spacing: 4) {
-                    Circle().fill(a.color).frame(width: 8, height: 8)
-                    Text(a.label).font(.caption2).foregroundStyle(.white.opacity(0.75)).fixedSize()
-                    Text("\(sessions.filter { $0.activity == a }.count)")
-                        .font(.caption.monospacedDigit().bold()).foregroundStyle(.white)
-                }
+            cell("대기소", grounds.filter { $0 == nil }.count, .gray)
+            ForEach(Hunt.Tier.allCases, id: \.self) { t in
+                cell(["하", "중", "상"][t.rawValue], grounds.filter { $0 == t }.count, [Color.green, .cyan, .orange][t.rawValue])
+            }
+            HStack(spacing: 3) {
+                Image(systemName: "diamond.fill").font(.caption2).foregroundStyle(.cyan)
+                Text("\(store.totalCrystals)").font(.caption.monospacedDigit().bold()).foregroundStyle(.white)
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -870,22 +830,17 @@ struct StatusCounts: View {
         .overlay(Capsule().stroke(Color(red: 0.85, green: 0.68, blue: 0.25).opacity(0.8), lineWidth: 1))
         .allowsHitTesting(false)
     }
-}
 
-
-/// Passes "anvil is to my right" down to the avatar without widening Avatar's initializer at every call site.
-struct AnvilSide: ViewModifier {
-    let on: Bool
-    func body(content: Content) -> some View { content.environment(\.anvilOnRight, on) }
-}
-
-private struct AnvilOnRightKey: EnvironmentKey { static let defaultValue = false }
-extension EnvironmentValues {
-    var anvilOnRight: Bool {
-        get { self[AnvilOnRightKey.self] }
-        set { self[AnvilOnRightKey.self] = newValue }
+    private func cell(_ label: String, _ n: Int, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text(label).font(.caption2).foregroundStyle(.white.opacity(0.75)).fixedSize()
+            Text("\(n)").font(.caption.monospacedDigit().bold()).foregroundStyle(.white)
+        }
     }
 }
+
+
 
 
 struct Departure: Identifiable {
@@ -923,5 +878,88 @@ struct DepartureView: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+
+/// A hunting-ground boss: idle animation, flashes and damage numbers when attackers' blows land,
+/// crystals flying from it to each attacker.
+struct BossView: View {
+    let tier: Hunt.Tier
+    let time: TimeInterval
+    let size: CGSize
+    /// Screen position and animation phase of each attacking agent.
+    let attackers: [(CGPoint, Double)]
+    let center: CGPoint
+
+    var body: some View {
+        let hits = attackers.filter { Avatar.isImpact(time + $0.1) }
+        let frame = Int(time * 6) % 6
+        ZStack {
+            if let img = Art.image("bosses/\(World.key(tier))_\(frame)") {
+                let h = size.height * 1.25
+                Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                    .frame(height: h)
+                    .brightness(hits.isEmpty ? 0 : 0.45)          // white flash on impact
+                    .offset(x: hits.isEmpty ? 0 : CGFloat(sin(time * 80)) * size.width * 0.02)  // shake
+                    .background(alignment: .bottom) {
+                        Ellipse().fill(Color.black.opacity(0.35)).frame(width: size.width * 1.1, height: size.height * 0.18)
+                    }
+                    .position(center)
+            }
+            // HP bar: drains with every blow and refills when the boss falls (it respawns at once).
+            hpBar.position(x: center.x, y: center.y - size.height * 0.75)
+            ForEach(Array(attackers.enumerated()), id: \.offset) { _, a in
+                damage(a)
+                crystal(a)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var hpBar: some View {
+        let perHit: Double = [0.04, 0.025, 0.015][tier.rawValue]
+        let blows = Double(attackers.count) * time / 1.2
+        let hp = attackers.isEmpty ? 1 : 1 - (blows * perHit).truncatingRemainder(dividingBy: 1)
+        return VStack(spacing: 2) {
+            Text(tier.boss).font(.system(size: max(9, size.height * 0.12), weight: .bold)).foregroundStyle(.white)
+                .shadow(color: .black, radius: 2)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.black.opacity(0.6))
+                Capsule().fill(LinearGradient(colors: [.red, .orange], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: size.width * 1.1 * hp)
+            }
+            .frame(width: size.width * 1.1, height: max(4, size.height * 0.05))
+        }
+    }
+
+    /// Damage number rising from the boss for 0.8 s after each blow.
+    @ViewBuilder private func damage(_ a: (CGPoint, Double)) -> some View {
+        let cycle = Double(Avatar.attackBeat.count) / 10
+        let since = (time + a.1).truncatingRemainder(dividingBy: cycle) - 0.5  // impact at 0.5 s into the swing
+        if since >= 0 && since < 0.8 {
+            let n = [12, 48, 160][tier.rawValue] + Int((a.1 * 97).truncatingRemainder(dividingBy: 1) * 30)
+            Text("\(n)").font(.system(size: max(10, size.height * 0.16), weight: .heavy, design: .rounded))
+                .foregroundStyle(tier == .high ? Color.orange : Color.yellow)
+                .shadow(color: .black, radius: 1.5)
+                .position(x: center.x + (a.0.x < center.x ? -1 : 1) * size.width * 0.25,
+                          y: center.y - size.height * 0.2 - CGFloat(since) * size.height * 0.6)
+                .opacity(1 - since / 0.8)
+        }
+    }
+
+    /// A crystal popping out of the boss and flying to the attacker, once every few blows.
+    @ViewBuilder private func crystal(_ a: (CGPoint, Double)) -> some View {
+        let period = 3.6  // every third swing
+        let since = (time + a.1).truncatingRemainder(dividingBy: period) - 0.5
+        if since >= 0 && since < 0.9 {
+            let k = CGFloat(since / 0.9)
+            let arc = sin(k * .pi) * size.height * 0.5
+            Image(systemName: "diamond.fill")
+                .font(.system(size: max(8, size.height * 0.12)))
+                .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
+                .shadow(color: .cyan, radius: 3)
+                .position(x: center.x + (a.0.x - center.x) * k, y: center.y + (a.0.y - center.y) * k - arc)
+        }
     }
 }
