@@ -47,7 +47,7 @@ struct StatusCard: View {
                     if let c = character { Text(c.name).font(.caption).foregroundStyle(.secondary) }
                     HStack(spacing: 5) {
                         Circle().fill(session.activity.color).frame(width: 8, height: 8)
-                        Text(session.activity.label + (session.status == .shell ? " · 셸 실행" : ""))
+                        Text(session.activity.label + (session.status == .shell ? " · 백그라운드 셸 실행 중" : ""))
                             .font(.caption.bold()).foregroundStyle(session.activity.color)
                         Text(session.agent.rawValue + (session.estimated ? " · 추정" : ""))
                             .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)

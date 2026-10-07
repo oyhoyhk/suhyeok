@@ -109,8 +109,10 @@ enum Activity: CaseIterable {
 extension AgentSession {
     var activity: Activity {
         switch status {
-        case .busy, .shell: return .working
-        case .idle, .unknown:
+        case .busy: return .working
+        // Claude Code reports "shell" when its turn is over but background shells it started are still
+        // running (the "N shells still running" footer). The agent itself is waiting for you.
+        case .shell, .idle, .unknown:
             let idleFor = -(updatedAt ?? .distantPast).timeIntervalSinceNow
             return idleFor < Activity.restAfter ? .waiting : .resting
         }
