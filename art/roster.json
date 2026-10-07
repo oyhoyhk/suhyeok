@@ -1,0 +1,162 @@
+[
+ {
+  "id": "knight",
+  "name": "Sir Bolt",
+  "visual": "armored knight in silver plate armor with a blue cape and a short sword, round helmet with a visor"
+ },
+ {
+  "id": "mage",
+  "name": "Mira",
+  "visual": "young wizard girl with a purple pointed hat, long purple robe with star patterns, wooden staff with a glowing crystal"
+ },
+ {
+  "id": "ranger",
+  "name": "Fen",
+  "visual": "forest ranger in a green hooded cloak, brown leather vest, longbow on the back"
+ },
+ {
+  "id": "alchemist",
+  "name": "Pip",
+  "visual": "alchemist with round goggles on the forehead, brown apron, holding a bubbling green potion flask"
+ },
+ {
+  "id": "bard",
+  "name": "Lute",
+  "visual": "cheerful bard with a red feathered cap, orange tunic, holding a small lute"
+ },
+ {
+  "id": "cleric",
+  "name": "Sola",
+  "visual": "cleric in a white and gold robe, golden sun emblem on the chest, holding a small mace"
+ },
+ {
+  "id": "rogue",
+  "name": "Nyx",
+  "visual": "rogue in a dark navy hooded outfit with a scarf over the mouth, twin daggers at the belt"
+ },
+ {
+  "id": "blacksmith",
+  "name": "Brann",
+  "visual": "stout bearded dwarf blacksmith with a leather apron, rolled sleeves, carrying a big hammer"
+ },
+ {
+  "id": "paladin",
+  "name": "Aria",
+  "visual": "paladin woman in gold-trimmed white armor, ponytail, carrying a large shield with a cross emblem"
+ },
+ {
+  "id": "necro",
+  "name": "Vex",
+  "visual": "pale scholar in a black robe with green trim, holding an old book with a glowing green rune"
+ },
+ {
+  "id": "monk",
+  "name": "Tao",
+  "visual": "bald monk in an orange robe, prayer beads around the neck, barefoot"
+ },
+ {
+  "id": "pirate",
+  "name": "Coral",
+  "visual": "pirate captain with a tricorn hat, red coat, eye patch, cutlass"
+ },
+ {
+  "id": "engineer",
+  "name": "Gizmo",
+  "visual": "gnome engineer with a yellow hard hat, blue overalls, giant wrench"
+ },
+ {
+  "id": "druid",
+  "name": "Moss",
+  "visual": "druid with antlers headdress, leaf-green robe, staff covered in vines"
+ },
+ {
+  "id": "samurai",
+  "name": "Ren",
+  "visual": "samurai in red lacquered armor, topknot hair, katana at the hip"
+ },
+ {
+  "id": "merchant",
+  "name": "Goldie",
+  "visual": "plump merchant with a green turban, purple vest, carrying a heavy coin sack"
+ },
+ {
+  "id": "archer",
+  "name": "Lyra",
+  "visual": "elf archer with long blonde hair, pointed ears, light green tunic, quiver of arrows"
+ },
+ {
+  "id": "chef",
+  "name": "Bun",
+  "visual": "tavern cook with a tall white chef hat, white apron, holding a ladle"
+ },
+ {
+  "id": "viking",
+  "name": "Thor",
+  "visual": "viking warrior with a horned helmet, braided red beard, fur cloak, round wooden shield"
+ },
+ {
+  "id": "witch",
+  "name": "Hazel",
+  "visual": "witch with a wide black hat, dark green dress, broom in hand, black cat on the shoulder"
+ },
+ {
+  "id": "scholar",
+  "name": "Quill",
+  "visual": "scholar with round glasses, brown academic robe, stack of scrolls under the arm"
+ },
+ {
+  "id": "ninja",
+  "name": "Kage",
+  "visual": "ninja in a black outfit with a red headband, throwing star in hand"
+ },
+ {
+  "id": "astronomer",
+  "name": "Stella",
+  "visual": "astronomer in a deep blue robe with silver moons, brass telescope"
+ },
+ {
+  "id": "farmer",
+  "name": "Hay",
+  "visual": "farmer with a straw hat, overalls, pitchfork, carrot sticking out of the pocket"
+ },
+ {
+  "id": "guard",
+  "name": "Rook",
+  "visual": "city guard in chainmail with a teal tabard, holding a spear"
+ },
+ {
+  "id": "jester",
+  "name": "Jingle",
+  "visual": "cheerful jester in a red and yellow harlequin outfit with a bell hat, juggling three colorful balls"
+ },
+ {
+  "id": "miner",
+  "name": "Flint",
+  "visual": "miner with a helmet lamp, dusty grey clothes, pickaxe over the shoulder"
+ },
+ {
+  "id": "golem",
+  "name": "Pebble",
+  "visual": "small friendly stone golem with mossy shoulders and glowing blue eyes"
+ },
+ {
+  "id": "robot",
+  "name": "Cog",
+  "visual": "small brass clockwork robot with a round head, gear on the chest, antenna"
+ },
+ {
+  "id": "fox",
+  "name": "Kit",
+  "visual": "anthropomorphic orange fox adventurer with a brown satchel and a green scarf"
+ },
+ {
+  "id": "cat",
+  "name": "Mochi",
+  "visual": "anthropomorphic white cat mage with a tiny blue wizard hat and a magic wand"
+ },
+ {
+  "id": "panda",
+  "name": "Bao",
+  "visual": "anthropomorphic panda martial artist in a red vest with a bamboo staff"
+ }
+]

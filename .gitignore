@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+dist/
+수혁.app/
+AgentDeck.app/
+# Raw generations and API logs stay local; art/out holds what the app ships.
+art/raw/
+art/logs/
+art/__pycache__/
