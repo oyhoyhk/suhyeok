@@ -205,11 +205,12 @@ final class SessionStore: ObservableObject {
 
     @Published var hunt: [String: Hunt.Progress] = [:]
 
-    /// Hunting ground for a session, or nil for the camp. Working agents always hunt (a fresh run starts low).
+    /// Hunting ground for a session, or nil for the camp. Only agents in a turn (or stopped on a question
+    /// mid-turn) hunt; the ground is picked by how long their run has lasted. Idle agents go back to the camp,
+    /// and their run keeps counting until they have rested an hour.
     func ground(for s: AgentSession) -> Hunt.Tier? {
-        let p = hunt[s.id] ?? Hunt.Progress()
-        if let t = p.tier() { return t }
-        return s.status == .busy ? .low : nil
+        guard s.status == .busy || s.status == .waiting else { return nil }
+        return (hunt[s.id] ?? Hunt.Progress()).tier() ?? .low
     }
 
     /// "중급 사냥터 · 연속 6.2시간 · 결정 31" for cards.
