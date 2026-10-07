@@ -61,6 +61,12 @@ enum TmuxEngine {
         case .codex:
             cmd = ["codex"] + (resume.map { [fork ? "fork" : "resume", $0] } ?? [])
         }
+        // Skip permission prompts by default (Settings ⌘, can turn it off); flags already carried over from a
+        // migrated or cloned session are not added twice.
+        if UserDefaults.standard.object(forKey: "skipPermissions") as? Bool ?? true {
+            let flag = agent == .claude ? "--dangerously-skip-permissions" : "--dangerously-bypass-approvals-and-sandbox"
+            if !extraArgs.contains(flag) { cmd.append(flag) }
+        }
         cmd += extraArgs
         if let p = prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty { cmd.append(p) }
         // Login + interactive zsh so PATH matches the user's terminals; keep a shell after the agent exits.

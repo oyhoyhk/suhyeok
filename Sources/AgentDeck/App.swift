@@ -371,6 +371,7 @@ final class SessionStore: ObservableObject {
         let words = cmd.split(separator: " ").map(String.init)
         var flags: [String] = []
         if words.contains("--dangerously-skip-permissions") { flags.append("--dangerously-skip-permissions") }
+        if words.contains("--dangerously-bypass-approvals-and-sandbox") { flags.append("--dangerously-bypass-approvals-and-sandbox") }
         if let i = words.firstIndex(of: "--permission-mode"), i + 1 < words.count { flags += ["--permission-mode", words[i + 1]] }
         return flags
     }
@@ -508,7 +509,7 @@ enum Snapshot {
     private static func loadedStore() -> SessionStore {
         let store = SessionStore()
         // Let the first background refresh land.
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(30)
         while store.sessions.isEmpty, Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         return store
     }

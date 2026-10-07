@@ -9,9 +9,14 @@ enum OpenMode: String, CaseIterable {
 
 struct SettingsView: View {
     @AppStorage(OpenMode.storageKey) private var openMode = OpenMode.dialogue.rawValue
+    @AppStorage("skipPermissions") private var skipPermissions = true
 
     var body: some View {
         Form {
+            Toggle("새 에이전트는 권한 확인 없이 실행", isOn: $skipPermissions)
+            Text("Claude: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox\n새로 만들기·이어서 열기·클론에 적용됨. 에이전트가 묻지 않고 파일 수정·명령 실행을 하므로 믿는 폴더에서만 켤 것.")
+                .font(.caption).foregroundStyle(.secondary)
+            Divider()
             Picker("세션 여는 방식", selection: $openMode) {
                 ForEach(OpenMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
             }
@@ -20,7 +25,7 @@ struct SettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(20)
-        .frame(width: 440)
+        .frame(width: 480)
     }
 }
 
