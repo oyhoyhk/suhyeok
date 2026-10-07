@@ -98,6 +98,7 @@ struct Camera: Equatable {
     }
 
     mutating func clamp(_ size: CGSize) {
+        guard size.width >= 1, size.height >= 1 else { return }  // not laid out yet
         let l = Camera.limits(size)
         scale = min(max(scale, l.lowerBound), l.upperBound)
         let half = CGSize(width: size.width / scale / 2, height: size.height / scale / 2)
@@ -326,6 +327,8 @@ struct WorldView: View {
 
     private func layoutMarkers(_ items: [Placed], cam: Camera, size: CGSize) -> [Marker] {
         let inset: CGFloat = 24, spacing: CGFloat = 38
+        // The window reports a zero or tiny size while it first lays out; no edges to place markers on yet.
+        guard size.width > 400, size.height > 300, cam.scale > 0 else { return [] }
         let c = CGPoint(x: size.width / 2, y: size.height / 2)
         var markers: [Marker] = []
         for item in items {
@@ -340,9 +343,10 @@ struct WorldView: View {
         }
         // Allowed span on each edge; the bottom-right corner belongs to the minimap, bottom-left to the zoom buttons.
         let minimapH = 220 * World.size.height / World.size.width + 24
+        func span(_ lo: CGFloat, _ hi: CGFloat) -> ClosedRange<CGFloat> { lo...max(lo, hi) }
         let spans: [Int: ClosedRange<CGFloat>] = [
-            0: inset...(size.width - inset), 1: inset...(size.height - minimapH - inset),
-            2: 90...(size.width - 250), 3: inset...(size.height - 130),
+            0: span(inset, size.width - inset), 1: span(inset, size.height - minimapH - inset),
+            2: span(90, size.width - 250), 3: span(inset, size.height - 130),
         ]
         for side in 0..<4 {
             let idx = markers.indices.filter { markers[$0].side == side }
