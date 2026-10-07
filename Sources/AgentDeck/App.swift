@@ -1,4 +1,6 @@
 import AppKit
+import AVFoundation
+import Speech
 import SwiftUI
 
 @main
@@ -8,6 +10,24 @@ struct AgentDeckApp: App {
     init() {
         // `AgentDeck --snapshot out.png [selectedSessionId]` renders the world offscreen and exits (for checks without touching the screen).
         let args = CommandLine.arguments
+        // `AgentDeck --voice-check`: speech recognizer availability and TTS synthesis into memory (no sound).
+        if args.contains("--voice-check") {
+            let r = SFSpeechRecognizer(locale: Locale(identifier: "ko-KR"))
+            print("stt ko-KR available=\(r?.isAvailable ?? false) onDevice=\(r?.supportsOnDeviceRecognition ?? false) auth=\(SFSpeechRecognizer.authorizationStatus().rawValue)")
+            for id in ["knight", "fox", "mage"] { print("voice", id, Speaker.voice(for: id)?.name ?? "-") }
+            let synth = AVSpeechSynthesizer()
+            var frames = 0
+            let done = DispatchSemaphore(value: 0)
+            let u = AVSpeechUtterance(string: Speaker.plain("**작업을 마쳤습니다.** `build.sh`를 실행했고\n```\nok\n```\n결과는 정상입니다."))
+            u.voice = Speaker.voice(for: "fox")
+            print("spoken text:", u.speechString.replacingOccurrences(of: "\n", with: " / "))
+            synth.write(u) { buf in
+                if let pcm = buf as? AVAudioPCMBuffer, pcm.frameLength > 0 { frames += Int(pcm.frameLength) } else { done.signal() }
+            }
+            while done.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            print("tts frames", frames)
+            exit(0)
+        }
         // `AgentDeck --snapshot-world out.png [seconds]` renders the live world (walking included) offscreen.
         if let i = args.firstIndex(of: "--snapshot-world"), i + 1 < args.count {
             Snapshot.world(path: args[i + 1], wait: args.dropFirst(i + 2).first.flatMap(Double.init) ?? 3)

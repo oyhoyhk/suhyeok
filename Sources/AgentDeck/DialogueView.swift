@@ -46,6 +46,10 @@ struct DialogueView: View {
     @State private var menu: TerminalMenu?
     /// Sent from here but not yet in the log; shown right away so the message never seems lost.
     @State private var pending: [Pending] = []
+    @StateObject private var dictation = Dictation()
+    @ObservedObject private var speaker = Speaker.shared
+    @AppStorage("readReplies") private var readReplies = false
+    @State private var lastSpokenCount: Int?
     @State private var live: LiveReply?
     @State private var showScreen = false
     @State private var notice: String?
@@ -69,6 +73,7 @@ struct DialogueView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .environment(\.colorScheme, .dark)
             .task(id: sessionId) { await poll(s) }
+            .onChange(of: dictation.text) { _, t in if dictation.listening || !t.isEmpty { draft = t } }
             .onAppear { focused = true }
         } else {
             Text("종료된 세션").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -295,6 +300,11 @@ struct DialogueView: View {
         let canSend = SessionInput.canSend(s)
         return VStack(alignment: .leading, spacing: 6) {
             if let notice { Text(notice).font(.caption).foregroundStyle(.orange) }
+            if let e = dictation.error { Text(e).font(.caption).foregroundStyle(.orange) }
+            if dictation.listening {
+                Label("듣는 중… 말을 마치면 마이크를 다시 눌러 멈춤", systemImage: "waveform")
+                    .font(.caption).foregroundStyle(.red)
+            }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField(canSend ? "\(store.agentName(for: s))에게 지시하기 (Enter로 보내기)" : "이 터미널은 입력을 보낼 수 없음 — 보기만 가능",
                           text: $draft, axis: .vertical)
@@ -305,6 +315,13 @@ struct DialogueView: View {
                     .focused($focused)
                     .disabled(!canSend)
                     .onSubmit { submit(s) }
+                Button { dictation.toggle() } label: {
+                    Image(systemName: dictation.listening ? "mic.fill" : "mic")
+                        .foregroundStyle(dictation.listening ? Color.red : Color.primary)
+                }
+                .help(dictation.listening ? "받아쓰기 멈춤" : "말로 지시하기 (⌘D)")
+                .keyboardShortcut("d")
+                .disabled(!canSend)
                 Button("보내기") { submit(s) }.disabled(!canSend || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             HStack(spacing: 4) {
@@ -312,6 +329,9 @@ struct DialogueView: View {
                     Button(key.label) { press(s, key) }.controlSize(.small).disabled(!canSend)
                 }
                 Spacer()
+                Toggle(isOn: $readReplies) { Label("답변 읽어 주기", systemImage: readReplies ? "speaker.wave.2.fill" : "speaker.slash") }
+                    .toggleStyle(.button).controlSize(.small)
+                if speaker.speaking { Button("그만 읽기") { speaker.stop() }.controlSize(.small) }
                 Toggle("화면 보기", isOn: $showScreen).toggleStyle(.button).controlSize(.small)
             }
         }
@@ -363,7 +383,18 @@ struct DialogueView: View {
                 let tail = t.split(separator: "\n", omittingEmptySubsequences: false).suffix(20).joined(separator: "\n")
                 return (items, tail, menu, live)
             }.value
-            if newItems != items { loaded = newItems }
+            if newItems != items {
+                // Speak the newest agent reply once it is finished (in the log), not replies already there on open.
+                let agentCount = newItems.filter { $0.role == .agent }.count
+                if readReplies, let last = lastSpokenCount, agentCount > last,
+                   let reply = newItems.last(where: { $0.role == .agent }) {
+                    Speaker.shared.speak(reply.text, characterId: store.character(for: s)?.id)
+                }
+                lastSpokenCount = agentCount
+                loaded = newItems
+            } else if lastSpokenCount == nil {
+                lastSpokenCount = newItems.filter { $0.role == .agent }.count
+            }
             // A pending message is done once the log has it (as a prompt or a queued command).
             let mine = Set(newItems.filter { $0.role == .me }.suffix(30).map { $0.text.filter { !$0.isWhitespace } })
             pending.removeAll { !$0.failed && mine.contains($0.text.filter { !$0.isWhitespace }) }
