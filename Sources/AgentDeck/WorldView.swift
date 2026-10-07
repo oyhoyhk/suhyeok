@@ -8,6 +8,8 @@ enum World {
     static let image = "town_4k"
     /// Avatar height in world units, matched to the furniture scale of the town map.
     static let avatarHeight: CGFloat = 0.034
+    /// The forge anvil on the town map (world units); smiths turn toward it.
+    static let anvil = CGPoint(x: 0.174, y: 0.28 * 9 / 16)
 
     static func stations(for kind: AgentAction.Kind) -> [CGPoint] {
         switch kind {
@@ -119,6 +121,7 @@ struct WorldView: View {
                                        height: cam.scale * World.avatarHeight, selected: item.session.id == selectedId,
                                        walking: p != item.point,
                                        facing: p != item.point ? (walker.facing[item.session.id] ?? .down) : .down)
+                                    .modifier(AnvilSide(on: p.x < World.anvil.x))
                                     .position(sp)
                                     .onTapGesture { dialogueId = nil; selectedId = item.session.id == selectedId ? nil : item.session.id }
                                     .contextMenu {
@@ -164,6 +167,11 @@ struct WorldView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 edgeMarkers(items, cam: cam, size: size)
+                // Agent count per state, top-right of whatever part of the map is visible.
+                let mapRight = dialogueId != nil && dialogueLarge ? size.width - max(360, size.width * 0.5) : size.width
+                HStack { Spacer(); StatusCounts(sessions: store.sessions).fixedSize() }
+                    .frame(width: max(0, mapRight - 12))
+                    .offset(y: 12)
                 zoomControls(cam: cam, size: size)
                     .position(x: 40, y: size.height - 70)
                 Minimap(items: items.map { ($0.session.id, drawn[$0.session.id] ?? $0.point, $0.session.activity) },
@@ -281,7 +289,7 @@ struct WorldView: View {
     }
 
     private func layoutMarkers(_ items: [Placed], cam: Camera, size: CGSize) -> [Marker] {
-        let inset: CGFloat = 24, spacing: CGFloat = 38
+        let inset: CGFloat = 36, spacing: CGFloat = 57
         // The window reports a zero or tiny size while it first lays out; no edges to place markers on yet.
         guard size.width > 400, size.height > 300, cam.scale > 0 else { return [] }
         let c = CGPoint(x: size.width / 2, y: size.height / 2)
@@ -406,13 +414,14 @@ struct EdgeMarker: View {
 
     var body: some View {
         ZStack {
-            Triangle().fill(color).frame(width: 10, height: 10).offset(x: 22).rotationEffect(.radians(angle))
-            Circle().fill(Color.black.opacity(0.7)).frame(width: 34, height: 34)
+            // 1.5x the original 34pt marker.
+            Triangle().fill(color).frame(width: 15, height: 15).offset(x: 33).rotationEffect(.radians(angle))
+            Circle().fill(Color.black.opacity(0.7)).frame(width: 51, height: 51)
             if let c = character, let img = Art.image("sprites/\(c.id)") {
                 Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fill)
-                    .frame(width: 30, height: 30, alignment: .top).clipShape(Circle())
+                    .frame(width: 45, height: 45, alignment: .top).clipShape(Circle())
             }
-            Circle().stroke(color, lineWidth: 2).frame(width: 34, height: 34)
+            Circle().stroke(color, lineWidth: 3).frame(width: 51, height: 51)
         }
         .contentShape(Circle())
     }
@@ -492,6 +501,8 @@ struct Avatar: View {
     let selected: Bool
     var walking = false
     var facing: Facing = .down
+    /// Standing left of the anvil: face right (the smith frames face left), so mirror them.
+    @Environment(\.anvilOnRight) private var anvilOnRight
 
     /// Generated animation frames (art/frames/<id>); characters without them use the single sprite.
     private var frames: Bool { character.map { Art.image("frames/\($0.id)/walk_down_1") != nil } ?? false }
@@ -509,10 +520,20 @@ struct Avatar: View {
             }
         }
         guard session.activity == .working else { return ("walk_down_1", false) }
+        // Prop-free work frames (write/smith/study) suit the map's own furniture; older sheets fall back to
+        // the frames with drawn-in desks only when a character has no work sheet yet.
+        let hasWork = character.map { Art.image("frames/\($0.id)/write_1") != nil } ?? false
         switch station {
-        case .shell?: return ("hammer_\(cycle[Int(time * 6 + phase) % 4])", false)
-        case .editing?, .replying?, .other?: return ("type_\(cycle[Int(time * 6 + phase) % 4])", false)
-        case .reading?: return ("read_\(cycle[Int(time * 1.5 + phase) % 4])", false)
+        case .shell?:
+            // Raise slowly, strike fast: hold the raised frame longer than the swing.
+            let beat = [0, 0, 1, 2, 2][Int(time * 5 + phase) % 5]
+            return hasWork ? ("smith_\(beat)", anvilOnRight) : ("hammer_\(cycle[Int(time * 6 + phase) % 4])", false)
+        case .editing?, .replying?, .other?:
+            return hasWork ? ("write_\([0, 1, 2, 1][Int(time * 2.5 + phase) % 4])", false)
+                           : ("type_\(cycle[Int(time * 6 + phase) % 4])", false)
+        case .reading?:
+            return hasWork ? ("study_\([0, 0, 0, 1, 2, 2, 2, 1][Int(time * 1.5 + phase) % 8])", false)
+                           : ("read_\(cycle[Int(time * 1.5 + phase) % 4])", false)
         default: return ("walk_down_1", false)
         }
     }
@@ -747,5 +768,43 @@ struct Corridors: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+
+/// Small pill with the number of agents in each state.
+struct StatusCounts: View {
+    let sessions: [AgentSession]
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(Activity.allCases, id: \.self) { a in
+                HStack(spacing: 4) {
+                    Circle().fill(a.color).frame(width: 8, height: 8)
+                    Text(a.label).font(.caption2).foregroundStyle(.white.opacity(0.75)).fixedSize()
+                    Text("\(sessions.filter { $0.activity == a }.count)")
+                        .font(.caption.monospacedDigit().bold()).foregroundStyle(.white)
+                }
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Color.black.opacity(0.6), in: Capsule())
+        .overlay(Capsule().stroke(Color(red: 0.85, green: 0.68, blue: 0.25).opacity(0.8), lineWidth: 1))
+        .allowsHitTesting(false)
+    }
+}
+
+
+/// Passes "anvil is to my right" down to the avatar without widening Avatar's initializer at every call site.
+struct AnvilSide: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View { content.environment(\.anvilOnRight, on) }
+}
+
+private struct AnvilOnRightKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var anvilOnRight: Bool {
+        get { self[AnvilOnRightKey.self] }
+        set { self[AnvilOnRightKey.self] = newValue }
     }
 }

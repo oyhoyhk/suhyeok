@@ -80,6 +80,18 @@ TOWN = ("Highly detailed 16-bit pixel art top-down RPG town map, seen from direc
         "through the plaza. Stone walls with torches surround the compound. Consistent scale and lighting across the whole map, "
         "crisp pixels, rich detail, wide walkable floor space. No characters, no people, no text, no letters, no UI.")
 
+WORK = ("16-bit pixel art RPG character sprite sheet of EXACTLY the same character as the reference image ({visual}). "
+        "Same outfit, colors and proportions in every cell. A strict grid of 3 columns and 3 rows of equal cells, one full-body "
+        "chibi pose per cell, all the same size, standing, on a plain flat bright magenta background (#FF00FF). "
+        "IMPORTANT: draw ONLY the character and the small item held in the hands. No furniture at all: no desk, no table, "
+        "no chair, no anvil, no keyboard, no floor, no shadow, no grid lines, no text. "
+        "Row 1: front view, standing, writing with a feather quill on a small parchment held in one hand, 3 frames: "
+        "quill touching the paper, quill lifted, quill touching the paper again. "
+        "Row 2: side view facing LEFT, standing, holding a blacksmith hammer with both hands, 3 frames: hammer raised high "
+        "above the head, hammer halfway down, hammer swung down low in front at waist height. "
+        "Row 3: front view, standing, reading an open book held in both hands, 3 frames: reading, turning a page, reading. "
+        "Correct anatomy, exactly two arms and two legs.")
+
 def upload(path):
     """Upload once and remember the media id (logs/uploads.json)."""
     cache_path = ROOT / "logs/uploads.json"
@@ -104,6 +116,10 @@ def run(kind, model, cid):
         # cid = "<area>-<variant>"
         prompt, aspect = AREA_STYLE + AREAS[cid.rsplit("-", 1)[0]] + " No characters, no people, no text, no UI.", "16:9"
         out = f"area_{cid}_{model}"
+    elif kind == "work":
+        char = cid.rsplit("-", 1)[0]
+        prompt, aspect = WORK.format(visual=ROSTER[char]["visual"]), "1:1"
+        out = f"work_{cid}_{model}"
     elif kind == "sheet":
         # cid = "<character>-<variant>"; the character's front sprite is the identity reference.
         char = cid.rsplit("-", 1)[0]
@@ -124,7 +140,7 @@ def run(kind, model, cid):
         cmd[8:8] = ["--resolution", "4k" if kind == "town" else "2k"]
     if model == "gpt_image_2":
         cmd[8:8] = ["--quality", "medium"]
-    if kind == "sheet":
+    if kind in ("sheet", "work"):
         ref = ROOT / f"raw/sprite_{cid.rsplit('-', 1)[0]}_seedream_5_0_flash.webp"
         cmd[8:8] = ["--image-references", upload(ref)]
     p = subprocess.run(cmd, capture_output=True, text=True)

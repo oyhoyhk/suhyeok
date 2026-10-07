@@ -123,6 +123,39 @@ def slice_sheet(char: str, variant: str):
     print(char, "ok" if not warnings else "CHECK: " + ", ".join(warnings))
 
 
+WORK_ROWS = ["write", "smith", "study"]  # quill on parchment, hammer swing facing left, reading a book
+
+
+def slice_work(char: str, variant: str = "a"):
+    """3x3 prop-free work sheet -> out/frames/<char>/{write,smith,study}_{0,1,2}.png, same scale as walking."""
+    src = ROOT / f"raw/work_{char}-{variant}_seedream_5_0_flash.webp"
+    if not src.exists():
+        return False
+    sheet = Image.open(src).convert("RGB")
+    ys, xs = cuts(sheet, 3, axis=0), cuts(sheet, 3, axis=1)
+    out = ROOT / "out/frames" / char
+    stand = Image.open(out / "walk_down_1.png")
+    for r, row in enumerate(WORK_ROWS):
+        cells = []
+        for c in range(3):
+            cell = sheet.crop((xs[c], ys[r], xs[c + 1], ys[r + 1]))
+            cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
+            cells.append(drop_floor_shadow(key_background(cell)))
+        # Standing poses: scale the row so its body matches the walking height (raised hammers may stick out).
+        body = sorted(f.height for f in cells)[0] if row == "smith" else max(f.height for f in cells)
+        scale = stand.height / body
+        frames = [f.resize((max(1, round(f.width * scale)), max(1, round(f.height * scale))), Image.NEAREST) for f in cells]
+        for c, f in enumerate(align_row(frames)):
+            f.quantize(256, method=Image.Quantize.FASTOCTREE).save(out / f"{row}_{c}.png", optimize=True)
+    return True
+
+
 if __name__ == "__main__":
-    for arg in sys.argv[1:]:
-        slice_sheet(*arg.split("="))
+    if sys.argv[1:2] == ["work"]:
+        import json
+        for c in json.loads((ROOT / "roster.json").read_text()):
+            print(c["id"], "ok" if slice_work(c["id"]) else "no sheet")
+    else:
+        for arg in sys.argv[1:]:
+            slice_sheet(*arg.split("="))
+
