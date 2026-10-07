@@ -70,6 +70,12 @@ def main():
             img = Image.open(f).convert("RGB")
             img.thumbnail((2048, 2048), Image.LANCZOS)
             img.save(OUT / "map.png")
+    # Extra world areas (chosen candidates), same size as the guild hall map.
+    for name, src in {"tavern": "area_tavern-a_z_image", "garden": "area_garden-a_z_image",
+                      "library": "area_library-b_z_image"}.items():
+        f = RAW / f"{src}.webp"
+        if f.exists():
+            Image.open(f).convert("RGB").resize((2048, 1152), Image.LANCZOS).save(OUT / f"area_{name}.jpg", quality=88)
     print(sorted(str(p.relative_to(OUT)) for p in OUT.rglob("*.png")))
 
 

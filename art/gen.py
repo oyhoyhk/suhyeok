@@ -53,6 +53,18 @@ SHEET = ("16-bit pixel art RPG character sprite sheet of EXACTLY the same charac
          "Row 6: front view reading an open book held in both hands, 3 frames: reading, turning a page, reading. "
          "Correct anatomy, exactly two arms and two legs.")
 
+AREA_STYLE = ("Top-down 16-bit pixel art RPG interior map, seen from directly above at a slight angle like a classic JRPG, "
+              "same style as a cozy adventurers' guild hall: warm lighting, wooden floors, stone walls, thick dark outlines. ")
+AREAS = {
+    "tavern": "A large cozy tavern hall: many round wooden tables with stools spread across the floor, a long bar counter "
+              "along the top wall with barrels and bottles, a big stone fireplace on the left wall, hanging lanterns, "
+              "wide open walkways between the tables.",
+    "garden": "An enclosed courtyard garden: stone paths, a round fountain in the center, wooden benches along the paths, "
+              "flower beds, small trees and hedges, soft grass, low stone walls around the edges, wide open walkways.",
+    "library": "A grand library: tall bookshelves along the walls and in neat rows, reading desks with candles, a large "
+               "celestial globe in the center, rugs, wide aisles between the shelves.",
+}
+
 def upload(path):
     """Upload once and remember the media id (logs/uploads.json)."""
     cache_path = ROOT / "logs/uploads.json"
@@ -71,6 +83,10 @@ def upload(path):
 def run(kind, model, cid):
     if kind == "map":
         prompt, aspect, out = MAP, "16:9", f"map_{model}"
+    elif kind == "area":
+        # cid = "<area>-<variant>"
+        prompt, aspect = AREA_STYLE + AREAS[cid.rsplit("-", 1)[0]] + " No characters, no people, no text, no UI.", "16:9"
+        out = f"area_{cid}_{model}"
     elif kind == "sheet":
         # cid = "<character>-<variant>"; the character's front sprite is the identity reference.
         char = cid.rsplit("-", 1)[0]

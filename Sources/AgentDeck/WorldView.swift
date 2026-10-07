@@ -1,47 +1,108 @@
 import SwiftUI
 
-/// Normalized (0...1) rectangles on the map image where each activity gathers.
-enum Zone {
-    static func rect(for activity: Activity) -> CGRect {
-        switch activity {
-        // Tuned to art/out/map.png (z_image guild hall).
-        case .working: return CGRect(x: 0.06, y: 0.12, width: 0.28, height: 0.76) // desk hall, left
-        case .waiting: return CGRect(x: 0.44, y: 0.62, width: 0.22, height: 0.26) // tavern by the bar, bottom middle
-        case .resting: return CGRect(x: 0.70, y: 0.22, width: 0.25, height: 0.68) // lounge, right
+/// The world: four 16:9 areas in a 2×2 grid with a dark gap between them.
+/// World units: one area is 1 wide and 9/16 tall. Spots inside an area are given as fractions (0...1) of it.
+enum World {
+    enum Area: String, CaseIterable {
+        case guild, library, tavern, garden
+
+        var image: String { self == .guild ? "map" : "area_\(rawValue)" }
+        var label: String {
+            switch self {
+            case .guild: return "길드홀"
+            case .library: return "도서관"
+            case .tavern: return "선술집"
+            case .garden: return "정원"
+            }
+        }
+        var origin: CGPoint {
+            switch self {
+            case .guild: return CGPoint(x: 0, y: 0)
+            case .library: return CGPoint(x: 1 + World.gap, y: 0)
+            case .tavern: return CGPoint(x: 0, y: World.areaH + World.gap)
+            case .garden: return CGPoint(x: 1 + World.gap, y: World.areaH + World.gap)
+            }
+        }
+        var rect: CGRect { CGRect(origin: origin, size: CGSize(width: 1, height: World.areaH)) }
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: origin.x + x, y: origin.y + y * World.areaH)
         }
     }
 
-    /// Chairs in front of the desks in the work hall (art/out/map.png), filled top to bottom.
-    static let deskSeats: [CGPoint] = [0.26, 0.43, 0.71, 0.86].flatMap { y in
-        [0.09, 0.15, 0.22, 0.29].map { x in CGPoint(x: x, y: y) }
-    }
+    static let areaH: CGFloat = 9.0 / 16.0
+    static let gap: CGFloat = 0.05
+    static let size = CGSize(width: 2 + gap, height: 2 * areaH + gap)
 
-    /// Work stations on art/out/map.png; agents walk to the one that matches what they are doing.
+    /// Where agents doing each kind of work stand.
     static func stations(for kind: AgentAction.Kind) -> [CGPoint] {
+        let g = Area.guild, lib = Area.library
         switch kind {
         case .shell:  // around the anvil in the forge
-            return [CGPoint(x: 0.50, y: 0.36), CGPoint(x: 0.60, y: 0.36), CGPoint(x: 0.47, y: 0.27), CGPoint(x: 0.63, y: 0.27)]
-        case .reading:  // in front of the quest boards on the walls
-            return [0.16, 0.57].flatMap { y in [0.10, 0.20, 0.29].map { CGPoint(x: $0, y: y) } }
+            return [g.point(0.50, 0.36), g.point(0.60, 0.36), g.point(0.47, 0.27), g.point(0.63, 0.27)]
         case .web:  // by the guild hall's front door, looking out
-            return [CGPoint(x: 0.80, y: 0.15), CGPoint(x: 0.86, y: 0.15), CGPoint(x: 0.74, y: 0.15)]
+            return [g.point(0.80, 0.15), g.point(0.86, 0.15), g.point(0.74, 0.15)]
         case .delegating:  // around the round tables
-            return [CGPoint(x: 0.12, y: 0.80), CGPoint(x: 0.28, y: 0.80), CGPoint(x: 0.17, y: 0.88), CGPoint(x: 0.24, y: 0.88)]
-        case .thinking:  // standing in the corridor between the halls, deep in thought
-            return [CGPoint(x: 0.375, y: 0.45), CGPoint(x: 0.375, y: 0.62), CGPoint(x: 0.40, y: 0.53)]
-        case .editing, .replying, .other:
-            return deskSeats
+            return [g.point(0.12, 0.80), g.point(0.28, 0.80), g.point(0.17, 0.88), g.point(0.24, 0.88)]
+        case .reading:  // in front of the library reading desks
+            return [0.37, 0.47, 0.57, 0.67].flatMap { y in [0.25, 0.70].map { lib.point($0, y) } }
+                + [lib.point(0.38, 0.37), lib.point(0.38, 0.67)]
+        case .thinking:  // around the great globe
+            return [lib.point(0.45, 0.30), lib.point(0.60, 0.30), lib.point(0.42, 0.72), lib.point(0.62, 0.72)]
+        case .editing, .replying, .other:  // chairs at the guild hall desks
+            return [0.26, 0.43, 0.71, 0.86].flatMap { y in [0.09, 0.15, 0.22, 0.29].map { g.point($0, y) } }
         }
     }
 
-    /// Spreads `count` slots over the zone in a grid that follows the zone's shape.
-    static func slot(_ index: Int, of count: Int, in r: CGRect, aspect: CGFloat) -> CGPoint {
-        let ratio = (r.width * aspect) / r.height
-        let cols = max(1, Int(ceil(sqrt(Double(count) * ratio))))
-        let rows = max(1, Int(ceil(Double(count) / Double(cols))))
-        let col = index % cols, row = index / cols
-        return CGPoint(x: r.minX + r.width * (CGFloat(col) + 0.5) / CGFloat(cols),
-                       y: r.minY + r.height * (CGFloat(row) + 0.5) / CGFloat(rows))
+    /// Waiting agents fill the tavern aisles; resting agents spread over the garden.
+    static func spots(for activity: Activity) -> [CGPoint] {
+        switch activity {
+        case .working:
+            return stations(for: .editing)
+        case .waiting:
+            return [0.39, 0.62].flatMap { y in stride(from: 0.16, through: 0.82, by: 0.083).map { Area.tavern.point($0, y) } }
+        case .resting:
+            return [(0.20, 0.30), (0.33, 0.40), (0.62, 0.40), (0.72, 0.30), (0.15, 0.50), (0.30, 0.50), (0.64, 0.50),
+                    (0.78, 0.50), (0.20, 0.68), (0.33, 0.72), (0.62, 0.70), (0.72, 0.65), (0.38, 0.62), (0.56, 0.62),
+                    (0.38, 0.40), (0.56, 0.40)].map { Area.garden.point($0.0, $0.1) }
+        }
+    }
+
+    /// Spot i of a list; past the end, agents stand in small steps beside the earlier ones.
+    static func spot(_ list: [CGPoint], _ i: Int) -> CGPoint {
+        var p = list[i % list.count]
+        p.x += CGFloat(i / list.count) * 0.025
+        return p
+    }
+}
+
+/// Maps world units to view points: `scale` points per world unit, `center` is the world point in the middle.
+struct Camera: Equatable {
+    var center = CGPoint(x: 0.5, y: World.areaH / 2)
+    var scale: CGFloat = 0
+
+    func screen(_ p: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(x: (p.x - center.x) * scale + size.width / 2, y: (p.y - center.y) * scale + size.height / 2)
+    }
+    func world(_ p: CGPoint, in size: CGSize) -> CGPoint {
+        CGPoint(x: (p.x - size.width / 2) / scale + center.x, y: (p.y - size.height / 2) / scale + center.y)
+    }
+    func visible(in size: CGSize) -> CGRect {
+        let tl = world(.zero, in: size)
+        return CGRect(x: tl.x, y: tl.y, width: size.width / scale, height: size.height / scale)
+    }
+
+    /// Smallest scale shows the whole world; largest shows a quarter of an area.
+    static func limits(_ size: CGSize) -> ClosedRange<CGFloat> {
+        let fitAll = min(size.width / World.size.width, size.height / World.size.height)
+        return fitAll...(size.width * 2.5)
+    }
+
+    mutating func clamp(_ size: CGSize) {
+        let l = Camera.limits(size)
+        scale = min(max(scale, l.lowerBound), l.upperBound)
+        let half = CGSize(width: size.width / scale / 2, height: size.height / scale / 2)
+        func c(_ v: CGFloat, _ h: CGFloat, _ total: CGFloat) -> CGFloat { h * 2 >= total ? total / 2 : min(max(v, h), total - h) }
+        center = CGPoint(x: c(center.x, half.width, World.size.width), y: c(center.y, half.height, World.size.height))
     }
 }
 
@@ -57,38 +118,49 @@ struct WorldView: View {
     @State private var ending: AgentSession?
     @State private var migrating: AgentSession?
     @AppStorage(OpenMode.storageKey) private var openMode = OpenMode.dialogue.rawValue
+    @State private var camera = Camera()
+    @State private var dragStart: CGPoint?
+    @State private var zoomStart: CGFloat?
+    @State private var walker = Walker()
+    /// Latest drawn positions, for hit-testing, cards, the minimap and edge markers.
+    @State private var drawn: [String: CGPoint] = [:]
 
     init(store: SessionStore, initialSelection: String? = nil, initialDialogue: String? = nil) {
         self.store = store
         _selectedId = State(initialValue: initialSelection)
         _dialogueId = State(initialValue: initialDialogue)
     }
-    @State private var walker = Walker()
-
-    private let mapAspect: CGFloat = 16.0 / 9.0
 
     var body: some View {
         GeometryReader { geo in
-            let size = fitted(geo.size)
-            let origin = CGPoint(x: (geo.size.width - size.width) / 2, y: (geo.size.height - size.height) / 2)
+            let size = geo.size
+            let cam = camera.scale == 0 ? initialCamera(size) : camera
             let items = placed()
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
-                    mapBackground.frame(width: size.width, height: size.height)
-                        .contentShape(Rectangle())
-                        .onTapGesture { selectedId = nil; dialogueId = nil }  // clicking the world closes cards and the dialogue
+                    Color(red: 0.05, green: 0.04, blue: 0.08)
+                    ForEach(World.Area.allCases, id: \.self) { area in
+                        let r = area.rect
+                        let tl = cam.screen(r.origin, in: size)
+                        areaImage(area)
+                            .frame(width: r.width * cam.scale, height: r.height * cam.scale)
+                            .position(x: tl.x + r.width * cam.scale / 2, y: tl.y + r.height * cam.scale / 2)
+                    }
                     TimelineView(.periodic(from: .now, by: 0.1)) { ctx in
                         let t = ctx.date.timeIntervalSinceReferenceDate
                         let positions = walker.step(targets: items.map { ($0.session.id, $0.point) }, now: t)
                         ZStack(alignment: .topLeading) {
-                            ForEach(items, id: \.session.id) { item in
+                            // Lower on the map = closer to the viewer = drawn on top.
+                            ForEach(items.sorted { (positions[$0.session.id] ?? $0.point).y < (positions[$1.session.id] ?? $1.point).y },
+                                    id: \.session.id) { item in
                                 let p = positions[item.session.id] ?? item.point
+                                let sp = cam.screen(p, in: size)
                                 Avatar(session: item.session, character: item.character, station: store.station(for: item.session),
                                        agentName: store.agentName(for: item.session), time: t,
-                                       height: size.width * 0.07, selected: item.session.id == selectedId,
+                                       height: cam.scale * 0.07 * World.areaH * 16 / 9, selected: item.session.id == selectedId,
                                        walking: p != item.point,
                                        facing: p != item.point ? (walker.facing[item.session.id] ?? .down) : .down)
-                                    .position(x: p.x * size.width, y: p.y * size.height)
+                                    .position(sp)
                                     .onTapGesture { dialogueId = nil; selectedId = item.session.id == selectedId ? nil : item.session.id }
                                     .contextMenu {
                                         AgentMenu(store: store, session: item.session,
@@ -97,33 +169,61 @@ struct WorldView: View {
                                     }
                             }
                         }
-                        .frame(width: size.width, height: size.height)
+                        .onChange(of: Int(t * 2)) { drawn = positions }  // twice a second is enough for overlays
                     }
                 }
                 .frame(width: size.width, height: size.height)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
+                .onTapGesture { selectedId = nil; dialogueId = nil }  // clicking the world closes cards and the dialogue
+                .gesture(DragGesture(minimumDistance: 4)
+                    .onChanged { v in
+                        if dragStart == nil { dragStart = cam.center }
+                        var c = cam
+                        c.center = CGPoint(x: dragStart!.x - v.translation.width / cam.scale,
+                                           y: dragStart!.y - v.translation.height / cam.scale)
+                        c.clamp(size); camera = c
+                    }
+                    .onEnded { _ in dragStart = nil })
+                .simultaneousGesture(MagnificationGesture()
+                    .onChanged { m in
+                        if zoomStart == nil { zoomStart = cam.scale }
+                        var c = cam; c.scale = zoomStart! * m; c.clamp(size); camera = c
+                    }
+                    .onEnded { _ in zoomStart = nil })
                 // Per-avatar onHover misses exit events while the timeline rebuilds the views,
-                // so hit-test the pointer against avatar slots instead.
+                // so hit-test the pointer against avatar positions instead.
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let loc):
-                        let radius = size.width * 0.045
+                        let radius = cam.scale * 0.045
                         hoveredId = items.map { item -> (String, CGFloat) in
-                            let dx = item.point.x * size.width - loc.x, dy = item.point.y * size.height - loc.y
-                            return (item.session.id, sqrt(dx * dx + dy * dy))
+                            let sp = cam.screen(drawn[item.session.id] ?? item.point, in: size)
+                            return (item.session.id, hypot(sp.x - loc.x, sp.y - loc.y))
                         }.filter { $0.1 < radius }.min { $0.1 < $1.1 }?.0
                     case .ended:
                         hoveredId = nil
                     }
                 }
-                .offset(x: origin.x, y: origin.y)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                edgeMarkers(items, cam: cam, size: size)
+                zoomControls(cam: cam, size: size)
+                    .position(x: 40, y: size.height - 70)
+                Minimap(items: items.map { ($0.session.id, drawn[$0.session.id] ?? $0.point, $0.session.activity) },
+                        visible: cam.visible(in: size), selected: selectedId) { p in
+                    var c = cam; c.center = p; c.clamp(size)
+                    withAnimation(.easeInOut(duration: 0.35)) { camera = c }
+                }
+                .frame(width: 220, height: 220 * World.size.height / World.size.width)
+                .position(x: size.width - 122, y: size.height - 12 - 110 * World.size.height / World.size.width)
+                .opacity(dialogueId != nil && dialogueLarge ? 0 : 1)
 
                 // Cards live outside the clipped map so they can overflow its edges.
                 if let id = hoveredId, id != selectedId, let item = items.first(where: { $0.session.id == id }) {
                     HoverCard(session: item.session, agentName: store.agentName(for: item.session))
                         .fixedSize()
-                        .position(cardCenter(item.point, cardSize: CGSize(width: 240, height: 120),
-                                             map: size, origin: origin, bounds: geo.size))
+                        .position(cardCenter(cam.screen(drawn[id] ?? item.point, in: size), cardSize: CGSize(width: 240, height: 120),
+                                             avatar: cam.scale * 0.06, bounds: size))
                 }
                 if let id = selectedId, let item = items.first(where: { $0.session.id == id }) {
                     StatusCard(session: item.session, agentName: store.agentName(for: item.session),
@@ -137,8 +237,8 @@ struct WorldView: View {
                                    }
                                })
                         .fixedSize()
-                        .position(cardCenter(item.point, cardSize: CGSize(width: 320, height: 340),
-                                             map: size, origin: origin, bounds: geo.size))
+                        .position(cardCenter(cam.screen(drawn[id] ?? item.point, in: size), cardSize: CGSize(width: 320, height: 340),
+                                             avatar: cam.scale * 0.06, bounds: size))
                 }
                 // NPC-style conversation: docked to the right half, or a small picture-in-picture window.
                 if let id = dialogueId {
@@ -182,37 +282,101 @@ struct WorldView: View {
     private func clamp(_ v: Double, _ margin: Double) -> Double { min(max(v, margin), 1 - margin) }
 
     /// Beside the avatar, on the side with more room, clamped to the view.
-    private func cardCenter(_ p: CGPoint, cardSize: CGSize, map: CGSize, origin: CGPoint, bounds: CGSize) -> CGPoint {
-        let ax = origin.x + p.x * map.width, ay = origin.y + p.y * map.height
-        let gap = map.width * 0.06 + cardSize.width / 2
-        let x = p.x > 0.5 ? ax - gap : ax + gap
+    private func cardCenter(_ a: CGPoint, cardSize: CGSize, avatar: CGFloat, bounds: CGSize) -> CGPoint {
+        let gap = avatar + cardSize.width / 2
+        let x = a.x > bounds.width / 2 ? a.x - gap : a.x + gap
         let hw = cardSize.width / 2, hh = cardSize.height / 2
-        return CGPoint(x: min(max(x, hw), bounds.width - hw), y: min(max(ay, hh), bounds.height - hh))
+        return CGPoint(x: min(max(x, hw), bounds.width - hw), y: min(max(a.y, hh), bounds.height - hh))
     }
 
-    @ViewBuilder private var mapBackground: some View {
-        if let map = Art.image("map") {
-            Image(nsImage: map).resizable().interpolation(.none)
+    /// Opens on the guild hall filling the view.
+    private func initialCamera(_ size: CGSize) -> Camera {
+        var c = Camera(center: CGPoint(x: 0.5, y: World.areaH / 2),
+                       scale: min(size.width, size.height * 16 / 9))
+        if ProcessInfo.processInfo.environment["SUHYEOK_FIT_ALL"] != nil { c.scale = 0 }  // snapshots of the whole world
+        c.clamp(size)
+        DispatchQueue.main.async { if camera.scale == 0 { camera = c } }
+        return c
+    }
+
+    @ViewBuilder private func areaImage(_ area: World.Area) -> some View {
+        if let img = Art.image(area.image) {
+            Image(nsImage: img).resizable().interpolation(.none)
         } else {
-            ZStack {
-                Color(red: 0.25, green: 0.18, blue: 0.13)
-                ForEach(Activity.allCases, id: \.self) { s in
-                    GeometryReader { g in
-                        let r = Zone.rect(for: s)
-                        RoundedRectangle(cornerRadius: 6).fill(s.color.opacity(0.12))
-                            .overlay(Text(s.zoneName).font(.caption.bold()).foregroundStyle(.white.opacity(0.5))
-                                .padding(6), alignment: .topLeading)
-                            .frame(width: r.width * g.size.width, height: r.height * g.size.height)
-                            .offset(x: r.minX * g.size.width, y: r.minY * g.size.height)
-                    }
-                }
-            }
+            Color(red: 0.25, green: 0.18, blue: 0.13).overlay(Text(area.label).foregroundStyle(.white.opacity(0.5)))
         }
     }
 
-    private func fitted(_ avail: CGSize) -> CGSize {
-        let w = min(avail.width, avail.height * mapAspect)
-        return CGSize(width: w, height: w / mapAspect)
+    private struct Marker { let item: Placed; var at: CGPoint; let side: Int; let angle: CGFloat }
+
+    /// Agents outside the view: a small face on the edge pointing to them; click to go there.
+    /// Faces on the same edge are spread apart and kept clear of the minimap and zoom buttons.
+    @ViewBuilder private func edgeMarkers(_ items: [Placed], cam: Camera, size: CGSize) -> some View {
+        ForEach(layoutMarkers(items, cam: cam, size: size), id: \.item.session.id) { m in
+            EdgeMarker(character: m.item.character, color: m.item.session.activity.color, angle: m.angle)
+                .position(m.at)
+                .help("\(store.agentName(for: m.item.session)) · \(m.item.session.name)")
+                .onTapGesture {
+                    var n = cam; n.center = drawn[m.item.session.id] ?? m.item.point; n.clamp(size)
+                    withAnimation(.easeInOut(duration: 0.4)) { camera = n }
+                    selectedId = m.item.session.id
+                }
+        }
+    }
+
+    private func layoutMarkers(_ items: [Placed], cam: Camera, size: CGSize) -> [Marker] {
+        let inset: CGFloat = 24, spacing: CGFloat = 38
+        let c = CGPoint(x: size.width / 2, y: size.height / 2)
+        var markers: [Marker] = []
+        for item in items {
+            let sp = cam.screen(drawn[item.session.id] ?? item.point, in: size)
+            guard sp.x < 0 || sp.y < 0 || sp.x > size.width || sp.y > size.height else { continue }
+            let dx = sp.x - c.x, dy = sp.y - c.y
+            let kx = (size.width / 2 - inset) / max(abs(dx), 0.001), ky = (size.height / 2 - inset) / max(abs(dy), 0.001)
+            let k = min(kx, ky)
+            // side: 0 top, 1 right, 2 bottom, 3 left
+            let side = kx < ky ? (dx > 0 ? 1 : 3) : (dy > 0 ? 2 : 0)
+            markers.append(Marker(item: item, at: CGPoint(x: c.x + dx * k, y: c.y + dy * k), side: side, angle: atan2(dy, dx)))
+        }
+        // Allowed span on each edge; the bottom-right corner belongs to the minimap, bottom-left to the zoom buttons.
+        let minimapH = 220 * World.size.height / World.size.width + 24
+        let spans: [Int: ClosedRange<CGFloat>] = [
+            0: inset...(size.width - inset), 1: inset...(size.height - minimapH - inset),
+            2: 90...(size.width - 250), 3: inset...(size.height - 130),
+        ]
+        for side in 0..<4 {
+            let idx = markers.indices.filter { markers[$0].side == side }
+                .sorted { side % 2 == 0 ? markers[$0].at.x < markers[$1].at.x : markers[$0].at.y < markers[$1].at.y }
+            guard let span = spans[side], !idx.isEmpty else { continue }
+            // Push apart forward, then pull back if the last one ran past the end of the span.
+            var pos = idx.map { side % 2 == 0 ? markers[$0].at.x : markers[$0].at.y }
+            for i in pos.indices { pos[i] = max(pos[i], i == 0 ? span.lowerBound : pos[i - 1] + spacing) }
+            if let last = pos.last, last > span.upperBound {
+                for i in pos.indices.reversed() { pos[i] = min(pos[i], i == pos.count - 1 ? span.upperBound : pos[i + 1] - spacing) }
+            }
+            for (i, m) in idx.enumerated() {
+                if side % 2 == 0 { markers[m].at.x = pos[i] } else { markers[m].at.y = pos[i] }
+            }
+        }
+        return markers
+    }
+
+    private func zoomControls(cam: Camera, size: CGSize) -> some View {
+        VStack(spacing: 6) {
+            Button { zoom(cam, 1.3, size) } label: { Image(systemName: "plus") }
+            Button { zoom(cam, 1 / 1.3, size) } label: { Image(systemName: "minus") }
+            Button {
+                var c = cam; c.scale = 0; c.clamp(size)  // clamps up to the smallest scale = whole world
+                withAnimation(.easeInOut(duration: 0.35)) { camera = c }
+            } label: { Image(systemName: "rectangle.expand.vertical") }
+            .help("전체 보기")
+        }
+        .buttonStyle(.borderedProminent).tint(Color.black.opacity(0.55)).controlSize(.small)
+    }
+
+    private func zoom(_ cam: Camera, _ f: CGFloat, _ size: CGSize) {
+        var c = cam; c.scale *= f; c.clamp(size)
+        withAnimation(.easeInOut(duration: 0.2)) { camera = c }
     }
 
     private struct Placed { let session: AgentSession; let character: Character?; let point: CGPoint }
@@ -220,25 +384,85 @@ struct WorldView: View {
     private func placed() -> [Placed] {
         var out: [Placed] = []
         let byStart: (AgentSession, AgentSession) -> Bool = { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
-        // Working agents: grouped by station; a crowded station overflows in small steps.
         let working = Dictionary(grouping: store.sessions.filter { store.station(for: $0) != nil }) { store.station(for: $0)! }
         for (kind, members) in working {
-            let spots = Zone.stations(for: kind)
+            let spots = World.stations(for: kind)
             for (i, s) in members.sorted(by: byStart).enumerated() {
-                var p = spots[i % spots.count]
-                p.x += CGFloat(i / spots.count) * 0.03
-                out.append(Placed(session: s, character: store.character(for: s), point: p))
+                out.append(Placed(session: s, character: store.character(for: s), point: World.spot(spots, i)))
             }
         }
         let others = Dictionary(grouping: store.sessions.filter { store.station(for: $0) == nil }) { $0.activity }
         for (activity, members) in others {
-            let sorted = members.sorted(by: byStart)
-            for (i, s) in sorted.enumerated() {
-                let p = Zone.slot(i, of: sorted.count, in: Zone.rect(for: activity), aspect: mapAspect)
-                out.append(Placed(session: s, character: store.character(for: s), point: p))
+            let spots = World.spots(for: activity)
+            for (i, s) in members.sorted(by: byStart).enumerated() {
+                out.append(Placed(session: s, character: store.character(for: s), point: World.spot(spots, i)))
             }
         }
         return out
+    }
+}
+
+/// Whole-world overview: area thumbnails, a dot per agent, the visible rectangle. Click to move there.
+struct Minimap: View {
+    let items: [(String, CGPoint, Activity)]
+    let visible: CGRect
+    let selected: String?
+    let go: (CGPoint) -> Void
+
+    var body: some View {
+        GeometryReader { g in
+            let k = g.size.width / World.size.width
+            ZStack(alignment: .topLeading) {
+                Color.black.opacity(0.75)
+                ForEach(World.Area.allCases, id: \.self) { a in
+                    Group {
+                        if let img = Art.image(a.image) { Image(nsImage: img).resizable() } else { Color.gray }
+                    }
+                    .frame(width: a.rect.width * k, height: a.rect.height * k)
+                    .offset(x: a.rect.minX * k, y: a.rect.minY * k)
+                    .opacity(0.8)
+                }
+                ForEach(items, id: \.0) { id, p, activity in
+                    Circle().fill(activity.color)
+                        .overlay(Circle().stroke(id == selected ? Color.yellow : Color.black, lineWidth: id == selected ? 2 : 1))
+                        .frame(width: 7, height: 7)
+                        .position(x: p.x * k, y: p.y * k)
+                }
+                Rectangle().stroke(Color.white, lineWidth: 1.5)
+                    .frame(width: visible.width * k, height: visible.height * k)
+                    .offset(x: visible.minX * k, y: visible.minY * k)
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { v in go(CGPoint(x: v.location.x / k, y: v.location.y / k)) })
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(red: 0.85, green: 0.68, blue: 0.25), lineWidth: 2))
+    }
+}
+
+/// A round face on the view's edge with a small arrow toward an off-screen agent.
+struct EdgeMarker: View {
+    let character: Character?
+    let color: Color
+    let angle: CGFloat
+
+    var body: some View {
+        ZStack {
+            Triangle().fill(color).frame(width: 10, height: 10).offset(x: 22).rotationEffect(.radians(angle))
+            Circle().fill(Color.black.opacity(0.7)).frame(width: 34, height: 34)
+            if let c = character, let img = Art.image("sprites/\(c.id)") {
+                Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fill)
+                    .frame(width: 30, height: 30, alignment: .top).clipShape(Circle())
+            }
+            Circle().stroke(color, lineWidth: 2).frame(width: 34, height: 34)
+        }
+        .contentShape(Circle())
+    }
+}
+
+struct Triangle: Shape {
+    func path(in r: CGRect) -> Path {
+        Path { p in p.move(to: CGPoint(x: r.maxX, y: r.midY)); p.addLine(to: CGPoint(x: r.minX, y: r.minY)); p.addLine(to: CGPoint(x: r.minX, y: r.maxY)); p.closeSubpath() }
     }
 }
 
@@ -265,8 +489,8 @@ final class Walker {
             let move = speed * dt
             next[id] = dist <= move ? target : CGPoint(x: p.x + dx / dist * move, y: p.y + dy / dist * move)
             if dist > move {
-                // Map y grows downward; compare in screen proportions (the map is 16:9).
-                facing[id] = abs(dx) * 16 / 9 > abs(dy) ? (dx < 0 ? .left : .right) : (dy < 0 ? .up : .down)
+                // Map y grows downward; world units are the same on both axes.
+                facing[id] = abs(dx) > abs(dy) ? (dx < 0 ? .left : .right) : (dy < 0 ? .up : .down)
             } else if dist == 0, facing[id] == nil {
                 facing[id] = .down
             }

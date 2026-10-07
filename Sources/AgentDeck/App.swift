@@ -8,6 +8,10 @@ struct AgentDeckApp: App {
     init() {
         // `AgentDeck --snapshot out.png [selectedSessionId]` renders the world offscreen and exits (for checks without touching the screen).
         let args = CommandLine.arguments
+        // `AgentDeck --snapshot-world out.png [seconds]` renders the live world (walking included) offscreen.
+        if let i = args.firstIndex(of: "--snapshot-world"), i + 1 < args.count {
+            Snapshot.world(path: args[i + 1], wait: args.dropFirst(i + 2).first.flatMap(Double.init) ?? 3)
+        }
         // `AgentDeck --trace-walk <seconds>` runs the world offscreen and logs positions/facing twice a second.
         if let i = args.firstIndex(of: "--trace-walk"), i + 1 < args.count, let secs = Double(args[i + 1]) {
             Snapshot.traceWalk(seconds: secs)
@@ -366,6 +370,20 @@ enum Snapshot {
         if let img = renderer.nsImage, let tiff = img.tiffRepresentation,
            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             try? png.write(to: URL(fileURLWithPath: path))
+        }
+        exit(0)
+    }
+
+    static func world(path: String, wait: Double) {
+        let store = loadedStore()
+        let host = NSHostingView(rootView: WorldView(store: store).frame(width: 1400, height: 820))
+        let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 1400, height: 820),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        RunLoop.main.run(until: Date().addingTimeInterval(wait))
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         }
         exit(0)
     }
