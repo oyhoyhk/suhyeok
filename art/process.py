@@ -66,16 +66,12 @@ def main():
             img = Image.open(f).convert("RGB")
             img.thumbnail((768, 1024), Image.LANCZOS)
             img.save(OUT / f"portraits/{cid}.jpg", quality=86)  # photos-like art: jpg is ~10x smaller than png
-        elif stem == f"map_{MAP_MODEL}":
-            img = Image.open(f).convert("RGB")
-            img.thumbnail((2048, 2048), Image.LANCZOS)
-            img.save(OUT / "map.png")
-    # Extra world areas (chosen candidates), same size as the guild hall map.
-    for name, src in {"tavern": "area_tavern-a_z_image", "garden": "area_garden-a_z_image",
-                      "library": "area_library-b_z_image"}.items():
-        f = RAW / f"{src}.webp"
-        if f.exists():
-            Image.open(f).convert("RGB").resize((2048, 1152), Image.LANCZOS).save(OUT / f"area_{name}.jpg", quality=88)
+    # The town map (one 4K image): full size for zooming in, 2K for the minimap.
+    town = RAW / "town_b_gpt_image_2.webp"
+    if town.exists():
+        img = Image.open(town).convert("RGB")
+        img.save(OUT / "town_4k.jpg", quality=88)
+        img.resize((2048, 1152), Image.LANCZOS).save(OUT / "town.jpg", quality=90)
     print(sorted(str(p.relative_to(OUT)) for p in OUT.rglob("*.png")))
 
 

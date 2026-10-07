@@ -10,16 +10,25 @@ final class Pathfinder {
     /// Corridor rectangles in world units, drawn between the areas.
     let corridors: [CGRect]
     private let walkable: [Bool]
+    private let namedSpots: [String: [CGPoint]]
+
+    /// Standing spots picked by art/walkmap.py (world units), in fill order.
+    func spots(_ name: String) -> [CGPoint] { namedSpots[name] ?? [] }
 
     private init() {
-        struct File: Decodable { let res: Int; let cols: Int; let rows: Int; let corridors: [[Double]]; let cells: [String] }
+        struct File: Decodable {
+            let res: Int; let cols: Int; let rows: Int; let corridors: [[Double]]; let cells: [String]
+            let spots: [String: [[Double]]]?
+        }
         if let url = Art.dir?.appendingPathComponent("walkmap.json"),
            let data = try? Data(contentsOf: url),
            let f = try? JSONDecoder().decode(File.self, from: data) {
             res = CGFloat(f.res); cols = f.cols; rows = f.rows
             corridors = f.corridors.map { CGRect(x: $0[0], y: $0[2], width: $0[1] - $0[0], height: $0[3] - $0[2]) }
             walkable = f.cells.flatMap { $0.map { $0 == "." } }
+            namedSpots = (f.spots ?? [:]).mapValues { $0.map { CGPoint(x: $0[0], y: $0[1]) } }
         } else {
+            namedSpots = [:]
             // No grid shipped: everything is walkable and agents walk straight.
             res = 1; cols = 0; rows = 0; corridors = []; walkable = []
         }

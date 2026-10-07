@@ -65,6 +65,21 @@ AREAS = {
                "celestial globe in the center, rugs, wide aisles between the shelves.",
 }
 
+TOWN = ("Highly detailed 16-bit pixel art top-down RPG town map, seen from directly above at a slight angle like a classic "
+        "JRPG overworld interior, one single coherent fortified guild compound at night with warm lantern light. "
+        "The compound has four large buildings with open interiors (no roofs, you see the floors and furniture inside), "
+        "arranged in a 2 by 2 layout around a central cobblestone plaza: "
+        "TOP-LEFT: a guild workshop hall with rows of wooden work desks with chairs, a blacksmith forge with a glowing furnace "
+        "and an anvil, and a few round meeting tables. "
+        "TOP-RIGHT: a grand library with tall bookshelves along the walls, rows of reading desks with candles, and a large "
+        "celestial globe on a rug in the middle. "
+        "BOTTOM-LEFT: a cozy tavern with many round wooden tables and stools, a long bar counter with barrels and bottles, "
+        "and a stone fireplace. "
+        "BOTTOM-RIGHT: an open garden courtyard with a round fountain, stone paths, wooden benches, flower beds and small trees. "
+        "Each building has a clear open doorway facing the central plaza, and wide cobblestone paths connect every doorway "
+        "through the plaza. Stone walls with torches surround the compound. Consistent scale and lighting across the whole map, "
+        "crisp pixels, rich detail, wide walkable floor space. No characters, no people, no text, no letters, no UI.")
+
 def upload(path):
     """Upload once and remember the media id (logs/uploads.json)."""
     cache_path = ROOT / "logs/uploads.json"
@@ -83,6 +98,8 @@ def upload(path):
 def run(kind, model, cid):
     if kind == "map":
         prompt, aspect, out = MAP, "16:9", f"map_{model}"
+    elif kind == "town":
+        prompt, aspect, out = TOWN, "16:9", f"town_{cid}_{model}"
     elif kind == "area":
         # cid = "<area>-<variant>"
         prompt, aspect = AREA_STYLE + AREAS[cid.rsplit("-", 1)[0]] + " No characters, no people, no text, no UI.", "16:9"
@@ -104,7 +121,9 @@ def run(kind, model, cid):
            "--prompt", prompt, "--aspect_ratio", aspect,
            "--wait", "--wait-timeout", "30m", "--json"]
     if model != "z_image":  # z_image rejects unknown params
-        cmd[8:8] = ["--resolution", "2k"]
+        cmd[8:8] = ["--resolution", "4k" if kind == "town" else "2k"]
+    if model == "gpt_image_2":
+        cmd[8:8] = ["--quality", "medium"]
     if kind == "sheet":
         ref = ROOT / f"raw/sprite_{cid.rsplit('-', 1)[0]}_seedream_5_0_flash.webp"
         cmd[8:8] = ["--image-references", upload(ref)]
