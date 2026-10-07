@@ -12,6 +12,18 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--snapshot-hosted"), i + 2 < args.count {
             Snapshot.hosted(name: args[i + 1], path: args[i + 2])
         }
+        // `AgentDeck --check-update` prints installed vs latest release.
+        if args.contains("--check-update") {
+            let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+            let sem = DispatchSemaphore(value: 0)
+            Task.detached {
+                let latest = await Updater.latestVersion() ?? "?"
+                print("installed \(current) latest \(latest) newer=\(Updater.isNewer(latest, than: current))")
+                sem.signal()
+            }
+            sem.wait()
+            exit(0)
+        }
         // Session engine from the command line:
         //   --new-session <Claude|Codex> <cwd> [prompt]   --list-sessions   --kill-session <name>
         if let i = args.firstIndex(of: "--new-session"), i + 2 < args.count, let agent = Agent(rawValue: args[i + 1]) {
@@ -213,6 +225,12 @@ struct MenuBarContent: View {
             }
         }
         Divider()
+        if case .available(let v) = Updater.shared.state {
+            Button("업데이트 \(v) 설치…") {
+                Updater.shared.upgrade()
+            }
+            Divider()
+        }
         Button("수혁 열기") {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)

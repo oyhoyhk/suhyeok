@@ -79,7 +79,9 @@ enum RecentSource {
 
 struct WorkspaceView: View {
     @ObservedObject var store: SessionStore
+    @ObservedObject private var updater = Updater.shared
     @State private var showNew = false
+    @State private var confirmUpdate = false
 
     var body: some View {
         NavigationSplitView {
@@ -126,6 +128,7 @@ struct WorkspaceView: View {
                         .keyboardShortcut("n")
                 }
             }
+            .safeAreaInset(edge: .bottom) { updateBanner }
         } detail: {
             switch store.selection {
             case .world: WorldView(store: store)
@@ -135,6 +138,32 @@ struct WorkspaceView: View {
             }
         }
         .sheet(isPresented: $showNew) { NewSessionSheet(store: store) }
+        .onAppear { updater.start() }
+        .confirmationDialog("수혁을 업데이트할까요?", isPresented: $confirmUpdate) {
+            Button("업데이트 후 다시 열기") { updater.upgrade() }
+        } message: {
+            Text(updater.viaBrew
+                 ? "brew로 새 버전을 설치하고 앱을 다시 엶. 실행 중인 에이전트 세션은 tmux에 있어 끊기지 않음."
+                 : "brew로 설치한 앱이 아니라서 GitHub 릴리스 페이지를 엶.")
+        }
+    }
+
+    /// Sidebar footer: shows only when a newer release exists or an upgrade is running.
+    @ViewBuilder private var updateBanner: some View {
+        switch updater.state {
+        case .available(let v):
+            Button { confirmUpdate = true } label: {
+                Label("업데이트 \(v) 설치 (현재 \(updater.current))", systemImage: "arrow.down.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent).padding(10)
+        case .upgrading:
+            HStack { ProgressView().controlSize(.small); Text("업데이트 중… 끝나면 다시 열림").font(.caption) }.padding(10)
+        case .failed(let msg):
+            Text(msg).font(.caption).foregroundStyle(.red).padding(10)
+        case .idle:
+            EmptyView()
+        }
     }
 }
 

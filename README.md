@@ -17,6 +17,8 @@ brew install oyhoyhk/tap/suhyeok   # tmux 함께 설치
 suhyeok                            # 앱 실행
 ```
 
+- 업데이트: 새 버전이 나오면 사이드바 아래에 "업데이트 설치" 버튼이 뜸 (실행 시·6시간마다 확인). 누르면 `brew upgrade` 후 앱 재실행, 에이전트 세션은 유지
+- 0.1.1 이하 사용자: 업데이트 버튼이 없는 버전이라 한 번만 `brew upgrade suhyeok` 직접 실행
 - 요구 사항: Apple Silicon 맥, macOS 14 이상, Claude Code 또는 Codex CLI
 - Launchpad·Spotlight에 넣기: `ln -sf "$(brew --prefix)/opt/suhyeok/수혁.app" ~/Applications/수혁.app`
 
@@ -78,6 +80,8 @@ open 수혁.app
 ```
 
 - 화면 없이 확인: `수혁.app/Contents/MacOS/AgentDeck --snapshot out.png`
+- 새 버전 배포(관리자): `./publish.sh 0.1.2 "변경 요약"` → 빌드 · GitHub 릴리스 · tap Formula 갱신까지 한 번에
+- 업데이트 확인: `수혁.app/Contents/MacOS/AgentDeck --check-update`
 - 명령줄 세션 관리: `--new-session <Claude|Codex> <폴더> [지시]` · `--list-sessions` · `--kill-session <이름>` · `--snapshot-hosted <이름> out.png`
 
 ## 터미널 보기 — 어떤 터미널이든 동작
