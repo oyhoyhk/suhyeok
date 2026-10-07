@@ -94,6 +94,9 @@ struct AgentDeckApp: App {
         }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
+        if args.contains("--reopen-permissions") {
+            Snapshot.reopenPermissions()
+        }
         for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--clone", "--summary", "--hunt", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
@@ -153,7 +156,7 @@ struct AgentDeckApp: App {
             WorkspaceView(store: store)
                 .frame(minWidth: 900, minHeight: 560)
         }
-        Settings { SettingsView() }
+        Settings { SettingsView().environmentObject(store) }
         MenuBarExtra {
             MenuBarContent(store: store)
         } label: {
@@ -364,6 +367,33 @@ final class SessionStore: ObservableObject {
         return note.isEmpty ? nil : note
     }
 
+    /// Restarts 수혁 sessions whose process does not match the "skip permissions" setting, keeping the conversation:
+    /// quit gracefully (skipped when busy or a draft is typed), then resume it with the right flags.
+    func reopenForPermissionSetting() async -> [MigrationResult] {
+        let want = UserDefaults.standard.object(forKey: "skipPermissions") as? Bool ?? true
+        var results: [MigrationResult] = []
+        for s in sessions where s.hostedName != nil {
+            let has = !Self.permissionFlags(s).isEmpty
+            guard has != want, let name = s.hostedName, let conversation = s.conversationId else { continue }
+            let label = agentName(for: s) + " · " + s.name
+            if s.status == .busy || s.status == .waiting {
+                results.append(.init(id: s.id, name: label, message: "작업 중이라 건너뜀", ok: false)); continue
+            }
+            let note = await Task.detached { Self.closeOriginal(s) }.value
+            if let pid = s.pid, Darwin.kill(pid, 0) == 0 {
+                results.append(.init(id: s.id, name: label, message: note.isEmpty ? "종료되지 않음" : note, ok: false)); continue
+            }
+            TerminalHost.shared.drop(name)
+            TmuxEngine.kill(name)
+            // Without extraArgs: TmuxEngine adds the flag from the current setting.
+            let new = await Task.detached { TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: conversation) }.value
+            results.append(.init(id: s.id, name: label, message: new == nil ? "다시 열기 실패" : "다시 열림", ok: new != nil))
+        }
+        hosted = TmuxEngine.list()
+        refresh()
+        return results
+    }
+
     /// Permission options the original process was started with, so a migrated session behaves the same.
     nonisolated static func permissionFlags(_ s: AgentSession) -> [String] {
         guard let pid = s.pid,
@@ -562,6 +592,17 @@ enum Snapshot {
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        exit(0)
+    }
+
+    static func reopenPermissions() {
+        let store = loadedStore()
+        let done = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            for r in await store.reopenForPermissionSetting() { print(r.ok ? "ok  " : "skip", r.name, "—", r.message) }
+            done.signal()
+        }
+        while done.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         exit(0)
     }
 

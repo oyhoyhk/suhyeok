@@ -327,6 +327,10 @@ struct NewSessionSheet: View {
                 .fixedSize()
                 Button("선택…") { pickFolder() }
             }
+            Toggle("권한 확인 없이 실행", isOn: Binding(
+                get: { UserDefaults.standard.object(forKey: "skipPermissions") as? Bool ?? true },
+                set: { UserDefaults.standard.set($0, forKey: "skipPermissions") }))
+                .font(.caption)
             Text("첫 지시 (비워 두면 빈 세션으로 시작)").font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $prompt)
                 .font(.body)
