@@ -173,8 +173,38 @@ def slice_strips(char: str, variant: str = "a"):
     return True
 
 
+def slice_work_strips(char: str, variant: str = "a"):
+    """1x6 work strips -> {write,smith,study}_{0..5}.png at the walking scale."""
+    out = ROOT / "out/frames" / char
+    stand = Image.open(out / "walk_down_2.png") if (out / "walk_down_2.png").exists() else Image.open(out / "walk_down_1.png")
+    done = False
+    for act in ("write", "smith", "study"):
+        src = ROOT / f"raw/workstrip_{char}-{act}-{variant}_seedream_5_0_flash.webp"
+        if not src.exists():
+            continue
+        strip = Image.open(src).convert("RGB")
+        xs = cuts(strip, 6, axis=1)
+        cells = []
+        for c in range(6):
+            cell = strip.crop((xs[c], 0, xs[c + 1], strip.height))
+            cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
+            cells.append(drop_floor_shadow(key_background(cell)))
+        # Raised hammers stick out above the head: scale smithing by the shortest frame (hammer down).
+        body = min(f.height for f in cells) if act == "smith" else max(f.height for f in cells)
+        scale = stand.height / body
+        frames = [f.resize((max(1, round(f.width * scale)), max(1, round(f.height * scale))), Image.NEAREST) for f in cells]
+        for c, f in enumerate(align_row(frames)):
+            f.quantize(256, method=Image.Quantize.FASTOCTREE).save(out / f"{act}_{c}.png", optimize=True)
+        done = True
+    return done
+
+
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["strips"]:
+    if sys.argv[1:2] == ["workstrips"]:
+        import json
+        for c in json.loads((ROOT / "roster.json").read_text()):
+            if slice_work_strips(c["id"]): print(c["id"], "ok")
+    elif sys.argv[1:2] == ["strips"]:
         import json
         for c in json.loads((ROOT / "roster.json").read_text()):
             print(c["id"], "ok" if slice_strips(c["id"]) else "no strips")
@@ -185,5 +215,6 @@ if __name__ == "__main__":
     else:
         for arg in sys.argv[1:]:
             slice_sheet(*arg.split("="))
+
 
 

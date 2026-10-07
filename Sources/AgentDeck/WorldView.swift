@@ -119,7 +119,7 @@ struct WorldView: View {
                                     id: \.session.id) { item in
                                 let p = positions[item.session.id] ?? item.point
                                 let sp = cam.screen(p, in: size)
-                                Avatar(session: item.session, character: item.character, station: store.station(for: item.session),
+                                Avatar(session: item.session, character: item.character, station: station(for: item),
                                        agentName: store.agentName(for: item.session), time: t,
                                        height: cam.scale * World.avatarHeight, selected: item.session.id == selectedId,
                                        walking: p != item.point,
@@ -392,8 +392,32 @@ struct WorldView: View {
 
     private struct Placed { let session: AgentSession; let character: Character?; let point: CGPoint }
 
+    /// Demo agents (defaults key `demoWalkers`, e.g. "knight,fox") for checking animation in the app:
+    /// every 8 s they switch between walking to a station and working there — forge, desk, library in turn.
+    private func demoWalkers() -> [Placed] {
+        guard let ids = UserDefaults.standard.string(forKey: "demoWalkers"), !ids.isEmpty else { return [] }
+        let tick = Int(Date().timeIntervalSince1970 / 8)
+        return ids.split(separator: ",").enumerated().compactMap { k, id in
+            guard let c = Art.roster.first(where: { $0.id == String(id) }) else { return nil }
+            let stop = Self.demoStops[(tick / 2 + k) % Self.demoStops.count]
+            let s = AgentSession(id: "demo-\(id)", agent: .claude, name: "시연 · \(c.name)", cwd: "/demo", status: .busy,
+                                 startedAt: Date(), updatedAt: Date(), lastUser: nil, lastAssistant: nil, estimated: true)
+            return Placed(session: s, character: c, point: World.spot(World.stations(for: stop), k + 1))
+        }
+    }
+
+    private static let demoStops: [AgentAction.Kind] = [.shell, .editing, .reading]
+
+    /// Station shown for an agent; demo agents work at whatever station they are heading to.
+    private func station(for item: Placed) -> AgentAction.Kind? {
+        guard item.session.id.hasPrefix("demo-") else { return store.station(for: item.session) }
+        let k = (UserDefaults.standard.string(forKey: "demoWalkers") ?? "").split(separator: ",")
+            .firstIndex { "demo-\($0)" == item.session.id } ?? 0
+        return Self.demoStops[(Int(Date().timeIntervalSince1970 / 8) / 2 + k) % Self.demoStops.count]
+    }
+
     private func placed() -> [Placed] {
-        var out: [Placed] = []
+        var out: [Placed] = demoWalkers()
         let byStart: (AgentSession, AgentSession) -> Bool = { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
         let working = Dictionary(grouping: store.sessions.filter { store.station(for: $0) != nil }) { store.station(for: $0)! }
         for (kind, members) in working {
@@ -571,15 +595,20 @@ struct Avatar: View {
         // Prop-free work frames (write/smith/study) suit the map's own furniture; older sheets fall back to
         // the frames with drawn-in desks only when a character has no work sheet yet.
         let hasWork = character.map { Art.image("frames/\($0.id)/write_1") != nil } ?? false
+        // Six-frame work strips when present, otherwise the three-frame sheets.
+        let work6 = character.map { Art.image("frames/\($0.id)/write_5") != nil } ?? false
         switch station {
         case .shell?:
+            if work6 { return ("smith_\(Int(time * 7 + phase) % 6)", anvilOnRight) }
             // Raise slowly, strike fast: hold the raised frame longer than the swing.
             let beat = [0, 0, 1, 2, 2][Int(time * 5 + phase) % 5]
             return hasWork ? ("smith_\(beat)", anvilOnRight) : ("hammer_\(cycle[Int(time * 6 + phase) % 4])", false)
         case .editing?, .replying?, .other?:
+            if work6 { return ("write_\(Int(time * 4 + phase) % 6)", false) }
             return hasWork ? ("write_\([0, 1, 2, 1][Int(time * 2.5 + phase) % 4])", false)
                            : ("type_\(cycle[Int(time * 6 + phase) % 4])", false)
         case .reading?:
+            if work6 { return ("study_\(Int(time * 2 + phase) % 6)", false) }
             return hasWork ? ("study_\([0, 0, 0, 1, 2, 2, 2, 1][Int(time * 1.5 + phase) % 8])", false)
                            : ("read_\(cycle[Int(time * 1.5 + phase) % 4])", false)
         default: return (standing, false)

@@ -108,6 +108,21 @@ STRIP = ("16-bit pixel art RPG character walk animation strip of EXACTLY the sam
          "left leg forward, left leg passing under the body, both legs together, right leg forward, right leg passing, "
          "both legs together. The legs and arms clearly swing; the head, face, hair and clothes stay identical. "
          "Correct anatomy, exactly two arms and two legs.")
+WORKSTRIP = ("16-bit pixel art RPG character animation strip of EXACTLY the same character as the reference image "
+             "({visual}). ONE single horizontal row of 6 frames side by side, equal spacing, every frame the same size on the "
+             "same baseline, plain flat bright magenta background (#FF00FF), no grid lines, no shadows, no text. "
+             "Draw ONLY the character and the small item in the hands: no desk, no table, no anvil, no furniture, no floor. "
+             "ALL 6 frames show {action}. The head, face, hair and clothes stay identical; only the arms, hands and held item "
+             "move, as one smooth looping motion. Correct anatomy, exactly two arms and two legs.")
+ACTIONS = {
+    "write": "the character standing, seen from the front, writing with a feather quill on a small parchment held in one hand: "
+             "quill dips, writes left to right across the line, lifts, moves back, dips again",
+    "smith": "the character standing, seen from the side facing LEFT, swinging a blacksmith hammer with both hands: hammer "
+             "raised high behind the head, coming forward, striking down low at waist height in front, small bounce, lifting, "
+             "raised again",
+    "study": "the character standing, seen from the front, reading an open book held in both hands: reading, eyes moving, "
+             "turning a page with one hand, page flipping over, reading again, small nod",
+}
 VIEWS = {"down": "walking toward the viewer, seen from the front",
          "left": "walking to the left, seen from the side, facing left",
          "up": "walking away from the viewer, seen from the back"}
@@ -136,6 +151,11 @@ def run(kind, model, cid):
         # cid = "<area>-<variant>"
         prompt, aspect = AREA_STYLE + AREAS[cid.rsplit("-", 1)[0]] + " No characters, no people, no text, no UI.", "16:9"
         out = f"area_{cid}_{model}"
+    elif kind == "workstrip":
+        # cid = "<character>-<action>-<variant>"
+        char, act, _ = cid.rsplit("-", 2)
+        prompt, aspect = WORKSTRIP.format(visual=ROSTER[char]["visual"], action=ACTIONS[act]), "21:9"
+        out = f"workstrip_{cid}_{model}"
     elif kind == "strip":
         # cid = "<character>-<view>-<variant>"
         char, view, _ = cid.rsplit("-", 2)
@@ -169,7 +189,7 @@ def run(kind, model, cid):
         cmd[8:8] = ["--resolution", "4k" if kind == "town" else "2k"]
     if model == "gpt_image_2":
         cmd[8:8] = ["--quality", "medium"]
-    if kind in ("sheet", "work", "walk6", "strip"):
+    if kind in ("sheet", "work", "walk6", "strip", "workstrip"):
         ref = ROOT / f"raw/sprite_{cid.split('-')[0]}_seedream_5_0_flash.webp"
         cmd[8:8] = ["--image-references", upload(ref)]
     p = subprocess.run(cmd, capture_output=True, text=True)
