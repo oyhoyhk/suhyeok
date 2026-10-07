@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The world: four 16:9 areas in a 2×2 grid with a dark gap between them.
@@ -30,7 +31,7 @@ enum World {
     }
 
     static let areaH: CGFloat = 9.0 / 16.0
-    static let gap: CGFloat = 0.05
+    static let gap: CGFloat = 0.14  // must match art/walkmap.py GAP
     static let size = CGSize(width: 2 + gap, height: 2 * areaH + gap)
 
     /// Where agents doing each kind of work stand.
@@ -119,9 +120,8 @@ struct WorldView: View {
     @State private var ending: AgentSession?
     @State private var migrating: AgentSession?
     @AppStorage(OpenMode.storageKey) private var openMode = OpenMode.dialogue.rawValue
-    @State private var camera = Camera()
+    @StateObject private var input = MapInput()
     @State private var dragStart: CGPoint?
-    @State private var zoomStart: CGFloat?
     @State private var walker = Walker()
     /// Latest drawn positions, for hit-testing, cards, the minimap and edge markers.
     @State private var drawn: [String: CGPoint] = [:]
@@ -135,7 +135,7 @@ struct WorldView: View {
     var body: some View {
         GeometryReader { geo in
             let size = geo.size
-            let cam = camera.scale == 0 ? initialCamera(size) : camera
+            let cam = input.camera.scale == 0 ? initialCamera(size) : input.camera
             let items = placed()
             ZStack(alignment: .topLeading) {
                 ZStack(alignment: .topLeading) {
@@ -147,6 +147,7 @@ struct WorldView: View {
                             .frame(width: r.width * cam.scale, height: r.height * cam.scale)
                             .position(x: tl.x + r.width * cam.scale / 2, y: tl.y + r.height * cam.scale / 2)
                     }
+                    Corridors(cam: cam, size: size)
                     TimelineView(.periodic(from: .now, by: 0.1)) { ctx in
                         let t = ctx.date.timeIntervalSinceReferenceDate
                         let positions = walker.step(targets: items.map { ($0.session.id, $0.point) }, now: t)
@@ -182,20 +183,15 @@ struct WorldView: View {
                         var c = cam
                         c.center = CGPoint(x: dragStart!.x - v.translation.width / cam.scale,
                                            y: dragStart!.y - v.translation.height / cam.scale)
-                        c.clamp(size); camera = c
+                        c.clamp(size); input.camera = c
                     }
                     .onEnded { _ in dragStart = nil })
-                .simultaneousGesture(MagnificationGesture()
-                    .onChanged { m in
-                        if zoomStart == nil { zoomStart = cam.scale }
-                        var c = cam; c.scale = zoomStart! * m; c.clamp(size); camera = c
-                    }
-                    .onEnded { _ in zoomStart = nil })
                 // Per-avatar onHover misses exit events while the timeline rebuilds the views,
                 // so hit-test the pointer against avatar positions instead.
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let loc):
+                        input.cursor = loc
                         let radius = cam.scale * 0.045
                         hoveredId = items.map { item -> (String, CGFloat) in
                             let sp = cam.screen(drawn[item.session.id] ?? item.point, in: size)
@@ -203,8 +199,11 @@ struct WorldView: View {
                         }.filter { $0.1 < radius }.min { $0.1 < $1.1 }?.0
                     case .ended:
                         hoveredId = nil
+                        input.cursor = nil
                     }
                 }
+                .onAppear { input.size = size; input.install() }
+                .onChange(of: size) { input.size = size }
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 edgeMarkers(items, cam: cam, size: size)
@@ -213,7 +212,7 @@ struct WorldView: View {
                 Minimap(items: items.map { ($0.session.id, drawn[$0.session.id] ?? $0.point, $0.session.activity) },
                         visible: cam.visible(in: size), selected: selectedId) { p in
                     var c = cam; c.center = p; c.clamp(size)
-                    withAnimation(.easeInOut(duration: 0.35)) { camera = c }
+                    withAnimation(.easeInOut(duration: 0.35)) { input.camera = c }
                 }
                 .frame(width: 220, height: 220 * World.size.height / World.size.width)
                 .position(x: size.width - 122, y: size.height - 12 - 110 * World.size.height / World.size.width)
@@ -296,7 +295,7 @@ struct WorldView: View {
                        scale: min(size.width, size.height * 16 / 9))
         if ProcessInfo.processInfo.environment["SUHYEOK_FIT_ALL"] != nil { c.scale = 0 }  // snapshots of the whole world
         c.clamp(size)
-        DispatchQueue.main.async { if camera.scale == 0 { camera = c } }
+        DispatchQueue.main.async { if input.camera.scale == 0 { input.camera = c } }
         return c
     }
 
@@ -319,7 +318,7 @@ struct WorldView: View {
                 .help("\(store.agentName(for: m.item.session)) · \(m.item.session.name)")
                 .onTapGesture {
                     var n = cam; n.center = drawn[m.item.session.id] ?? m.item.point; n.clamp(size)
-                    withAnimation(.easeInOut(duration: 0.4)) { camera = n }
+                    withAnimation(.easeInOut(duration: 0.4)) { input.camera = n }
                     selectedId = m.item.session.id
                 }
         }
@@ -371,7 +370,7 @@ struct WorldView: View {
             Button { zoom(cam, 1 / 1.3, size) } label: { Image(systemName: "minus") }
             Button {
                 var c = cam; c.scale = 0; c.clamp(size)  // clamps up to the smallest scale = whole world
-                withAnimation(.easeInOut(duration: 0.35)) { camera = c }
+                withAnimation(.easeInOut(duration: 0.35)) { input.camera = c }
             } label: { Image(systemName: "rectangle.expand.vertical") }
             .help("전체 보기")
         }
@@ -380,7 +379,7 @@ struct WorldView: View {
 
     private func zoom(_ cam: Camera, _ f: CGFloat, _ size: CGSize) {
         var c = cam; c.scale *= f; c.clamp(size)
-        withAnimation(.easeInOut(duration: 0.2)) { camera = c }
+        withAnimation(.easeInOut(duration: 0.2)) { input.camera = c }
     }
 
     private struct Placed { let session: AgentSession; let character: Character?; let point: CGPoint }
@@ -392,14 +391,16 @@ struct WorldView: View {
         for (kind, members) in working {
             let spots = World.stations(for: kind)
             for (i, s) in members.sorted(by: byStart).enumerated() {
-                out.append(Placed(session: s, character: store.character(for: s), point: World.spot(spots, i)))
+                out.append(Placed(session: s, character: store.character(for: s),
+                                  point: Pathfinder.shared.nearest(World.spot(spots, i))))
             }
         }
         let others = Dictionary(grouping: store.sessions.filter { store.station(for: $0) == nil }) { $0.activity }
         for (activity, members) in others {
             let spots = World.spots(for: activity)
             for (i, s) in members.sorted(by: byStart).enumerated() {
-                out.append(Placed(session: s, character: store.character(for: s), point: World.spot(spots, i)))
+                out.append(Placed(session: s, character: store.character(for: s),
+                                  point: Pathfinder.shared.nearest(World.spot(spots, i))))
             }
         }
         return out
@@ -476,30 +477,53 @@ enum Facing: String { case down, up, left, right }
 
 final class Walker {
     private var current: [String: CGPoint] = [:]
+    private var routes: [String: [CGPoint]] = [:]      // remaining waypoints, target last
+    private var routeTarget: [String: CGPoint] = [:]   // target the route was planned for
+    private var speedNow: [String: CGFloat] = [:]
     private(set) var facing: [String: Facing] = [:]  // kept after arriving, so agents face where they walked
     /// Debug hook (--trace-walk): receives every step.
     nonisolated(unsafe) static var trace: (([String: CGPoint], [String: Facing], TimeInterval) -> Void)?
     private var lastTick: TimeInterval?
-    private let speed: CGFloat = 0.12  // map widths per second
+    private let topSpeed: CGFloat = 0.12   // world units per second
+    private let accel: CGFloat = 0.5       // world units per second², for easing in and out
 
     func step(targets: [(String, CGPoint)], now: TimeInterval) -> [String: CGPoint] {
         let dt = CGFloat(min(now - (lastTick ?? now), 0.25))
         lastTick = now
         var next: [String: CGPoint] = [:]
         for (id, target) in targets {
-            let p = current[id] ?? target  // new sessions appear in place
-            let dx = target.x - p.x, dy = target.y - p.y
-            let dist = sqrt(dx * dx + dy * dy)
-            let move = speed * dt
-            next[id] = dist <= move ? target : CGPoint(x: p.x + dx / dist * move, y: p.y + dy / dist * move)
-            if dist > move {
-                // Map y grows downward; world units are the same on both axes.
-                facing[id] = abs(dx) > abs(dy) ? (dx < 0 ? .left : .right) : (dy < 0 ? .up : .down)
-            } else if dist == 0, facing[id] == nil {
-                facing[id] = .down
+            var p = current[id] ?? target  // new sessions appear in place
+            if routeTarget[id] != target {
+                routes[id] = p == target ? [] : Pathfinder.shared.route(from: p, to: target)
+                routeTarget[id] = target
             }
+            var path = routes[id] ?? []
+            // Remaining distance along the route, to slow down before arriving.
+            var left: CGFloat = 0
+            var prev = p
+            for w in path { left += hypot(w.x - prev.x, w.y - prev.y); prev = w }
+            var v = speedNow[id] ?? 0
+            v = min(topSpeed, v + accel * dt, sqrt(max(0, 2 * accel * left)) + 0.01)
+            var budget = v * dt
+            while budget > 0, let w = path.first {
+                let dx = w.x - p.x, dy = w.y - p.y
+                let d = hypot(dx, dy)
+                if d > 0.0005 {
+                    facing[id] = abs(dx) > abs(dy) ? (dx < 0 ? .left : .right) : (dy < 0 ? .up : .down)
+                }
+                if d <= budget { p = w; budget -= d; path.removeFirst() }
+                else { p = CGPoint(x: p.x + dx / d * budget, y: p.y + dy / d * budget); budget = 0 }
+            }
+            if path.isEmpty { v = 0 }
+            if facing[id] == nil { facing[id] = .down }
+            routes[id] = path
+            speedNow[id] = v
+            next[id] = p
         }
         current = next
+        let live = Set(next.keys)
+        routes = routes.filter { live.contains($0.key) }
+        routeTarget = routeTarget.filter { live.contains($0.key) }
         if let trace = Walker.trace { trace(next, facing, now) }
         return next
     }
@@ -546,6 +570,11 @@ struct Avatar: View {
         VStack(spacing: 2) {
             ZStack(alignment: .topTrailing) {
                 sprite(phase)
+                    .background(alignment: .bottom) {
+                        Ellipse().fill(Color.black.opacity(0.3))
+                            .frame(width: height * 0.42, height: height * 0.11)
+                            .offset(y: height * 0.04)
+                    }
                     // Looking around while scouting the web: face left and right in turns.
                     .scaleEffect(x: station == .web && !walking && Int(time / 1.5) % 2 == 1 ? -1 : 1)
                     .offset(y: bob(phase))
@@ -676,6 +705,92 @@ struct Sparks: View {
                     .offset(x: CGFloat(cos(angle) * t) * height * 0.4,
                             y: height * 0.35 + CGFloat(sin(angle) * t) * height * 0.4)
                     .opacity(1 - t)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+
+/// Camera plus Figma-style input: two-finger scroll pans, pinch or ⌘/⌃+scroll zooms around the pointer.
+@MainActor
+final class MapInput: ObservableObject {
+    @Published var camera = Camera()
+    var size: CGSize = .zero
+    /// Pointer position over the map; nil when it is elsewhere (cards, dialogue, other windows).
+    var cursor: CGPoint?
+    private var monitor: Any?
+
+    func install() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) { [weak self] event in
+            guard let self, let at = self.cursor, self.camera.scale > 0 else { return event }
+            switch event.type {
+            case .magnify:
+                self.zoom(at: at, by: 1 + event.magnification)
+            case .scrollWheel:
+                let k: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 12  // mouse wheels report lines
+                let dx = event.scrollingDeltaX * k, dy = event.scrollingDeltaY * k
+                if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.control) {
+                    self.zoom(at: at, by: exp(dy * 0.01))
+                } else {
+                    var c = self.camera
+                    c.center.x -= dx / c.scale
+                    c.center.y -= dy / c.scale
+                    c.clamp(self.size)
+                    self.camera = c
+                }
+            default:
+                return event
+            }
+            return nil  // consumed by the map
+        }
+    }
+
+    /// Scales by f while keeping the world point under the pointer in place.
+    func zoom(at p: CGPoint, by f: CGFloat) {
+        var c = camera
+        let w = c.world(p, in: size)
+        c.scale *= f
+        c.clamp(size)
+        c.center = CGPoint(x: w.x - (p.x - size.width / 2) / c.scale, y: w.y - (p.y - size.height / 2) / c.scale)
+        c.clamp(size)
+        camera = c
+    }
+}
+
+/// Wooden walkways between the areas (rectangles from walkmap.json), drawn over the area walls they open.
+struct Corridors: View {
+    let cam: Camera
+    let size: CGSize
+
+    var body: some View {
+        Canvas { ctx, _ in
+            let plank: CGFloat = 0.014 * cam.scale, edge = max(2, 0.007 * cam.scale)
+            for r in Pathfinder.shared.corridors {
+                let o = cam.screen(r.origin, in: size)
+                let rect = CGRect(x: o.x, y: o.y, width: r.width * cam.scale, height: r.height * cam.scale)
+                ctx.fill(Path(rect), with: .color(Color(red: 0.55, green: 0.36, blue: 0.20)))
+                let horizontal = rect.width > rect.height
+                // Planks run across the walking direction.
+                var line = Path()
+                if horizontal {
+                    var x = rect.minX
+                    while x < rect.maxX { line.move(to: CGPoint(x: x, y: rect.minY)); line.addLine(to: CGPoint(x: x, y: rect.maxY)); x += plank }
+                } else {
+                    var y = rect.minY
+                    while y < rect.maxY { line.move(to: CGPoint(x: rect.minX, y: y)); line.addLine(to: CGPoint(x: rect.maxX, y: y)); y += plank }
+                }
+                ctx.stroke(line, with: .color(Color(red: 0.36, green: 0.22, blue: 0.12)), lineWidth: 1)
+                // Low walls along both sides.
+                let wall = Color(red: 0.25, green: 0.17, blue: 0.12)
+                if horizontal {
+                    ctx.fill(Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: edge)), with: .color(wall))
+                    ctx.fill(Path(CGRect(x: rect.minX, y: rect.maxY - edge, width: rect.width, height: edge)), with: .color(wall))
+                } else {
+                    ctx.fill(Path(CGRect(x: rect.minX, y: rect.minY, width: edge, height: rect.height)), with: .color(wall))
+                    ctx.fill(Path(CGRect(x: rect.maxX - edge, y: rect.minY, width: edge, height: rect.height)), with: .color(wall))
+                }
             }
         }
         .allowsHitTesting(false)
