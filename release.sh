@@ -7,5 +7,5 @@ VERSION="$(cat VERSION)"
 mkdir -p dist
 ZIP="dist/suhyeok-$VERSION-arm64.zip"
 rm -f "$ZIP"
-ditto -c -k --keepParent "수혁.app" "$ZIP"   # ditto keeps the bundle's signature and metadata
+ditto -c -k --norsrc --noextattr --keepParent "수혁.app" "$ZIP"  # no ._AppleDouble files: unzip would add them to the bundle and break its seal
 shasum -a 256 "$ZIP"
