@@ -80,15 +80,38 @@ enum ProcessEnv {
     static func of(_ pid: Int32) -> [String: String] {
         lock.lock(); defer { lock.unlock() }
         if let env = cache[pid] { return env }
-        guard let out = TerminalSource.run("/bin/ps", ["eww", "-o", "command=", "-p", String(pid)]) else { return [:] }
-        var vars: [String: String] = [:]
-        for token in out.split(separator: " ") {
-            let kv = token.split(separator: "=", maxSplits: 1)
-            if kv.count == 2, kv[0].allSatisfy({ $0.isUppercase || $0 == "_" || $0.isNumber }) {
-                vars[String(kv[0])] = String(kv[1])
-            }
+        let vars = procargs(pid)
+        if !vars.isEmpty { cache[pid] = vars }
+        return vars
+    }
+
+    /// The environment block of a process from KERN_PROCARGS2 (argc, exec path, argv, then envp).
+    /// Unlike splitting `ps eww` output, an argument that merely looks like "TMUX=…" cannot pose as a variable.
+    private static func procargs(_ pid: Int32) -> [String: String] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 4 else { return [:] }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return [:] }
+        let argc = buf.withUnsafeBytes { $0.load(as: Int32.self) }
+        var i = 4
+        while i < size && buf[i] != 0 { i += 1 }          // exec path
+        while i < size && buf[i] == 0 { i += 1 }          // padding
+        var seen: Int32 = 0
+        while i < size && seen < argc {                    // argv
+            while i < size && buf[i] != 0 { i += 1 }
+            i += 1; seen += 1
         }
-        cache[pid] = vars
+        var vars: [String: String] = [:]
+        while i < size {
+            let start = i
+            while i < size && buf[i] != 0 { i += 1 }
+            if i == start { break }
+            if let kv = String(bytes: buf[start..<i], encoding: .utf8), let eq = kv.firstIndex(of: "=") {
+                vars[String(kv[..<eq])] = String(kv[kv.index(after: eq)...])
+            }
+            i += 1
+        }
         return vars
     }
 }

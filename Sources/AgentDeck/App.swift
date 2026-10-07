@@ -60,6 +60,8 @@ struct AgentDeckApp: App {
                 }
             }
         }
+        // `AgentDeck --dialogue-audit`: per live session, how many chat items the dialogue would show and how long it took.
+        if args.contains("--dialogue-audit") { Snapshot.dialogueAudit() }
         // `AgentDeck --snapshot-sidebar out.png`: the sidebar's session rows, offscreen.
         if let i = args.firstIndex(of: "--snapshot-sidebar"), i + 1 < args.count {
             Snapshot.sidebar(path: args[i + 1])
@@ -128,10 +130,6 @@ struct AgentDeckApp: App {
             let end = Date().addingTimeInterval(secs)
             while Date() < end {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.2))
-                if FileManager.default.fileExists(atPath: "/tmp/suhyeok-newcode") {
-                    try? FileManager.default.removeItem(atPath: "/tmp/suhyeok-newcode")
-                    MobileServer.shared.newCode(); print("code", MobileServer.shared.pairingCode); fflush(stdout)
-                }
                 store.refresh()
             }
             exit(0)
@@ -229,6 +227,10 @@ final class SessionStore: ObservableObject {
 
     init() {
         refresh()
+        // Never leave a public tunnel running after the app quits.
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { MobileTunnel.shared.stop() }
+        }
         if UserDefaults.standard.bool(forKey: "mobileEnabled"), !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }) {
             Task { @MainActor in MobileServer.shared.start(store: self); MobileTunnel.shared.start() }
         }
@@ -621,6 +623,22 @@ enum Snapshot {
         if let img = renderer.nsImage, let tiff = img.tiffRepresentation,
            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
             try? png.write(to: URL(fileURLWithPath: path))
+        }
+        exit(0)
+    }
+
+    static func dialogueAudit() {
+        let store = loadedStore()
+        let until = Date().addingTimeInterval(40)
+        while store.sessions.isEmpty, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+        for s in store.sessions {
+            let t0 = Date()
+            let items = s.transcriptPath.map { TranscriptRenderer.items(path: $0, agent: s.agent) } ?? []
+            let size = s.transcriptPath.flatMap { try? FileManager.default.attributesOfItem(atPath: $0)[.size] as? Int } ?? -1
+            let roles = Dictionary(grouping: items, by: { "\($0.role)" }).mapValues(\.count)
+            print(String(format: "%-14@ %-8@ %5.2fs %6dKB items=%4d %@ path=%@", s.id as NSString, store.agentName(for: s) as NSString,
+                         Date().timeIntervalSince(t0), size / 1024, items.count, "\(roles)" as NSString,
+                         (s.transcriptPath.map { ($0 as NSString).lastPathComponent } ?? "NONE") as NSString))
         }
         exit(0)
     }

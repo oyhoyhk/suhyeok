@@ -166,8 +166,19 @@ struct DialogueView: View {
     private func conversation(_ s: AgentSession) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(items.suffix(200)) { item in bubble(item, s) }
+                // A plain VStack: a LazyVStack opened at the bottom anchor can stay blank until scrolled,
+                // which looked like an empty conversation. Only the recent part is drawn, so this stays cheap.
+                VStack(alignment: .leading, spacing: 10) {
+                    if loaded == nil && preload.isEmpty {
+                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text("대화 기록 불러오는 중…") }
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if items.isEmpty {
+                        Text(s.transcriptPath == nil ? "이 세션의 대화 기록 파일을 찾지 못함" : "아직 주고받은 대화가 없음")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if items.count > 120 {
+                        Text("이전 대화 \(items.count - 120)개는 터미널·대화 기록 보기에서 확인").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    ForEach(items.suffix(120)) { item in bubble(item, s) }
                     ForEach(pending) { p in pendingBubble(p) }
                     if let live { liveBubble(live, s) }
                     if let menu { menuCard(menu, s) }
@@ -493,10 +504,18 @@ struct MobileSettings: View {
                             Text(server.pairingCode).font(.title3.monospacedDigit().bold()).textSelection(.enabled)
                             Button("새 코드") { server.newCode() }.controlSize(.small)
                         }
-                        Text("코드는 10분 동안 한 번만 쓸 수 있음 · 연결된 기기 \(server.pairedDevices)대")
+                        Text("코드는 10분 동안 한 번만 쓸 수 있음 · 연결은 7일 미사용 또는 30일 뒤 만료")
                             .font(.caption2).foregroundStyle(.secondary)
+                        ForEach(server.devices) { d in
+                            HStack(spacing: 6) {
+                                Image(systemName: d.name == "iPhone" || d.name == "Android" ? "iphone" : "laptopcomputer")
+                                Text("\(d.name) · 연결 \(d.issued.formatted(date: .abbreviated, time: .shortened)) · 마지막 \(d.lastUsed.formatted(date: .omitted, time: .shortened))")
+                                    .font(.caption2)
+                                Button("끊기") { server.forget(d) }.controlSize(.mini)
+                            }
+                        }
                         Button("연결된 기기 모두 끊기") { server.forgetDevices() }.controlSize(.small)
-                            .disabled(server.pairedDevices == 0)
+                            .disabled(server.devices.isEmpty)
                     }
                 }
             }

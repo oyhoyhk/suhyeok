@@ -77,7 +77,7 @@ enum SessionInput {
             return TerminalSource.run(tmux, base + ["send-keys", "-t", pane, "Enter"]) != nil
         case .orca(let handle):
             // Orca types the text; flatten lines so only the final Enter submits.
-            return TerminalSource.run(orca, ["terminal", "send", "--terminal", handle, "--text", oneLineInput(text), "--enter"]) != nil
+            return TerminalSource.run(orca, ["terminal", "send", "--terminal", handle, "--text=" + oneLineInput(text), "--enter"]) != nil
         case .cmux(let w, let f):
             // cmux turns \n into Enter, so send one line and press Enter separately.
             let line = oneLineInput(text).replacingOccurrences(of: "\\", with: "\\\\")

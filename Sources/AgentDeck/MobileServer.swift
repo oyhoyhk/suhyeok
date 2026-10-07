@@ -12,22 +12,43 @@ final class MobileServer: ObservableObject {
 
     @Published private(set) var running = false
     @Published private(set) var pairingCode = ""
-    @Published private(set) var pairedDevices = 0
+    @Published private(set) var devices: [Device] = []
+    var pairedDevices: Int { devices.count }
 
     private var listener: NWListener?
     private weak var store: SessionStore?
     private var codeIssued = Date.distantPast
-    private var failedPairs: [Date] = []
-    /// Hashes of issued session tokens (the tokens themselves only live on the phones).
-    private var tokens: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: "mobileTokens") ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: "mobileTokens"); pairedDevices = newValue.count }
+    /// Wrong codes per client (Cloudflare's CF-Connecting-IP through the tunnel, "local" otherwise).
+    private var failedPairs: [String: [Date]] = [:]
+    private var connections = 0
+
+    /// A paired phone: only the SHA-256 of its token is kept; the token lives in the phone's cookie.
+    struct Device: Codable, Identifiable, Equatable {
+        let hash: String
+        let name: String
+        let issued: Date
+        var lastUsed: Date
+        var id: String { hash }
+        /// Idle for 7 days or 30 days since pairing: pair again.
+        var expired: Bool { Date().timeIntervalSince(lastUsed) > 7 * 86400 || Date().timeIntervalSince(issued) > 30 * 86400 }
     }
+    static let maxAge = 30 * 86400
+
+    private func loadDevices() {
+        let data = UserDefaults.standard.data(forKey: "mobileDevices") ?? Data()
+        devices = ((try? JSONDecoder().decode([Device].self, from: data)) ?? []).filter { !$0.expired }
+        UserDefaults.standard.removeObject(forKey: "mobileTokens")  // pre-expiry format: drop, those phones pair again
+    }
+    private func saveDevices() {
+        devices.removeAll { $0.expired }
+        UserDefaults.standard.set(try? JSONEncoder().encode(devices), forKey: "mobileDevices")
+    }
+    func forget(_ d: Device) { devices.removeAll { $0 == d }; saveDevices() }
 
     func start(store: SessionStore) {
         guard listener == nil else { return }
         self.store = store
-        pairedDevices = tokens.count
+        loadDevices()
         newCode()
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: Self.port)!)
@@ -46,12 +67,14 @@ final class MobileServer: ObservableObject {
         running = false
     }
 
+    /// A fresh code also lifts any lockout, so someone hammering wrong codes cannot keep the owner out.
     func newCode() {
         pairingCode = String(format: "%06d", Int.random(in: 0..<1_000_000))
         codeIssued = Date()
+        failedPairs = [:]
     }
 
-    func forgetDevices() { tokens = [] }
+    func forgetDevices() { devices = []; saveDevices() }
 
     // MARK: HTTP
 
@@ -63,8 +86,22 @@ final class MobileServer: ObservableObject {
         let body: Data
     }
 
+    private static let maxConnections = 32
+    private static let maxHeader = 16 * 1024
+    private static let maxBody = 64 * 1024
+
     private func serve(_ c: NWConnection) {
+        guard connections < Self.maxConnections else { c.cancel(); return }
+        connections += 1
+        c.stateUpdateHandler = { [weak self] st in
+            switch st {
+            case .cancelled, .failed: Task { @MainActor in self?.connections -= 1 }
+            default: break
+            }
+        }
         c.start(queue: .main)
+        // Slow or idle clients are dropped after 15 s.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { if c.state != .cancelled { c.cancel() } }
         receive(c, buffer: Data())
     }
 
@@ -74,29 +111,39 @@ final class MobileServer: ObservableObject {
                 guard let self else { return }
                 var buf = buffer
                 if let data { buf.append(data) }
-                if let req = Self.parse(buf) {
+                switch Self.parse(buf) {
+                case .ready(let req):
                     let (status, type, body, extra) = await self.route(req)
                     self.respond(c, status: status, type: type, body: body, headers: extra)
-                } else if done || err != nil || buf.count > 1 << 20 {
+                case .bad:
+                    self.respond(c, status: 400, type: "text/plain", body: Data("bad request".utf8), headers: [:])
+                case .incomplete where done || err != nil:
                     c.cancel()
-                } else {
+                case .incomplete:
                     self.receive(c, buffer: buf)
                 }
             }
         }
     }
 
-    private static func parse(_ d: Data) -> Request? {
-        guard let headEnd = d.firstRange(of: Data("\r\n\r\n".utf8)),
-              let head = String(data: d[..<headEnd.lowerBound], encoding: .utf8) else { return nil }
+    private enum Parsed { case ready(Request), incomplete, bad }
+
+    private static func parse(_ d: Data) -> Parsed {
+        guard let headEnd = d.firstRange(of: Data("\r\n\r\n".utf8)) else {
+            return d.count > maxHeader ? .bad : .incomplete
+        }
+        guard headEnd.lowerBound - d.startIndex <= maxHeader,
+              let head = String(data: d[..<headEnd.lowerBound], encoding: .utf8) else { return .bad }
         var lines = head.components(separatedBy: "\r\n")
         let first = lines.removeFirst().split(separator: " ")
-        guard first.count >= 2 else { return nil }
+        guard first.count >= 2 else { return .bad }
         var headers: [String: String] = [:]
         for l in lines { if let i = l.firstIndex(of: ":") { headers[l[..<i].lowercased()] = l[l.index(after: i)...].trimmingCharacters(in: .whitespaces) } }
-        let length = Int(headers["content-length"] ?? "0") ?? 0
+        // Reject negative, non-numeric and oversized lengths (a negative one used to crash prefix()).
+        guard let length = Int(headers["content-length"] ?? "0"), (0...maxBody).contains(length) else { return .bad }
+        guard headers["transfer-encoding"] == nil else { return .bad }  // chunked bodies are not supported
         let body = d[headEnd.upperBound...]
-        guard body.count >= length else { return nil }
+        guard body.count >= length else { return .incomplete }
         let target = String(first[1])
         var path = target, query: [String: String] = [:]
         if let q = target.firstIndex(of: "?") {
@@ -106,12 +153,13 @@ final class MobileServer: ObservableObject {
                 if p.count == 2 { query[p[0]] = p[1] }
             }
         }
-        return Request(method: String(first[0]), path: path, query: query, headers: headers, body: Data(body.prefix(length)))
+        return .ready(Request(method: String(first[0]), path: path, query: query, headers: headers, body: Data(body.prefix(length))))
     }
 
     private func respond(_ c: NWConnection, status: Int, type: String, body: Data, headers: [String: String]) {
         var head = "HTTP/1.1 \(status) \(status == 200 ? "OK" : "Error")\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\n"
         head += "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n"
+        head += "X-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'\r\n"
         for (k, v) in headers { head += "\(k): \(v)\r\n" }
         head += "\r\n"
         c.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in c.cancel() })
@@ -124,16 +172,44 @@ final class MobileServer: ObservableObject {
     private static func hash(_ t: String) -> String { SHA256.hash(data: Data(t.utf8)).map { String(format: "%02x", $0) }.joined() }
 
     private func authorized(_ r: Request) -> Bool {
-        // Local screenshot checks only (`--serve-mobile` with SUHYEOK_MOBILE_NOAUTH); the app itself never sets it.
-        if ProcessInfo.processInfo.environment["SUHYEOK_MOBILE_NOAUTH"] != nil,
-           CommandLine.arguments.contains("--serve-mobile") { return true }
         let cookie = r.headers["cookie"] ?? ""
         guard let t = cookie.split(separator: ";").map({ $0.trimmingCharacters(in: .whitespaces) })
             .first(where: { $0.hasPrefix("sh=") })?.dropFirst(3) else { return false }
-        return tokens.contains(Self.hash(String(t)))
+        let h = Self.hash(String(t))
+        guard let i = devices.firstIndex(where: { $0.hash == h }) else { return false }
+        if devices[i].expired { devices.remove(at: i); saveDevices(); return false }
+        if Date().timeIntervalSince(devices[i].lastUsed) > 3600 { devices[i].lastUsed = Date(); saveDevices() }
+        return true
+    }
+
+    /// Requests must be addressed to this server: 127.0.0.1/localhost on our port, or the current tunnel host.
+    /// Blocks DNS rebinding (a web page re-pointing its own domain at 127.0.0.1).
+    private func allowedHost(_ r: Request) -> Bool {
+        guard let host = r.headers["host"]?.lowercased() else { return false }
+        if host == "127.0.0.1:\(Self.port)" || host == "localhost:\(Self.port)" { return true }
+        if let u = MobileTunnel.shared.url, let th = URL(string: u)?.host?.lowercased() { return host == th }
+        return false
+    }
+
+    /// State-changing calls only from our own page: JSON bodies and, when the browser says, same-origin.
+    private func sameOrigin(_ r: Request) -> Bool {
+        guard r.method == "POST" else { return true }
+        guard (r.headers["content-type"] ?? "").hasPrefix("application/json") else { return false }
+        if let site = r.headers["sec-fetch-site"], site != "same-origin", site != "none" { return false }
+        if let origin = r.headers["origin"], let host = URL(string: origin)?.host, let h = r.headers["host"],
+           host.lowercased() != h.split(separator: ":").first.map(String.init)?.lowercased() { return false }
+        return true
+    }
+
+    private func client(_ r: Request) -> String {
+        // Cloudflare sets CF-Connecting-IP; only meaningful for requests that came through our tunnel host.
+        if let ip = r.headers["cf-connecting-ip"], !(r.headers["host"] ?? "").hasPrefix("127.0.0.1") { return ip }
+        return "local"
     }
 
     private func route(_ r: Request) async -> (Int, String, Data, [String: String]) {
+        guard allowedHost(r) else { return json(["error": "host"], 421) }
+        guard sameOrigin(r) else { return json(["error": "origin"], 403) }
         switch (r.method, r.path) {
         case ("GET", "/"), ("GET", "/index.html"):
             return (200, "text/html; charset=utf-8", Data(MobilePage.html.utf8), [:])
@@ -179,21 +255,32 @@ final class MobileServer: ObservableObject {
 
     /// Code is valid for 10 minutes, one use; after 5 wrong tries in 10 minutes pairing locks for the rest of it.
     private func pair(_ r: Request) -> (Int, String, Data, [String: String]) {
-        failedPairs.removeAll { Date().timeIntervalSince($0) > 600 }
-        guard failedPairs.count < 5 else { return json(["error": "잠시 후 다시 시도 (10분)"], 429) }
+        let who = client(r)
+        failedPairs[who] = (failedPairs[who] ?? []).filter { Date().timeIntervalSince($0) < 600 }
+        guard failedPairs[who]!.count < 5 else { return json(["error": "잠시 후 다시 시도 (10분) — Mac에서 새 코드를 만들면 바로 풀림"], 429) }
+        // Across all clients: after 20 misses the current code is retired (owner sees a new one on the Mac).
+        if failedPairs.values.reduce(0, { $0 + $1.count }) >= 20 { newCode() }
         let body = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
         guard let code = body["code"] as? String, code == pairingCode, Date().timeIntervalSince(codeIssued) < 600 else {
-            failedPairs.append(Date())
+            failedPairs[who, default: []].append(Date())
             return json(["error": "코드가 맞지 않거나 만료됨 — Mac의 수혁 설정에서 새 코드를 확인"], 403)
         }
         var bytes = [UInt8](repeating: 0, count: 32)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         let token = bytes.map { String(format: "%02x", $0) }.joined()
-        tokens.insert(Self.hash(token))
+        devices.append(Device(hash: Self.hash(token), name: Self.deviceName(r.headers["user-agent"] ?? ""),
+                              issued: Date(), lastUsed: Date()))
+        saveDevices()
         newCode()  // single use
-        let cookie = "sh=\(token); Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Strict"
+        let cookie = "sh=\(token); Path=/; Max-Age=\(Self.maxAge); HttpOnly; Secure; SameSite=Strict"
         let (s, t, d, _) = json(["ok": true])
         return (s, t, d, ["Set-Cookie": cookie])
+    }
+
+    private static func deviceName(_ ua: String) -> String {
+        for (k, n) in [("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Macintosh", "Mac"), ("Windows", "Windows")]
+            where ua.contains(k) { return n }
+        return "브라우저"
     }
 
     private func asset(_ path: String) -> Data? {
@@ -267,7 +354,9 @@ final class MobileTunnel: ObservableObject {
         p.standardError = pipe
         p.standardOutput = pipe
         pipe.fileHandleForReading.readabilityHandler = { h in
-            let text = String(data: h.availableData, encoding: .utf8) ?? ""
+            let data = h.availableData
+            if data.isEmpty { h.readabilityHandler = nil; return }  // EOF: stop, or this fires in a busy loop
+            let text = String(data: data, encoding: .utf8) ?? ""
             if let r = text.range(of: #"https://[a-z0-9-]+\.trycloudflare\.com"#, options: .regularExpression) {
                 let u = String(text[r])
                 Task { @MainActor in MobileTunnel.shared.url = u }

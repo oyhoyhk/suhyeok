@@ -285,7 +285,8 @@ struct HostedSessionView: View {
             if h == nil {
                 Text("종료된 세션").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let s, ModePicker.effective(mode) == .dialogue {
-                DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).padding(10)
+                // .id: a new session gets fresh state (messages, draft, pending bubbles), never the previous one's.
+                DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).id(s.id).padding(10)
             } else {
                 // Codex sessions and agents still starting have no registry entry yet: terminal only.
                 EmbeddedTerminal(name: name).id(name)
@@ -322,7 +323,7 @@ struct ExternalSessionView: View {
                                              : "다른 터미널에서 실행 중인 세션 — 이 터미널은 입력을 받을 수 없어 보기만 가능")
                     .font(.caption).foregroundStyle(.secondary)
                 if ModePicker.effective(mode) == .dialogue {
-                    DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal })
+                    DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).id(s.id)
                 } else {
                     TerminalPanel(session: s)
                 }

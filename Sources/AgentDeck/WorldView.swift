@@ -257,6 +257,7 @@ struct WorldView: View {
                                      pipY = clamp(pipY + t.height / geo.size.height, pip.height / 2 / geo.size.height)
                                      pipDrag = .zero
                                  })
+                        .id(id)  // a different agent gets fresh dialogue state, never the previous one's
                     if dialogueLarge {
                         // Right half, with a margin above and the minimap left visible below.
                         let top: CGFloat = 50  // below the status counts
