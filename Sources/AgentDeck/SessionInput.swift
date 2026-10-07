@@ -123,3 +123,122 @@ enum SessionInput {
         return p.terminationStatus == 0
     }
 }
+
+/// A selection menu the agent's TUI is showing (permission prompts, questions, trust checks).
+struct TerminalMenu: Equatable {
+    struct Option: Equatable { let label: String; let detail: String? }
+    let options: [Option]
+    let selected: Int
+
+    /// Finds the menu just above a footer hint like "Enter to confirm · Esc to cancel".
+    /// The highlighted option starts with "❯" at some column; the others start two columns further in,
+    /// and deeper-indented lines are descriptions of the option above them.
+    static func parse(_ screen: String) -> TerminalMenu? {
+        let lines = screen.components(separatedBy: "\n")
+        guard let footer = lines.lastIndex(where: {
+            $0.contains("Enter to confirm") || $0.contains("Enter to select") || $0.contains("Esc to cancel")
+        }) else { return nil }
+        // The highlighted line closest above the footer.
+        guard let sel = lines[..<footer].lastIndex(where: { l in indentOf(l).map { lineTail(l, $0).hasPrefix("❯") } ?? false }),
+              footer - sel < 40, let col = indentOf(lines[sel]) else { return nil }
+        func optionText(_ i: Int) -> String? {
+            let l = lines[i]
+            guard let ind = indentOf(l) else { return nil }
+            if i == sel { return String(lineTail(l, ind).dropFirst()).trimmingCharacters(in: CharacterSet.whitespaces) }
+            return ind == col + 2 ? lineTail(l, ind) : nil
+        }
+        // Grow the block both ways from the highlighted line.
+        var first = sel
+        var i = sel - 1
+        while i >= 0 {
+            let l = lines[i]
+            if l.trimmingCharacters(in: .whitespaces).isEmpty { i -= 1; continue }
+            guard let ind = indentOf(l), ind >= col + 2 else { break }
+            if optionText(i) != nil { first = i }
+            i -= 1
+        }
+        var options: [Option] = []
+        var selected = 0
+        for j in first..<footer {
+            if let t = optionText(j) {
+                if j == sel { selected = options.count }
+                options.append(Option(label: clean(t), detail: nil))
+            } else if let ind = indentOf(lines[j]), ind > col + 2, let last = options.last {
+                let d = lineTail(lines[j], ind)
+                options[options.count - 1] = Option(label: last.label, detail: [last.detail, d].compactMap { $0 }.joined(separator: " "))
+            }
+        }
+        return options.count >= 2 ? TerminalMenu(options: options, selected: selected) : nil
+    }
+
+    private static func indentOf(_ l: String) -> Int? {
+        let n = l.prefix { $0 == " " }.count
+        return n < l.count ? n : nil
+    }
+    private static func lineTail(_ l: String, _ n: Int) -> String { String(l.dropFirst(n)).trimmingCharacters(in: .whitespaces) }
+    /// "2. Yes, and don't ask again" -> "Yes, and don't ask again"
+    private static func clean(_ s: String) -> String {
+        if let r = s.range(of: #"^\d+\.\s+"#, options: .regularExpression) { return String(s[r.upperBound...]) }
+        return s
+    }
+}
+
+extension SessionInput {
+    /// Moves the highlight from `menu.selected` to `index` with arrow keys, then confirms.
+    static func choose(_ s: AgentSession, menu: TerminalMenu, index: Int) -> Bool {
+        let steps = index - menu.selected
+        for _ in 0..<abs(steps) {
+            guard press(s, steps > 0 ? .down : .up) else { return false }
+            usleep(60_000)
+        }
+        usleep(80_000)
+        return press(s, .enter)
+    }
+}
+
+
+/// What the agent is writing right now, scraped from the terminal screen of a Claude Code session.
+struct LiveReply: Equatable {
+    let text: String
+    let status: String?  // spinner line, e.g. "Cogitating… (12s · ↑ 300 tokens)"
+
+    static let spinners: Set<Swift.Character> = ["✻", "✶", "✳", "✢", "✽", "·", "*", "⏺"]
+
+    static func parse(_ screen: String, alreadyLogged: String?) -> LiveReply? {
+        var lines = screen.components(separatedBy: "\n")
+        // Cut the input box: the last line starting with "❯" that sits right under a ──── border.
+        if let box = lines.indices.last(where: { i in
+            i > 0 && lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("❯")
+                && lines[i - 1].trimmingCharacters(in: .whitespaces).hasPrefix("─")
+        }) { lines = Array(lines[..<(box - 1)]) }
+        // Drop blank lines and the "⎿ Tip: …" hint Claude Code prints under its spinner.
+        while let l = lines.last?.trimmingCharacters(in: .whitespaces), l.isEmpty || l.hasPrefix("⎿  Tip") || l.hasPrefix("⎿ Tip") {
+            lines.removeLast()
+        }
+        // Spinner/status line just above the box.
+        var status: String?
+        if let i = lines.lastIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+            let t = lines[i].trimmingCharacters(in: .whitespaces)
+            if let first = t.first, first != "⏺", spinners.contains(first) || t.contains("…") {
+                status = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
+                lines = Array(lines[..<i])
+            }
+        }
+        // The newest "⏺ " block that is text (not a tool call like "⏺ Bash(…)").
+        guard let start = lines.lastIndex(where: { $0.hasPrefix("⏺ ") }) else {
+            return status.map { LiveReply(text: "", status: $0) }
+        }
+        let head = String(lines[start].dropFirst(2))
+        let isTool = head.range(of: #"^[A-Za-z_]+\("#, options: .regularExpression) != nil
+        var body = [head] + lines[(start + 1)...].map { $0.hasPrefix("  ") ? String($0.dropFirst(2)) : $0 }
+        while body.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { body.removeLast() }
+        let text = body.joined(separator: "\n")
+        // Already in the log as a finished message: nothing live to add.
+        if isTool || (alreadyLogged.map { norm($0).hasPrefix(norm(text).prefix(60)) } ?? false) {
+            return status.map { LiveReply(text: "", status: $0) }
+        }
+        return LiveReply(text: text, status: status)
+    }
+
+    private static func norm(_ s: String) -> String { s.filter { !$0.isWhitespace } }
+}

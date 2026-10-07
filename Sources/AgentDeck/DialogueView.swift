@@ -43,6 +43,8 @@ struct DialogueView: View {
     private var items: [ChatItem] { loaded ?? preload }
     @State private var draft = ""
     @State private var screen: String?
+    @State private var menu: TerminalMenu?
+    @State private var live: LiveReply?
     @State private var showScreen = false
     @State private var notice: String?
     @FocusState private var focused: Bool
@@ -134,11 +136,15 @@ struct DialogueView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(items.suffix(200)) { item in bubble(item, s) }
+                    if let live { liveBubble(live, s) }
+                    if let menu { menuCard(menu, s) }
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(14)
             }
             .onChange(of: items.count) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: live) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: menu) { proxy.scrollTo("end", anchor: .bottom) }
             .onAppear {
                 // Once more after layout settles; the first call can land before the bubbles are measured.
                 proxy.scrollTo("end", anchor: .bottom)
@@ -169,6 +175,57 @@ struct DialogueView: View {
         case .result:
             EmptyView()  // outputs stay in the terminal view; the chat shows only what was done
         }
+    }
+
+    /// The reply as it is being written, read from the terminal screen (the log only gets finished messages).
+    private func liveBubble(_ l: LiveReply, _ s: AgentSession) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(store.agentName(for: s)).font(.caption.bold()).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
+                if let st = l.status {
+                    ProgressView().controlSize(.mini)
+                    Text(st).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            if !l.text.isEmpty {
+                (Text(markdown(l.text)) + Text(" ▍").foregroundColor(Color(red: 1, green: 0.85, blue: 0.4)))
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            }
+        }
+        .padding(.trailing, 60)
+    }
+
+    /// The agent is asking to pick one option (permission prompt, question): clickable choices.
+    private func menuCard(_ m: TerminalMenu, _ s: AgentSession) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("선택해 주세요", systemImage: "list.bullet.circle.fill").font(.caption.bold())
+                .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
+            ForEach(Array(m.options.enumerated()), id: \.offset) { i, o in
+                Button {
+                    menu = nil
+                    Task.detached { _ = SessionInput.choose(s, menu: m, index: i) }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(i + 1). \(o.label)").fontWeight(i == m.selected ? .semibold : .regular)
+                        if let d = o.detail { Text(d).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(Color.white.opacity(i == m.selected ? 0.14 : 0.06), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .disabled(!SessionInput.canSend(s))
+            }
+            Button("취소 (Esc)") { menu = nil; Task.detached { _ = SessionInput.press(s, .escape) } }
+                .buttonStyle(.borderless).font(.caption)
+        }
+        .padding(10)
+        .background(Color(red: 0.2, green: 0.16, blue: 0.05).opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.85, green: 0.68, blue: 0.25), lineWidth: 1.5))
+        .padding(.trailing, 40)
     }
 
     private var screenPreview: some View {
@@ -229,17 +286,26 @@ struct DialogueView: View {
 
     private func poll(_ s: AgentSession) async {
         while !Task.isCancelled {
-            let (newItems, newScreen) = await Task.detached { () -> ([ChatItem], String?) in
+            let busy = store.sessions.first { $0.id == sessionId }?.status == .busy
+            let lastAgent = items.last { $0.role == .agent }?.text
+            let (newItems, newScreen, newMenu, newLive) = await Task.detached {
+                () -> ([ChatItem], String?, TerminalMenu?, LiveReply?) in
                 let items = s.transcriptPath.map { TranscriptRenderer.items(path: $0, agent: s.agent) } ?? []
-                var screen: String?
-                if let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 30) {
-                    screen = t.split(separator: "\n", omittingEmptySubsequences: false).suffix(20).joined(separator: "\n")
+                guard let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 60) else {
+                    return (items, nil, nil, nil)
                 }
-                return (items, screen)
+                let menu = TerminalMenu.parse(t)
+                let lastLogged = items.last { $0.role == .agent }?.text ?? lastAgent
+                let live = busy && menu == nil ? LiveReply.parse(t, alreadyLogged: lastLogged) : nil
+                let tail = t.split(separator: "\n", omittingEmptySubsequences: false).suffix(20).joined(separator: "\n")
+                return (items, tail, menu, live)
             }.value
             if newItems != items { loaded = newItems }
             screen = newScreen
-            try? await Task.sleep(for: .seconds(1.5))
+            if newMenu != menu { menu = newMenu }
+            if newLive != live { live = newLive }
+            // Fast while something is happening, so the reply appears as it is typed.
+            try? await Task.sleep(for: .seconds(busy || newMenu != nil ? 0.5 : 1.5))
         }
     }
 

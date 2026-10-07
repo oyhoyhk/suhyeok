@@ -38,10 +38,27 @@ struct AgentDeckApp: App {
         }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
-        for flag in ["--send", "--press", "--migrate", "--end", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
+        for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
             }
+        }
+        // `--menu-hosted <tmux session> [n]`: parse (and optionally choose in) a menu on 수혁's own tmux server,
+        // which also covers sessions that are not in Claude's registry yet (e.g. the folder trust prompt).
+        if let i = args.firstIndex(of: "--menu-hosted"), i + 1 < args.count, let tmux = TmuxEngine.tmux {
+            let name = args[i + 1]
+            let screen = TerminalSource.run(tmux, TmuxEngine.base + ["capture-pane", "-p", "-t", name]) ?? ""
+            guard let menu = TerminalMenu.parse(screen) else { print("no menu"); exit(0) }
+            for (k, o) in menu.options.enumerated() { print(k == menu.selected ? "❯" : " ", k, o.label, o.detail ?? "") }
+            if let n = args.dropFirst(i + 2).first.flatMap(Int.init) {
+                let steps = n - menu.selected
+                for _ in 0..<abs(steps) {
+                    _ = TerminalSource.run(tmux, TmuxEngine.base + ["send-keys", "-t", name, steps > 0 ? "Down" : "Up"]); usleep(60_000)
+                }
+                _ = TerminalSource.run(tmux, TmuxEngine.base + ["send-keys", "-t", name, "Enter"])
+                print("chose", n)
+            }
+            exit(0)
         }
         // Session engine from the command line:
         //   --new-session <Claude|Codex> <cwd> [prompt]   --list-sessions   --kill-session <name>
@@ -469,6 +486,27 @@ enum Snapshot {
         case "--press":
             let key = SessionInput.Key.allCases.first { $0.tmux.lowercased() == arg?.lowercased() }
             print(key.map { SessionInput.press(s, $0) ? "pressed" : "FAILED" } ?? "unknown key")
+        case "--menu", "--choose":
+            guard let pid = s.pid, case .text(let screen, _) = TerminalSource.read(pid: pid, lines: 40),
+                  let menu = TerminalMenu.parse(screen) else { print("no menu"); break }
+            for (i, o) in menu.options.enumerated() { print(i == menu.selected ? "❯" : " ", i, o.label, o.detail ?? "") }
+            if flag == "--choose", let n = arg.flatMap(Int.init) {
+                print(SessionInput.choose(s, menu: menu, index: n) ? "chose \(n)" : "FAILED")
+            }
+        case "--live":
+            // Print the live reply parse twice a second for N seconds.
+            let secs = arg.flatMap(Double.init) ?? 20
+            let end = Date().addingTimeInterval(secs)
+            var last = ""
+            while Date() < end {
+                if let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 60) {
+                    let logged = s.transcriptPath.map { TranscriptRenderer.items(path: $0, agent: s.agent) }?.last { $0.role == .agent }?.text
+                    let l = LiveReply.parse(t, alreadyLogged: logged)
+                    let line = "status=\(l?.status ?? "-") text=\(l.map { String($0.text.suffix(60)) } ?? "-")"
+                    if line != last { print(String(format: "%.1f", secs - end.timeIntervalSinceNow), line.replacingOccurrences(of: "\n", with: "⏎")); last = line }
+                }
+                usleep(500_000)
+            }
         case "--end":
             let done = DispatchSemaphore(value: 0)
             Task { @MainActor in
