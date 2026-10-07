@@ -92,6 +92,26 @@ WORK = ("16-bit pixel art RPG character sprite sheet of EXACTLY the same charact
         "Row 3: front view, standing, reading an open book held in both hands, 3 frames: reading, turning a page, reading. "
         "Correct anatomy, exactly two arms and two legs.")
 
+WALK6 = ("16-bit pixel art RPG character walk-cycle sprite sheet of EXACTLY the same character as the reference image "
+         "({visual}). Same outfit, colors and proportions in every cell. A strict grid of 6 columns and 3 rows of equal "
+         "cells, one full-body chibi figure per cell, all exactly the same size and standing on the same baseline, on a plain "
+         "flat bright magenta background (#FF00FF), no grid lines, no shadows, no text. Each row is ONE smooth looping walk "
+         "cycle of 6 frames in order: contact (left foot forward), down, passing, contact (right foot forward), down, passing. "
+         "Only the legs, arms and a slight body bob change between frames; the head, face, hair and clothes stay identical. "
+         "Row 1: walking toward the viewer (front view). Row 2: walking to the LEFT (side view, facing left). "
+         "Row 3: walking away from the viewer (back view). Correct anatomy, exactly two arms and two legs.")
+
+STRIP = ("16-bit pixel art RPG character walk animation strip of EXACTLY the same character as the reference image "
+         "({visual}). ONE single horizontal row of 6 frames side by side, equal spacing, every frame the same size on the same "
+         "baseline, plain flat bright magenta background (#FF00FF), no grid lines, no shadows, no text. "
+         "ALL 6 frames show the character {view}. The 6 frames are one smooth looping walk cycle in order: "
+         "left leg forward, left leg passing under the body, both legs together, right leg forward, right leg passing, "
+         "both legs together. The legs and arms clearly swing; the head, face, hair and clothes stay identical. "
+         "Correct anatomy, exactly two arms and two legs.")
+VIEWS = {"down": "walking toward the viewer, seen from the front",
+         "left": "walking to the left, seen from the side, facing left",
+         "up": "walking away from the viewer, seen from the back"}
+
 def upload(path):
     """Upload once and remember the media id (logs/uploads.json)."""
     cache_path = ROOT / "logs/uploads.json"
@@ -116,6 +136,15 @@ def run(kind, model, cid):
         # cid = "<area>-<variant>"
         prompt, aspect = AREA_STYLE + AREAS[cid.rsplit("-", 1)[0]] + " No characters, no people, no text, no UI.", "16:9"
         out = f"area_{cid}_{model}"
+    elif kind == "strip":
+        # cid = "<character>-<view>-<variant>"
+        char, view, _ = cid.rsplit("-", 2)
+        prompt, aspect = STRIP.format(visual=ROSTER[char]["visual"], view=VIEWS[view]), "21:9"
+        out = f"strip_{cid}_{model}"
+    elif kind == "walk6":
+        char = cid.rsplit("-", 1)[0]
+        prompt, aspect = WALK6.format(visual=ROSTER[char]["visual"]), "16:9"
+        out = f"walk6_{cid}_{model}"
     elif kind == "work":
         char = cid.rsplit("-", 1)[0]
         prompt, aspect = WORK.format(visual=ROSTER[char]["visual"]), "1:1"
@@ -140,8 +169,8 @@ def run(kind, model, cid):
         cmd[8:8] = ["--resolution", "4k" if kind == "town" else "2k"]
     if model == "gpt_image_2":
         cmd[8:8] = ["--quality", "medium"]
-    if kind in ("sheet", "work"):
-        ref = ROOT / f"raw/sprite_{cid.rsplit('-', 1)[0]}_seedream_5_0_flash.webp"
+    if kind in ("sheet", "work", "walk6", "strip"):
+        ref = ROOT / f"raw/sprite_{cid.split('-')[0]}_seedream_5_0_flash.webp"
         cmd[8:8] = ["--image-references", upload(ref)]
     p = subprocess.run(cmd, capture_output=True, text=True)
     text = p.stdout + p.stderr

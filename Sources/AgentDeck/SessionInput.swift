@@ -201,6 +201,22 @@ extension SessionInput {
 struct LiveReply: Equatable {
     let text: String
     let status: String?  // spinner line, e.g. "Cogitating… (12s · ↑ 300 tokens)"
+    /// The current turn exactly as the terminal shows it: from the latest prompt down to the input box.
+    var raw: String = ""
+
+    static func turn(_ screen: String) -> String {
+        var lines = screen.components(separatedBy: "\n")
+        if let box = lines.indices.last(where: { i in
+            i > 0 && lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("❯")
+                && lines[i - 1].trimmingCharacters(in: .whitespaces).hasPrefix("─")
+        }) { lines = Array(lines[..<(box - 1)]) }
+        // Start at the user's latest prompt echo ("❯ …" at the left edge) if it is on screen.
+        if let start = lines.lastIndex(where: { $0.hasPrefix("❯ ") }) { lines = Array(lines[start...]) }
+        while lines.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { lines.removeLast() }
+        while lines.first?.trimmingCharacters(in: .whitespaces).isEmpty == true { lines.removeFirst() }
+        // Trim the right padding Claude Code adds to fill the terminal width.
+        return lines.map { l in String(l.reversed().drop(while: { $0 == " " }).reversed()) }.suffix(60).joined(separator: "\n")
+    }
 
     static let spinners: Set<Swift.Character> = ["✻", "✶", "✳", "✢", "✽", "·", "*", "⏺"]
 

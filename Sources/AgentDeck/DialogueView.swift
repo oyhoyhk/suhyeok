@@ -205,7 +205,32 @@ struct DialogueView: View {
     }
 
     /// The reply as it is being written, read from the terminal screen (the log only gets finished messages).
-    private func liveBubble(_ l: LiveReply, _ s: AgentSession) -> some View {
+    @ViewBuilder private func liveBubble(_ l: LiveReply, _ s: AgentSession) -> some View {
+        if !l.raw.isEmpty { liveTerminal(l, s) } else { liveText(l, s) }
+    }
+
+    /// While the agent works: the turn exactly as its terminal shows it (tool calls, output, text being written).
+    private func liveTerminal(_ l: LiveReply, _ s: AgentSession) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(store.agentName(for: s)).font(.caption.bold()).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
+                ProgressView().controlSize(.mini)
+                Text(l.status ?? "작업 중").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(l.raw)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .foregroundStyle(Color(white: 0.9))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: true)
+                    .padding(10)
+            }
+            .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.green.opacity(0.35), lineWidth: 1))
+        }
+    }
+
+    private func liveText(_ l: LiveReply, _ s: AgentSession) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 Text(store.agentName(for: s)).font(.caption.bold()).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
@@ -330,7 +355,11 @@ struct DialogueView: View {
                 }
                 let menu = TerminalMenu.parse(t)
                 let lastLogged = items.last { $0.role == .agent }?.text ?? lastAgent
-                let live = busy && menu == nil ? LiveReply.parse(t, alreadyLogged: lastLogged) : nil
+                var live = busy && menu == nil ? LiveReply.parse(t, alreadyLogged: lastLogged) : nil
+                if busy && menu == nil {
+                    live = live ?? LiveReply(text: "", status: nil)
+                    live?.raw = LiveReply.turn(t)
+                }
                 let tail = t.split(separator: "\n", omittingEmptySubsequences: false).suffix(20).joined(separator: "\n")
                 return (items, tail, menu, live)
             }.value

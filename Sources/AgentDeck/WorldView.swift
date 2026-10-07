@@ -554,8 +554,11 @@ struct Avatar: View {
     /// Current frame name and whether to mirror it (right = mirrored left).
     private func frame(_ phase: Double) -> (String, Bool) {
         let cycle = [0, 1, 2, 1]
+        // Six-frame walk strips when the character has them: a full cycle every 0.6 s, which matches
+        // two steps at walking speed; three-frame sheets ping-pong at 8 fps as before.
+        let six = character.map { Art.image("frames/\($0.id)/walk_down_5") != nil } ?? false
         if walking {
-            let f = cycle[Int(time * 8) % 4]
+            let f = six ? Int(time * 10) % 6 : cycle[Int(time * 8) % 4]
             switch facing {
             case .down: return ("walk_down_\(f)", false)
             case .up: return ("walk_up_\(f)", false)
@@ -563,7 +566,8 @@ struct Avatar: View {
             case .right: return ("walk_left_\(f)", true)
             }
         }
-        guard session.activity == .working else { return ("walk_down_1", false) }
+        let standing = six ? "walk_down_2" : "walk_down_1"  // strips: frame 2 has both feet together
+        guard session.activity == .working else { return (standing, false) }
         // Prop-free work frames (write/smith/study) suit the map's own furniture; older sheets fall back to
         // the frames with drawn-in desks only when a character has no work sheet yet.
         let hasWork = character.map { Art.image("frames/\($0.id)/write_1") != nil } ?? false
@@ -578,7 +582,7 @@ struct Avatar: View {
         case .reading?:
             return hasWork ? ("study_\([0, 0, 0, 1, 2, 2, 2, 1][Int(time * 1.5 + phase) % 8])", false)
                            : ("read_\(cycle[Int(time * 1.5 + phase) % 4])", false)
-        default: return ("walk_down_1", false)
+        default: return (standing, false)
         }
     }
 

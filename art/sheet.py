@@ -150,12 +150,40 @@ def slice_work(char: str, variant: str = "a"):
     return True
 
 
+def slice_strips(char: str, variant: str = "a"):
+    """1x6 walk strips per direction -> walk_{down,left,up}_{0..5}.png, same scale as the standing frame."""
+    out = ROOT / "out/frames" / char
+    srcs = {v: ROOT / f"raw/strip_{char}-{v}-{variant}_seedream_5_0_flash.webp" for v in ("down", "left", "up")}
+    if not all(p.exists() for p in srcs.values()):
+        return False
+    stand = Image.open(out / "walk_down_1.png") if (out / "walk_down_1.png").exists() else None
+    for view, src in srcs.items():
+        strip = Image.open(src).convert("RGB")
+        xs = cuts(strip, 6, axis=1)
+        cells = []
+        for c in range(6):
+            cell = strip.crop((xs[c], 0, xs[c + 1], strip.height))
+            cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
+            cells.append(drop_floor_shadow(key_background(cell)))
+        target = stand.height if stand else STAND_H
+        scale = target / max(f.height for f in cells)
+        frames = [f.resize((max(1, round(f.width * scale)), max(1, round(f.height * scale))), Image.NEAREST) for f in cells]
+        for c, f in enumerate(align_row(frames)):
+            f.quantize(256, method=Image.Quantize.FASTOCTREE).save(out / f"walk_{view}_{c}.png", optimize=True)
+    return True
+
+
 if __name__ == "__main__":
-    if sys.argv[1:2] == ["work"]:
+    if sys.argv[1:2] == ["strips"]:
+        import json
+        for c in json.loads((ROOT / "roster.json").read_text()):
+            print(c["id"], "ok" if slice_strips(c["id"]) else "no strips")
+    elif sys.argv[1:2] == ["work"]:
         import json
         for c in json.loads((ROOT / "roster.json").read_text()):
             print(c["id"], "ok" if slice_work(c["id"]) else "no sheet")
     else:
         for arg in sys.argv[1:]:
             slice_sheet(*arg.split("="))
+
 
