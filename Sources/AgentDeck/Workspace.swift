@@ -83,6 +83,8 @@ struct WorkspaceView: View {
     @State private var showNew = false
     @State private var showMigrate = false
     @State private var confirmUpdate = false
+    @State private var ending: AgentSession?
+    @State private var migrating: AgentSession?
 
     var body: some View {
         NavigationSplitView {
@@ -100,12 +102,20 @@ struct WorkspaceView: View {
                                    subtitle: h.agent.rawValue + " · " + (h.cwd as NSString).lastPathComponent,
                                    session: store.session(hosted: h.name), store: store)
                             .tag(Pane.hosted(h.name))
+                            .contextMenu {
+                                if let s = store.session(hosted: h.name) {
+                                    AgentMenu(store: store, session: s, ending: $ending, migrating: $migrating)
+                                } else {
+                                    Button("세션 종료", role: .destructive) { store.kill(h.name) }
+                                }
+                            }
                     }
                 }
                 Section {
                     ForEach(store.sessions.filter { $0.hostedName == nil }) { s in
                         SessionRow(title: s.name, subtitle: s.agent.rawValue + " · " + s.project, session: s, store: store)
                             .tag(Pane.external(s.id))
+                            .contextMenu { AgentMenu(store: store, session: s, ending: $ending, migrating: $migrating) }
                     }
                 } header: {
                     HStack {
@@ -146,6 +156,7 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $showNew) { NewSessionSheet(store: store) }
         .sheet(isPresented: $showMigrate) { MigrationSheet(store: store) }
+        .endSessionDialog(store: store, ending: $ending, migrating: $migrating)
         .onAppear { updater.start() }
         .confirmationDialog("수혁을 업데이트할까요?", isPresented: $confirmUpdate) {
             Button("업데이트 후 다시 열기") { updater.upgrade() }
@@ -423,5 +434,57 @@ struct MigrationSheet: View {
             results = await store.migrate(targets, closeOriginal: closeOriginal)
             running = false
         }
+    }
+}
+
+
+/// Right-click menu for an agent, used on the world map and in the sidebar.
+struct AgentMenu: View {
+    @ObservedObject var store: SessionStore
+    let session: AgentSession
+    var openDialogue: (() -> Void)? = nil
+    @Binding var ending: AgentSession?
+    @Binding var migrating: AgentSession?
+
+    var body: some View {
+        if let openDialogue { Button("대화하기", action: openDialogue) }
+        Button("터미널 보기") { store.selection = store.pane(for: session) }
+        if session.hostedName == nil, session.conversationId != nil {
+            Button("수혁으로 옮기기…") { migrating = session }
+        }
+        Divider()
+        Button("세션 종료…", role: .destructive) { ending = session }
+            .disabled(session.hostedName == nil && !SessionInput.canSend(session))
+    }
+}
+
+extension View {
+    /// Confirmation + result for ending a session from a context menu.
+    func endSessionDialog(store: SessionStore, ending: Binding<AgentSession?>, migrating: Binding<AgentSession?>) -> some View {
+        modifier(EndSessionDialog(store: store, ending: ending, migrating: migrating))
+    }
+}
+
+struct EndSessionDialog: ViewModifier {
+    @ObservedObject var store: SessionStore
+    @Binding var ending: AgentSession?
+    @Binding var migrating: AgentSession?
+    @State private var failure: String?
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog("\(ending.map { store.agentName(for: $0) } ?? "")의 세션을 종료할까요?",
+                                isPresented: Binding(get: { ending != nil }, set: { if !$0 { ending = nil } }),
+                                presenting: ending) { s in
+                Button("종료", role: .destructive) {
+                    Task { failure = await store.end(s) }
+                }
+            } message: { s in
+                Text("\(s.name)\n에이전트에 \(s.agent == .claude ? "/exit" : "/quit")를 보내 정상 종료함. 대화 기록은 남아 '최근 대화'에서 이어서 열 수 있음.")
+            }
+            .alert("세션을 끝내지 못함", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
+                Button("확인") { failure = nil }
+            } message: { Text(failure ?? "") }
+            .sheet(item: $migrating) { s in MigrationSheet(store: store, only: s.id) }
     }
 }

@@ -35,6 +35,9 @@ struct DialogueView: View {
     /// Side-panel size; nil when the view fills a page and has no size switch.
     var large: Bool? = nil
     var onToggleSize: (() -> Void)? = nil
+    /// PIP mode: dragging the header moves the window.
+    var onHeaderDrag: ((CGSize) -> Void)? = nil
+    var onHeaderDragEnd: ((CGSize) -> Void)? = nil
 
     @State private var loaded: [ChatItem]?
     private var items: [ChatItem] { loaded ?? preload }
@@ -116,6 +119,14 @@ struct DialogueView: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(Color.black.opacity(0.2))
+        .contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
+            .onChanged { onHeaderDrag?($0.translation) }
+            .onEnded { onHeaderDragEnd?($0.translation) })
+        .onHover { inside in
+            guard onHeaderDrag != nil else { return }
+            if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+        }
     }
 
     private func conversation(_ s: AgentSession) -> some View {
@@ -128,7 +139,11 @@ struct DialogueView: View {
                 .padding(14)
             }
             .onChange(of: items.count) { proxy.scrollTo("end", anchor: .bottom) }
-            .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+            .onAppear {
+                // Once more after layout settles; the first call can land before the bubbles are measured.
+                proxy.scrollTo("end", anchor: .bottom)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo("end", anchor: .bottom) }
+            }
         }
     }
 

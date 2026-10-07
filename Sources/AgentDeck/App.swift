@@ -193,6 +193,18 @@ final class SessionStore: ObservableObject {
         return results
     }
 
+    /// Ends a session gracefully: quit command first; hosted sessions also lose their tmux session.
+    /// Returns a message when the session could not be ended.
+    func end(_ s: AgentSession) async -> String? {
+        let note = await Task.detached { Self.closeOriginal(s) }.value
+        if let name = s.hostedName {
+            kill(name)  // also covers an agent that ignored /exit
+            return nil
+        }
+        refresh()
+        return note.isEmpty ? nil : note
+    }
+
     /// Sends the agent's quit command to its terminal and waits for the process to end.
     nonisolated private static func closeOriginal(_ s: AgentSession) -> String {
         guard let pid = s.pid, SessionInput.canSend(s) else {

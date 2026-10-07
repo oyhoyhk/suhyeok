@@ -51,6 +51,11 @@ struct WorldView: View {
     @State private var hoveredId: String?
     @State private var dialogueId: String?
     @AppStorage("dialogueLarge") private var dialogueLarge = true
+    @AppStorage("pipX") private var pipX = 0.78  // PIP centre, as a fraction of the world view
+    @AppStorage("pipY") private var pipY = 0.72
+    @State private var pipDrag: CGSize = .zero
+    @State private var ending: AgentSession?
+    @State private var migrating: AgentSession?
     @AppStorage(OpenMode.storageKey) private var openMode = OpenMode.dialogue.rawValue
 
     init(store: SessionStore, initialSelection: String? = nil, initialDialogue: String? = nil) {
@@ -85,6 +90,11 @@ struct WorldView: View {
                                        facing: p != item.point ? (walker.facing[item.session.id] ?? .down) : .down)
                                     .position(x: p.x * size.width, y: p.y * size.height)
                                     .onTapGesture { dialogueId = nil; selectedId = item.session.id == selectedId ? nil : item.session.id }
+                                    .contextMenu {
+                                        AgentMenu(store: store, session: item.session,
+                                                  openDialogue: { selectedId = nil; dialogueId = item.session.id },
+                                                  ending: $ending, migrating: $migrating)
+                                    }
                             }
                         }
                         .frame(width: size.width, height: size.height)
@@ -130,26 +140,46 @@ struct WorldView: View {
                         .position(cardCenter(item.point, cardSize: CGSize(width: 320, height: 340),
                                              map: size, origin: origin, bounds: geo.size))
                 }
-                // NPC-style conversation docked to the right: half the screen, or a narrow strip.
+                // NPC-style conversation: docked to the right half, or a small picture-in-picture window.
                 if let id = dialogueId {
-                    let width = max(360, geo.size.width * (dialogueLarge ? 0.5 : 0.34))
-                    DialogueView(store: store, sessionId: id, onClose: { dialogueId = nil },
+                    let pip = CGSize(width: 340, height: 320)
+                    let panel = DialogueView(store: store, sessionId: id, onClose: { dialogueId = nil },
                                  onTerminal: {
                                      if let s = store.sessions.first(where: { $0.id == id }) { store.selection = store.pane(for: s) }
                                      dialogueId = nil
                                  },
                                  large: dialogueLarge,
-                                 onToggleSize: { withAnimation(.easeInOut(duration: 0.2)) { dialogueLarge.toggle() } })
-                        .frame(width: width, height: geo.size.height)
-                        .position(x: geo.size.width - width / 2, y: geo.size.height / 2)
-                        .shadow(radius: 16)
-                        .transition(.move(edge: .trailing))
+                                 onToggleSize: { withAnimation(.easeInOut(duration: 0.2)) { dialogueLarge.toggle() } },
+                                 onHeaderDrag: dialogueLarge ? nil : { pipDrag = $0 },
+                                 onHeaderDragEnd: dialogueLarge ? nil : { t in
+                                     pipX = clamp(pipX + t.width / geo.size.width, pip.width / 2 / geo.size.width)
+                                     pipY = clamp(pipY + t.height / geo.size.height, pip.height / 2 / geo.size.height)
+                                     pipDrag = .zero
+                                 })
+                    if dialogueLarge {
+                        let width = max(360, geo.size.width * 0.5)
+                        panel
+                            .frame(width: width, height: geo.size.height)
+                            .position(x: geo.size.width - width / 2, y: geo.size.height / 2)
+                            .shadow(radius: 16)
+                            .transition(.move(edge: .trailing))
+                    } else {
+                        panel
+                            .frame(width: pip.width, height: pip.height)
+                            .position(x: pipX * geo.size.width + pipDrag.width, y: pipY * geo.size.height + pipDrag.height)
+                            .shadow(radius: 12)
+                            .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    }
                 }
             }
         }
         .padding(12)
         .animation(.easeInOut(duration: 0.25), value: dialogueId)
+        .endSessionDialog(store: store, ending: $ending, migrating: $migrating)
     }
+
+    /// Keeps a fraction inside [margin, 1 - margin] so the PIP never leaves the view.
+    private func clamp(_ v: Double, _ margin: Double) -> Double { min(max(v, margin), 1 - margin) }
 
     /// Beside the avatar, on the side with more room, clamped to the view.
     private func cardCenter(_ p: CGPoint, cardSize: CGSize, map: CGSize, origin: CGPoint, bounds: CGSize) -> CGPoint {

@@ -10,6 +10,8 @@ from process import key_background
 
 ROOT = Path(__file__).parent
 ROWS = ["walk_down", "walk_left", "walk_up", "hammer", "type", "read"]
+# Frames the model left without the character (anvil only); reuse a good frame of the same row instead.
+REUSE = {"necro": {"hammer_2": "hammer_0"}, "miner": {"hammer_2": "hammer_0"}, "robot": {"hammer_2": "hammer_0"}}
 STAND_H = 128  # height of the standing front frame; every frame of a character shares its scale
 
 
@@ -50,6 +52,8 @@ def slice_sheet(char: str, variant: str):
             cell = sheet.crop((xs[c], ys[r], xs[c + 1], ys[r + 1]))
             cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)  # speed + collapse AI dither
             cells[f"{row}_{c}"] = drop_floor_shadow(key_background(cell))
+    for bad, good in REUSE.get(char, {}).items():
+        cells[bad] = cells[good]
     walk_scale = STAND_H / cells["walk_down_1"].height
     # The model draws work rows smaller; scale each work row so its tallest frame matches the standing height.
     row_scale = {row: walk_scale if row.startswith("walk") else
@@ -60,7 +64,8 @@ def slice_sheet(char: str, variant: str):
     for name, img in cells.items():
         scale = row_scale[name.rsplit("_", 1)[0]]
         frame = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.NEAREST)
-        frame.save(out / f"{name}.png")
+        # Pixel art fits a 256-color palette; about 4x smaller than RGBA PNGs.
+        frame.quantize(256, method=Image.Quantize.FASTOCTREE).save(out / f"{name}.png", optimize=True)
         if frame.height > STAND_H * 1.6 or frame.height < STAND_H * 0.6:
             warnings.append(f"{name} height {frame.height}")
     print(char, "ok" if not warnings else "CHECK: " + ", ".join(warnings))
