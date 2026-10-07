@@ -62,6 +62,11 @@ struct WorldView: View {
     @State private var hoveredId: String?
     @State private var dialogueId: String?
     @AppStorage("dialogueLarge") private var dialogueLarge = true
+    /// Docked panel size: width as a fraction of the view (0.4–0.7), height as a fraction of the room
+    /// between the status counts and the minimap (0.5 of the view up to all of that room).
+    @AppStorage("panelWidth") private var panelWidth = 0.5
+    @AppStorage("panelHeight") private var panelHeight = 1.0
+    @State private var resizeStart: (Double, Double)?
     @AppStorage("pipX") private var pipX = 0.78  // PIP centre, as a fraction of the world view
     @AppStorage("pipY") private var pipY = 0.72
     @State private var pipDrag: CGSize = .zero
@@ -111,7 +116,8 @@ struct WorldView: View {
                             ForEach(items.sorted { (positions[$0.session.id] ?? $0.point).y < (positions[$1.session.id] ?? $1.point).y },
                                     id: \.session.id) { item in
                                 let p = positions[item.session.id] ?? item.point
-                                let sp = cam.screen(p, in: size)
+                                let kb = knockback(item, at: p, time: t)
+                                let sp = cam.screen(CGPoint(x: p.x + kb, y: p.y), in: size)
                                 Avatar(session: item.session, character: item.character, pose: pose(for: item, at: p),
                                        agentName: store.agentName(for: item.session), time: t,
                                        height: cam.scale * World.avatarHeight, selected: item.session.id == selectedId,
@@ -253,12 +259,26 @@ struct WorldView: View {
                                  })
                     if dialogueLarge {
                         // Right half, with a margin above and the minimap left visible below.
-                        let width = max(360, geo.size.width * 0.5)
                         let top: CGFloat = 50  // below the status counts
-                        let bottom = minimapHeight + 24
-                        let height = max(240, geo.size.height - top - bottom)
+                        let room = max(240, geo.size.height - top - minimapHeight - 24)
+                        let minH = min(room, geo.size.height * 0.5)
+                        let width = geo.size.width * min(max(panelWidth, 0.4), 0.7)
+                        let height = minH + (room - minH) * min(max(panelHeight, 0), 1)
                         panel
                             .frame(width: width, height: height)
+                            .overlay(alignment: .bottomLeading) {
+                                // Corner grip: drag left/down to grow, right/up to shrink.
+                                ResizeGrip()
+                                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                                        .onChanged { v in
+                                            if resizeStart == nil { resizeStart = (panelWidth, panelHeight) }
+                                            let (w0, h0) = resizeStart!
+                                            panelWidth = min(max(w0 - v.translation.width / geo.size.width, 0.4), 0.7)
+                                            let span = max(room - minH, 1)
+                                            panelHeight = min(max(h0 + v.translation.height / span, 0), 1)
+                                        }
+                                        .onEnded { _ in resizeStart = nil })
+                            }
                             .position(x: geo.size.width - 8 - width / 2, y: top + height / 2)
                             .shadow(radius: 16)
                             .transition(.move(edge: .trailing))
@@ -398,6 +418,13 @@ struct WorldView: View {
             let spots = stop.map(World.attackSpots) ?? World.campSpots
             return Placed(session: s, character: c, point: World.spot(spots, k + 6), tier: stop)
         }
+    }
+
+    /// Agents standing at a boss get pushed back (and flash) when its slam or skill lands.
+    private func knockback(_ item: Placed, at p: CGPoint, time: TimeInterval) -> CGFloat {
+        guard let tier = item.tier, p == item.point else { return 0 }
+        let f = BossPattern.impact(tier, time: time)
+        return f == 0 ? 0 : (p.x < World.boss(tier).midX ? -1 : 1) * CGFloat(f) * 0.012
     }
 
     /// At a hunting ground agents face the boss: attacking while their turn runs, standing guard otherwise.
@@ -882,8 +909,8 @@ struct DepartureView: View {
 }
 
 
-/// A hunting-ground boss: idle animation, flashes and damage numbers when attackers' blows land,
-/// crystals flying from it to each attacker.
+/// A hunting-ground boss running its move script: idle, hops, slams with shockwaves, a signature skill.
+/// Flashes and shows damage numbers when attackers' blows land; crystals fly from it to each attacker.
 struct BossView: View {
     let tier: Hunt.Tier
     let time: TimeInterval
@@ -892,23 +919,38 @@ struct BossView: View {
     let attackers: [(CGPoint, Double)]
     let center: CGPoint
 
+    private var hp: Double {
+        let perHit: Double = [0.04, 0.025, 0.015][tier.rawValue]
+        let blows = Double(attackers.count) * time / 1.2
+        return attackers.isEmpty ? 1 : 1 - (blows * perHit).truncatingRemainder(dividingBy: 1)
+    }
+    private var enraged: Bool { tier == .high && hp < 0.3 }
+
     var body: some View {
         let hits = attackers.filter { Avatar.isImpact(time + $0.1) }
-        let frame = Int(time * 6) % 6
+        let (move, k) = BossPattern.state(tier, time: time, enraged: enraged)
+        let h = size.height * 1.25
         ZStack {
-            if let img = Art.image("bosses/\(World.key(tier))_\(frame)") {
-                let h = size.height * 1.25
+            // Effects behind the boss.
+            if move == .attack, k > 0.5 { shockwave((k - 0.5) / 0.5) }
+            if move == .special { specialUnder(k) }
+            if let img = Art.image(frameName(move, k)) {
                 Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
-                    .frame(height: h)
-                    .brightness(hits.isEmpty ? 0 : 0.45)          // white flash on impact
-                    .offset(x: hits.isEmpty ? 0 : CGFloat(sin(time * 80)) * size.width * 0.02)  // shake
+                    .frame(height: h * (move == .special || move == .attack ? 1.08 : 1))
+                    .colorMultiply(enraged ? Color(red: 1, green: 0.7, blue: 0.6) : .white)
+                    .brightness(hits.isEmpty ? 0 : 0.45)          // white flash when a blow lands
+                    .offset(x: shakeX(move, k, hits: !hits.isEmpty), y: hopY(move, k))
+                    .scaleEffect(x: squash(move, k).0, y: squash(move, k).1, anchor: .bottom)
                     .background(alignment: .bottom) {
-                        Ellipse().fill(Color.black.opacity(0.35)).frame(width: size.width * 1.1, height: size.height * 0.18)
+                        Ellipse().fill(Color.black.opacity(0.35))
+                            .frame(width: size.width * 1.1 * (move == .hop ? 1 - 0.3 * sin(k * .pi) : 1),
+                                   height: size.height * 0.18)
                     }
                     .position(center)
             }
-            // HP bar: drains with every blow and refills when the boss falls (it respawns at once).
-            hpBar.position(x: center.x, y: center.y - size.height * 0.75)
+            if move == .special { specialOver(k) }
+            if move == .roar { roarRings(k) }
+            hpBar.position(x: center.x, y: center.y - size.height * 1.0)  // clear of the slime's hops
             ForEach(Array(attackers.enumerated()), id: \.offset) { _, a in
                 damage(a)
                 crystal(a)
@@ -917,12 +959,112 @@ struct BossView: View {
         .allowsHitTesting(false)
     }
 
+    private func frameName(_ move: BossPattern.Move, _ k: Double) -> String {
+        let key = World.key(tier)
+        switch move {
+        case .attack: return "bosses/\(key)_attack_\(min(5, Int(k * 6)))"
+        case .special: return "bosses/\(key)_special_\(min(5, Int(k * 6)))"
+        default: return "bosses/\(key)_\(Int(time * (enraged ? 9 : 6)) % 6)"
+        }
+    }
+
+    private func hopY(_ move: BossPattern.Move, _ k: Double) -> CGFloat {
+        move == .hop ? -CGFloat(sin(k * .pi)) * size.height * 0.35 : 0
+    }
+
+    /// Slime squash on landing; dragon rears up while roaring.
+    private func squash(_ move: BossPattern.Move, _ k: Double) -> (CGFloat, CGFloat) {
+        switch move {
+        case .hop:
+            let land = k > 0.85 ? (k - 0.85) / 0.15 : 0
+            return (1 + 0.15 * land, 1 - 0.15 * land)
+        case .roar: return (1, 1 + 0.06 * CGFloat(sin(k * .pi)))
+        default: return (1, 1)
+        }
+    }
+
+    private func shakeX(_ move: BossPattern.Move, _ k: Double, hits: Bool) -> CGFloat {
+        if move == .roar { return CGFloat(sin(time * 90)) * size.width * 0.03 }
+        return hits ? CGFloat(sin(time * 80)) * size.width * 0.02 : 0
+    }
+
+    /// Expanding ground ring after a slam.
+    private func shockwave(_ k: Double) -> some View {
+        Ellipse()
+            .stroke([Color.green, .cyan, .orange][tier.rawValue].opacity(1 - k), lineWidth: max(2, size.height * 0.06 * (1 - k)))
+            .frame(width: size.width * (1 + 2.2 * k), height: size.height * 0.35 * (1 + 2.2 * k))
+            .position(x: center.x, y: center.y + size.height * 0.5)
+    }
+
+    /// Warning rings while the dragon roars.
+    private func roarRings(_ k: Double) -> some View {
+        ZStack {
+            ForEach(0..<3, id: \.self) { i in
+                let r = ((k * 2 + Double(i) / 3).truncatingRemainder(dividingBy: 1))
+                Circle().stroke(Color.red.opacity(0.7 * (1 - r)), lineWidth: 3)
+                    .frame(width: size.width * (0.6 + 1.8 * r), height: size.width * (0.6 + 1.8 * r) * 0.6)
+            }
+            Text("!!").font(.system(size: max(12, size.height * 0.3), weight: .black)).foregroundStyle(.red)
+                .shadow(color: .black, radius: 2)
+                .offset(y: -size.height * 0.95)
+        }
+        .position(center)
+    }
+
+    @ViewBuilder private func specialUnder(_ k: Double) -> some View {
+        if tier == .mid {
+            // Crystal spikes erupting in a ring around the golem.
+            ForEach(0..<12, id: \.self) { i in
+                let a = Double(i) / 12 * 2 * .pi
+                let rise = k < 0.4 ? k / 0.4 : k > 0.8 ? (1 - k) / 0.2 : 1
+                Image(systemName: "triangle.fill")
+                    .resizable()
+                    .foregroundStyle(LinearGradient(colors: [.white, .cyan, .blue], startPoint: .top, endPoint: .bottom))
+                    .frame(width: size.width * 0.14, height: size.height * 0.4 * rise)
+                    .position(x: center.x + CGFloat(cos(a)) * size.width * 1.1,
+                              y: center.y + size.height * 0.45 + CGFloat(sin(a)) * size.height * 0.35 - size.height * 0.2 * rise)
+                    .opacity(rise)
+            }
+        }
+    }
+
+    @ViewBuilder private func specialOver(_ k: Double) -> some View {
+        switch tier {
+        case .low:
+            // Slime blobs sprayed in all directions, bouncing once and fading.
+            ForEach(0..<8, id: \.self) { i in
+                let a = Double(i) / 8 * 2 * .pi + 0.3
+                let t = max(0, (k - 0.4) / 0.6)
+                Circle().fill(RadialGradient(colors: [Color(red: 0.6, green: 1, blue: 0.5), .green, Color(red: 0.1, green: 0.5, blue: 0.2)],
+                                             center: .topLeading, startRadius: 0, endRadius: size.width * 0.2))
+                    .overlay(Circle().stroke(Color(red: 0.05, green: 0.3, blue: 0.1), lineWidth: 1.5))
+                    .frame(width: size.width * 0.22, height: size.width * 0.18)
+                    .position(x: center.x + CGFloat(cos(a) * t) * size.width * 1.6,
+                              y: center.y + CGFloat(sin(a) * t) * size.height * 0.9 - CGFloat(sin(t * .pi)) * size.height * 0.5)
+                    .opacity(t > 0 ? 1 - t * 0.8 : 0)
+            }
+        case .mid:
+            EmptyView()
+        case .high:
+            // Fire pouring from the dragon to both sides.
+            ForEach(0..<16, id: \.self) { i in
+                let side: CGFloat = i % 2 == 0 ? -1 : 1
+                let t = ((k - 0.35) / 0.55 + Double(i) / 16).truncatingRemainder(dividingBy: 1)
+                if k > 0.35 && k < 0.95 {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: size.height * (0.15 + 0.2 * t)))
+                        .foregroundStyle(LinearGradient(colors: [.yellow, .orange, .red], startPoint: .top, endPoint: .bottom))
+                        .position(x: center.x + side * CGFloat(t) * size.width * 1.8,
+                                  y: center.y + size.height * 0.1 + CGFloat(sin(Double(i) * 1.7)) * size.height * 0.25 * CGFloat(t))
+                        .opacity(1 - t)
+                }
+            }
+        }
+    }
+
     private var hpBar: some View {
-        let perHit: Double = [0.04, 0.025, 0.015][tier.rawValue]
-        let blows = Double(attackers.count) * time / 1.2
-        let hp = attackers.isEmpty ? 1 : 1 - (blows * perHit).truncatingRemainder(dividingBy: 1)
-        return VStack(spacing: 2) {
-            Text(tier.boss).font(.system(size: max(9, size.height * 0.12), weight: .bold)).foregroundStyle(.white)
+        VStack(spacing: 2) {
+            Text(enraged ? tier.boss + " · 분노" : tier.boss).font(.system(size: max(9, size.height * 0.12), weight: .bold)).foregroundStyle(.white)
                 .shadow(color: .black, radius: 2)
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.black.opacity(0.6))
@@ -961,5 +1103,31 @@ struct BossView: View {
                 .shadow(color: .cyan, radius: 3)
                 .position(x: center.x + (a.0.x - center.x) * k, y: center.y + (a.0.y - center.y) * k - arc)
         }
+    }
+}
+
+
+/// Small diagonal grip in a panel corner; shows the resize cursor on hover.
+struct ResizeGrip: View {
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Color.clear.frame(width: 22, height: 22)
+            Path { p in
+                for k in 0..<3 {
+                    let d = CGFloat(6 + k * 5)
+                    p.move(to: CGPoint(x: 3, y: 19 - d)); p.addLine(to: CGPoint(x: 3 + d, y: 19))
+                }
+            }
+            .stroke(Color(red: 0.85, green: 0.68, blue: 0.25), lineWidth: 1.5)
+            .frame(width: 22, height: 22)
+        }
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside {
+                if #available(macOS 15.0, *) { NSCursor.frameResize(position: .bottomLeft, directions: .all).push() }
+                else { NSCursor.crosshair.push() }
+            } else { NSCursor.pop() }
+        }
+        .help("끌어서 대화창 크기 조절")
     }
 }

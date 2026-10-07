@@ -45,6 +45,21 @@ struct AgentDeckApp: App {
             }
             exit(0)
         }
+        // `open 수혁.app --args --dictate-test <log>`: run dictation for 8 s inside the real app (permission prompts
+        // included) and log every step to the file.
+        if let i = args.firstIndex(of: "--dictate-test"), i + 1 < args.count {
+            UserDefaults.standard.set(args[i + 1], forKey: "dictationLog")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                let d = Dictation()
+                d.start()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                    Dictation.log("result text=\(d.text) error=\(d.error ?? "-")")
+                    d.stop()
+                    UserDefaults.standard.removeObject(forKey: "dictationLog")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { exit(0) }
+                }
+            }
+        }
         // `AgentDeck --snapshot-world out.png [seconds]` renders the live world (walking included) offscreen.
         if let i = args.firstIndex(of: "--snapshot-world"), i + 1 < args.count {
             Snapshot.world(path: args[i + 1], wait: args.dropFirst(i + 2).first.flatMap(Double.init) ?? 3)
@@ -52,6 +67,10 @@ struct AgentDeckApp: App {
         // `AgentDeck --trace-walk <seconds>` runs the world offscreen and logs positions/facing twice a second.
         if let i = args.firstIndex(of: "--trace-walk"), i + 1 < args.count, let secs = Double(args[i + 1]) {
             Snapshot.traceWalk(seconds: secs)
+        }
+        // `AgentDeck --snapshot-bosses out.png`: every move of each boss's script, side by side.
+        if let i = args.firstIndex(of: "--snapshot-bosses"), i + 1 < args.count {
+            Snapshot.bosses(path: args[i + 1])
         }
         // `AgentDeck --snapshot-poses <characterId> out.png` renders one character's walk/work frames.
         if let i = args.firstIndex(of: "--snapshot-poses"), i + 2 < args.count {
@@ -79,6 +98,16 @@ struct AgentDeckApp: App {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
             }
+        }
+        // `--parse-menu <screen.txt>`: show what the dialogue's choice card would contain.
+        if let i = args.firstIndex(of: "--parse-menu"), i + 1 < args.count,
+           let screen = try? String(contentsOfFile: args[i + 1], encoding: .utf8) {
+            if let m = TerminalMenu.parse(screen) {
+                print("question:", m.question.map(DialogueView.translate) ?? "-")
+                print("context:\n" + (m.context ?? "-"))
+                for (k, o) in m.options.enumerated() { print(k == m.selected ? "❯" : " ", k, o.label) }
+            } else { print("no menu") }
+            exit(0)
         }
         // `--menu-hosted <tmux session> [n]`: parse (and optionally choose in) a menu on 수혁's own tmux server,
         // which also covers sessions that are not in Claude's registry yet (e.g. the folder trust prompt).
@@ -532,6 +561,41 @@ enum Snapshot {
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        exit(0)
+    }
+
+    static func bosses(path: String) {
+        let cell = CGSize(width: 230, height: 230)
+        let view = VStack(alignment: .leading, spacing: 8) {
+            ForEach(Hunt.Tier.allCases, id: \.self) { tier in
+                // Time at 60% into each step of the script (minus the per-tier offset in BossPattern.state).
+                let steps = BossPattern.script(tier)
+                let starts = steps.indices.map { i in steps[..<i].reduce(0) { $0 + $1.length } }
+                HStack(spacing: 6) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { i, st in
+                        let t = 300 * steps.reduce(0) { $0 + $1.length } + starts[i] + st.length * 0.6 - Double(tier.rawValue) * 3.7
+                        ZStack(alignment: .topLeading) {
+                            Color(red: 0.25, green: 0.2, blue: 0.15)
+                            BossView(tier: tier, time: t, size: CGSize(width: 80, height: 90), attackers: [],
+                                     center: CGPoint(x: cell.width / 2, y: cell.height * 0.55))
+                            Text("\(st.move)").font(.caption.bold()).foregroundStyle(.white).padding(4)
+                        }
+                        .frame(width: cell.width, height: cell.height)
+                    }
+                }
+            }
+        }
+        .padding(8).background(Color.black)
+        let host = NSHostingView(rootView: view)
+        host.frame.size = host.fittingSize
+        let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -5000, y: -5000), size: host.fittingSize),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        }
         exit(0)
     }
 

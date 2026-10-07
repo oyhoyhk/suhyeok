@@ -352,10 +352,12 @@ def slice_attacks():
 
 def slice_bosses():
     for b in ("low", "mid", "high"):
-        src = ROOT / f"raw/boss_{b}-a_seedream_5_0_flash.webp"
-        if src.exists():
-            slice_strip_to(src, ROOT / "out/bosses", b, 256)
-            print(b, "ok")
+        for kind, prefix, by in (("boss", b, "max"), ("bossattack", f"{b}_attack", "max"), ("bossspecial", f"{b}_special", "min")):
+            src = ROOT / f"raw/{kind}_{b}-a_seedream_5_0_flash.webp"
+            if src.exists():
+                # Special effects spread wide: scale by the plainest frame so the body matches the idle size.
+                slice_strip_to(src, ROOT / "out/bosses", prefix, 256, by=by)
+                print(prefix, "ok")
 
 
 if __name__ == "__main__":

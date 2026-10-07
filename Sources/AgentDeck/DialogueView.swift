@@ -346,6 +346,15 @@ struct DialogueView: View {
                     Button(key.label) { press(s, key) }.controlSize(.small).disabled(!canSend)
                 }
                 Spacer()
+                if s.agent == .codex {
+                    // Codex has its own realtime voice conversation (/voice); its helper uses this Mac's mic and speaker.
+                    Button { Task.detached { _ = SessionInput.send(s, text: "/voice") } } label: {
+                        Label("Codex 음성 대화", systemImage: "waveform.circle")
+                    }
+                    .controlSize(.small).disabled(!canSend)
+                    Button("음성 끝내기") { Task.detached { _ = SessionInput.send(s, text: "/voice stop") } }
+                        .controlSize(.small).disabled(!canSend)
+                }
                 Toggle(isOn: $readReplies) { Label("답변 읽어 주기", systemImage: readReplies ? "speaker.wave.2.fill" : "speaker.slash") }
                     .toggleStyle(.button).controlSize(.small)
                 if speaker.speaking { Button("그만 읽기") { speaker.stop() }.controlSize(.small) }

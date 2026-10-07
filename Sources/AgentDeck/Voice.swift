@@ -16,48 +16,96 @@ final class Dictation: ObservableObject {
     private var task: SFSpeechRecognitionTask?
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "ko-KR"))
 
+    /// macOS speech recognition only works while Dictation is turned on in System Settings.
+    nonisolated(unsafe) static var dictationOff = false
+
+    static func log(_ s: String) {
+        NSLog("[dictation] %@", s)
+        if let path = ProcessInfo.processInfo.environment["SUHYEOK_DICTATION_LOG"] ?? UserDefaults.standard.string(forKey: "dictationLog"),
+           let h = FileHandle(forWritingAtPath: path) ?? { FileManager.default.createFile(atPath: path, contents: nil); return FileHandle(forWritingAtPath: path) }() {
+            h.seekToEndOfFile(); h.write((s + "\n").data(using: .utf8)!); try? h.close()
+        }
+    }
+
     func toggle() { listening ? stop() : start() }
 
     func start() {
         error = nil
+        Self.log("start; speech auth=\(SFSpeechRecognizer.authorizationStatus().rawValue) mic auth=\(AVCaptureDevice.authorizationStatus(for: .audio).rawValue)")
+        // Callbacks arrive on background queues; hop to the main actor explicitly.
         SFSpeechRecognizer.requestAuthorization { status in
-            Task { @MainActor in
-                guard status == .authorized else {
-                    self.error = "음성 인식 권한이 없음 — 시스템 설정 > 개인정보 보호 > 음성 인식에서 수혁 허용"
-                    return
-                }
-                AVCaptureDevice.requestAccess(for: .audio) { ok in
-                    Task { @MainActor in
-                        if ok { self.begin() } else { self.error = "마이크 권한이 없음 — 시스템 설정 > 개인정보 보호 > 마이크에서 수혁 허용" }
-                    }
-                }
+            DispatchQueue.main.async { self.afterSpeechAuth(status) }
+        }
+    }
+
+    private func afterSpeechAuth(_ status: SFSpeechRecognizerAuthorizationStatus) {
+        Self.log("speech auth -> \(status.rawValue)")
+        guard status == .authorized else {
+            error = "음성 인식 권한이 없음 — 시스템 설정 > 개인정보 보호 및 보안 > 음성 인식에서 수혁을 켜 주세요"
+            return
+        }
+        AVCaptureDevice.requestAccess(for: .audio) { ok in
+            DispatchQueue.main.async {
+                Dictation.log("mic auth -> \(ok)")
+                if ok { self.begin() } else { self.error = "마이크 권한이 없음 — 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 수혁을 켜 주세요" }
             }
         }
     }
 
     private func begin() {
-        guard let recognizer, recognizer.isAvailable else { error = "음성 인식을 지금 쓸 수 없음"; return }
+        guard let recognizer, recognizer.isAvailable else { error = "음성 인식을 지금 쓸 수 없음"; Self.log("recognizer unavailable"); return }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }  // stays on this Mac
         request = req
         let input = engine.inputNode
-        input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buffer, _ in
-            req.append(buffer)
+        let format = input.outputFormat(forBus: 0)
+        Self.log("input format \(format.sampleRate)Hz ch=\(format.channelCount)")
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            error = "입력 장치(마이크)를 찾지 못함 — 시스템 설정 > 사운드 > 입력을 확인해 주세요"
+            return
         }
-        do { try engine.start() } catch { self.error = "마이크를 열지 못함: \(error.localizedDescription)"; return }
+        input.removeTap(onBus: 0)
+        Self.installTap(on: input, format: format, request: req)
+        engine.prepare()
+        do { try engine.start() } catch {
+            self.error = "마이크를 열지 못함: \(error.localizedDescription)"; Self.log("engine start failed \(error)"); return
+        }
         text = ""
         listening = true
-        task = recognizer.recognitionTask(with: req) { result, err in
-            Task { @MainActor in
-                if let result { self.text = result.bestTranscription.formattedString }
-                if err != nil || (result?.isFinal ?? false) { self.finish() }
+        task = Self.recognize(recognizer, req) { [weak self] text, done in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let text { self.text = text }
+                if Dictation.dictationOff {
+                    self.error = "macOS 받아쓰기가 꺼져 있음 — 시스템 설정 > 키보드 > 받아쓰기를 켜면 됨"
+                    Dictation.dictationOff = false
+                }
+                if done { self.finish() }
             }
+        }
+        Self.log("listening")
+    }
+
+    /// The tap runs on the audio thread: keep it out of the main actor.
+    nonisolated private static func installTap(on input: AVAudioInputNode, format: AVAudioFormat,
+                                               request: SFSpeechAudioBufferRecognitionRequest) {
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in request.append(buffer) }
+    }
+
+    nonisolated private static func recognize(_ r: SFSpeechRecognizer, _ req: SFSpeechAudioBufferRecognitionRequest,
+                                              update: @escaping @Sendable (String?, Bool) -> Void) -> SFSpeechRecognitionTask {
+        r.recognitionTask(with: req) { result, err in
+            if let err { Dictation.log("recognition ended: \(err.localizedDescription)") }
+            if let err, err.localizedDescription.contains("Siri and Dictation are disabled") {
+                Dictation.dictationOff = true
+            }
+            update(result?.bestTranscription.formattedString, err != nil || (result?.isFinal ?? false))
         }
     }
 
     func stop() {
+        Self.log("stop; text=\(text)")
         request?.endAudio()  // the task delivers the final text, then finish() runs
         if engine.isRunning { engine.stop(); engine.inputNode.removeTap(onBus: 0) }
         listening = false

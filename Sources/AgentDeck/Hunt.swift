@@ -113,3 +113,57 @@ enum HuntClock {
         p.last = t
     }
 }
+
+/// What a boss is doing at a moment: each tier runs its own looping script of moves.
+enum BossPattern {
+    enum Move: Equatable {
+        case idle
+        case hop            // slime: a bounce in place (drawn in code)
+        case attack         // ground slam, 6 frames over 1.2 s; impact on frame 3
+        case special        // signature skill, 6 frames over 1.8 s; peak on frames 3-4
+        case roar           // dragon: rears up and shakes, a warning before the special
+    }
+
+    struct Step { let move: Move; let length: Double }
+
+    /// Slime: playful hops between slams. Golem: slow, a double slam then crystal spikes.
+    /// Dragon: roar as a warning, fire, and gets faster when enraged (HP below 30%).
+    static func script(_ tier: Hunt.Tier) -> [Step] {
+        switch tier {
+        case .low:
+            return [Step(move: .idle, length: 2.5), Step(move: .hop, length: 0.8), Step(move: .hop, length: 0.8),
+                    Step(move: .idle, length: 1.5), Step(move: .attack, length: 1.2), Step(move: .idle, length: 2),
+                    Step(move: .special, length: 1.8)]
+        case .mid:
+            return [Step(move: .idle, length: 3.5), Step(move: .attack, length: 1.2), Step(move: .idle, length: 0.6),
+                    Step(move: .attack, length: 1.2), Step(move: .idle, length: 3), Step(move: .special, length: 1.8)]
+        case .high:
+            return [Step(move: .idle, length: 2.5), Step(move: .attack, length: 1.2), Step(move: .idle, length: 1.5),
+                    Step(move: .roar, length: 1.2), Step(move: .special, length: 1.8), Step(move: .idle, length: 2),
+                    Step(move: .attack, length: 1.2), Step(move: .attack, length: 1.2)]
+        }
+    }
+
+    /// Move and progress (0...1) within it. `enraged` speeds the script up by 40%.
+    static func state(_ tier: Hunt.Tier, time: Double, enraged: Bool = false) -> (Move, Double) {
+        let steps = script(tier)
+        let total = steps.reduce(0) { $0 + $1.length }
+        // Offset per tier so the three bosses never move in step.
+        var t = ((time * (enraged ? 1.4 : 1)) + Double(tier.rawValue) * 3.7).truncatingRemainder(dividingBy: total)
+        for s in steps {
+            if t < s.length { return (s.move, t / s.length) }
+            t -= s.length
+        }
+        return (.idle, 0)
+    }
+
+    /// 0...1 strength of the blow hitting the attackers right now (they get pushed back and flash).
+    static func impact(_ tier: Hunt.Tier, time: Double, enraged: Bool = false) -> Double {
+        let (move, k) = state(tier, time: time, enraged: enraged)
+        switch move {
+        case .attack: return k > 0.5 && k < 0.75 ? 1 - (k - 0.5) / 0.25 : 0
+        case .special: return k > 0.45 && k < 0.8 ? 1 - (k - 0.45) / 0.35 : 0
+        default: return 0
+        }
+    }
+}

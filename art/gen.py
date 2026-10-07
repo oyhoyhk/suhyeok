@@ -135,6 +135,17 @@ BOSS = ("16-bit pixel art RPG boss monster sprite animation strip: {boss}. ONE s
         "equal spacing, same size, same baseline, facing the viewer, plain flat bright magenta background (#FF00FF), "
         "no grid lines, no shadows, no text. The 6 frames are a looping idle animation: breathing, a menacing sway, glowing "
         "accents pulsing. Big, imposing, detailed, crisp pixels, thick dark outline.")
+BOSS_MOVES = {
+    "attack": "The 6 frames are one heavy melee attack: rearing back, gathering power, lunging down, slamming the ground "
+              "with a shockwave burst at its base, recoil, settling back. Strong readable poses.",
+    "special": "The 6 frames are its special skill, charging and unleashing {special}: gathering glow, building energy, "
+               "releasing a big burst, the effect at full size around it, fading, back to stance.",
+}
+BOSS_SPECIAL = {
+    "low": "a spray of sticky green slime blobs bursting outward and splitting into small slimes",
+    "mid": "a ring of sharp blue crystal spikes erupting from the ground all around it",
+    "high": "a huge roaring breath of fire with wings spread wide and flames swirling around it",
+}
 BOSSES = {
     "low": "a giant mossy forest slime king with a small golden crown and leaves stuck in its jelly body, green and teal",
     "mid": "a hulking cave stone golem covered in glowing blue crystals, heavy fists, dark grey rock body",
@@ -194,6 +205,13 @@ def run(kind, model, cid):
         b = cid.rsplit("-", 1)[0]
         prompt, aspect = BOSS.format(boss=BOSSES[b]), "21:9"
         out = f"boss_{cid}_{model}"
+    elif kind in ("bossattack", "bossspecial"):
+        b = cid.rsplit("-", 1)[0]
+        move = BOSS_MOVES["attack" if kind == "bossattack" else "special"].format(special=BOSS_SPECIAL[b])
+        base = ("EXACTLY the same boss monster as in the reference image, same shape, colors and crown/details. "
+                + BOSS.format(boss=BOSSES[b]).split("The 6 frames are a looping idle animation")[0])
+        prompt, aspect = base + move + " Big, imposing, detailed, crisp pixels, thick dark outline.", "21:9"
+        out = f"{kind}_{cid}_{model}"
     elif kind == "town2":
         prompt, aspect, out = TOWN2, "16:9", f"town2_{cid}_{model}"
     elif kind == "strip":
@@ -229,6 +247,9 @@ def run(kind, model, cid):
         cmd[8:8] = ["--resolution", "4k" if kind in ("town", "town2") else "2k"]
     if model == "gpt_image_2":
         cmd[8:8] = ["--quality", "medium"]
+    if kind in ("bossattack", "bossspecial"):
+        # The idle strip is the identity reference, so the boss keeps its look across moves.
+        cmd[8:8] = ["--image-references", upload(ROOT / f"raw/boss_{cid.rsplit('-', 1)[0]}-a_seedream_5_0_flash.webp")]
     if kind in ("sheet", "work", "walk6", "strip", "workstrip", "attack"):
         ref = ROOT / f"raw/sprite_{cid.split('-')[0]}_seedream_5_0_flash.webp"
         cmd[8:8] = ["--image-references", upload(ref)]
