@@ -50,11 +50,13 @@ struct WorldView: View {
     @State private var selectedId: String?
     @State private var hoveredId: String?
     @State private var dialogueId: String?
+    @AppStorage("dialogueLarge") private var dialogueLarge = true
     @AppStorage(OpenMode.storageKey) private var openMode = OpenMode.dialogue.rawValue
 
-    init(store: SessionStore, initialSelection: String? = nil) {
+    init(store: SessionStore, initialSelection: String? = nil, initialDialogue: String? = nil) {
         self.store = store
         _selectedId = State(initialValue: initialSelection)
+        _dialogueId = State(initialValue: initialDialogue)
     }
     @State private var walker = Walker()
 
@@ -127,20 +129,25 @@ struct WorldView: View {
                         .position(cardCenter(item.point, cardSize: CGSize(width: 320, height: 340),
                                              map: size, origin: origin, bounds: geo.size))
                 }
-                // NPC-style conversation over the lower part of the map.
+                // NPC-style conversation docked to the right: half the screen, or a narrow strip.
                 if let id = dialogueId {
+                    let width = max(360, geo.size.width * (dialogueLarge ? 0.5 : 0.34))
                     DialogueView(store: store, sessionId: id, onClose: { dialogueId = nil },
                                  onTerminal: {
                                      if let s = store.sessions.first(where: { $0.id == id }) { store.selection = store.pane(for: s) }
                                      dialogueId = nil
-                                 })
-                        .frame(width: geo.size.width * 0.94, height: geo.size.height * 0.72)
-                        .position(x: geo.size.width / 2, y: geo.size.height * 0.62)
+                                 },
+                                 large: dialogueLarge,
+                                 onToggleSize: { withAnimation(.easeInOut(duration: 0.2)) { dialogueLarge.toggle() } })
+                        .frame(width: width, height: geo.size.height)
+                        .position(x: geo.size.width - width / 2, y: geo.size.height / 2)
                         .shadow(radius: 16)
+                        .transition(.move(edge: .trailing))
                 }
             }
         }
         .padding(12)
+        .animation(.easeInOut(duration: 0.25), value: dialogueId)
     }
 
     /// Beside the avatar, on the side with more room, clamped to the view.

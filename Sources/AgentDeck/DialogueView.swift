@@ -32,6 +32,9 @@ struct DialogueView: View {
     var onTerminal: (() -> Void)? = nil
     /// Items to show before the first poll (offscreen snapshots render a single frame).
     var preload: [ChatItem] = []
+    /// Side-panel size; nil when the view fills a page and has no size switch.
+    var large: Bool? = nil
+    var onToggleSize: (() -> Void)? = nil
 
     @State private var loaded: [ChatItem]?
     private var items: [ChatItem] { loaded ?? preload }
@@ -46,7 +49,7 @@ struct DialogueView: View {
     var body: some View {
         if let s = session {
             HStack(alignment: .top, spacing: 0) {
-                portrait(s)
+                if large != false { portrait(s) }  // small panel: the avatar moves into the header
                 VStack(spacing: 0) {
                     header(s)
                     conversation(s)
@@ -83,16 +86,29 @@ struct DialogueView: View {
             }
             Spacer()
         }
-        .frame(width: 190)
+        .frame(width: large == true ? 150 : 190)
         .padding(14)
         .background(Color.black.opacity(0.25))
     }
 
     private func header(_ s: AgentSession) -> some View {
         HStack {
+            if large == false {
+                if let c = store.character(for: s), let img = Art.image("sprites/\(c.id)") {
+                    Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit).frame(height: 30)
+                }
+                Text(store.agentName(for: s)).font(.headline).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
+                Circle().fill(s.activity.color).frame(width: 7, height: 7)
+            }
             Text(s.name).font(.headline).lineLimit(1)
-            Text(s.project).font(.caption.monospaced()).foregroundStyle(.secondary)
+            if large != false { Text(s.project).font(.caption.monospaced()).foregroundStyle(.secondary) }
             Spacer()
+            if let large, let onToggleSize {
+                Button(action: onToggleSize) {
+                    Image(systemName: large ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                }
+                .buttonStyle(.borderless).help(large ? "작게 보기" : "크게 보기 (화면 절반)")
+            }
             if let onTerminal { Button("터미널로", action: onTerminal).controlSize(.small) }
             if let onClose {
                 Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless).keyboardShortcut(.cancelAction)

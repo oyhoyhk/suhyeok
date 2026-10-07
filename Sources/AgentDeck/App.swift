@@ -26,7 +26,7 @@ struct AgentDeckApp: App {
         }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
-        for flag in ["--send", "--press", "--migrate", "--snapshot-dialogue"] {
+        for flag in ["--send", "--press", "--migrate", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
             }
@@ -349,6 +349,18 @@ enum Snapshot {
                 done.signal()
             }
             while done.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+        case "--snapshot-world-dialogue":
+            // arg = out path; the panel size comes from the dialogueLarge default.
+            let host = NSHostingView(rootView: WorldView(store: store, initialSelection: nil, initialDialogue: s.id)
+                .frame(width: 1400, height: 820))
+            let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 1400, height: 820),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = host
+            RunLoop.main.run(until: Date().addingTimeInterval(3))
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arg ?? "world.png"))
+            }
         case "--snapshot-dialogue":
             let items = s.transcriptPath.map { TranscriptRenderer.items(path: $0, agent: s.agent) } ?? []
             // A real (never shown) window, so scroll views and text fields draw like in the app.
