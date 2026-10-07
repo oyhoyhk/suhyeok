@@ -1,6 +1,8 @@
 import CryptoKit
 import Foundation
 import Network
+import SwiftUI
+import AppKit
 
 /// Small HTTP server for the phone page. Listens on 127.0.0.1 only; the outside world reaches it through
 /// a Cloudflare quick tunnel (MobileTunnel). Every API call needs a session token obtained by pairing with
@@ -11,13 +13,25 @@ final class MobileServer: ObservableObject {
     static let port: UInt16 = 4380
 
     @Published private(set) var running = false
-    @Published private(set) var pairingCode = ""
+    /// One-time pairing secret shown only inside the QR code, for 60 seconds after "연결 시작".
+    @Published private(set) var pairingSecret: String?
+    @Published private(set) var secretExpires = Date.distantPast
+    /// Connection requests waiting for the owner to allow or deny on the Mac.
+    @Published private(set) var pending: [PendingPair] = []
+
+    struct PendingPair: Identifiable, Equatable {
+        let id: String          // also the phone's polling handle (random, 128-bit)
+        let device: String
+        let client: String
+        let created: Date
+        var decision: Bool?     // nil = waiting
+        var token: String?      // issued on approval, handed to the phone once
+    }
     @Published private(set) var devices: [Device] = []
     var pairedDevices: Int { devices.count }
 
     private var listener: NWListener?
     private weak var store: SessionStore?
-    private var codeIssued = Date.distantPast
     /// Wrong codes per client (Cloudflare's CF-Connecting-IP through the tunnel, "local" otherwise).
     private var failedPairs: [String: [Date]] = [:]
     private var connections = 0
@@ -49,7 +63,6 @@ final class MobileServer: ObservableObject {
         guard listener == nil else { return }
         self.store = store
         loadDevices()
-        newCode()
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: Self.port)!)
         guard let l = try? NWListener(using: params) else { return }
@@ -67,11 +80,35 @@ final class MobileServer: ObservableObject {
         running = false
     }
 
-    /// A fresh code also lifts any lockout, so someone hammering wrong codes cannot keep the owner out.
-    func newCode() {
-        pairingCode = String(format: "%06d", Int.random(in: 0..<1_000_000))
-        codeIssued = Date()
+    /// Shows a QR with a fresh 128-bit secret for 60 seconds; starting again also lifts any lockout.
+    func beginPairing() {
+        pairingSecret = Self.random(16)
+        secretExpires = Date().addingTimeInterval(60)
         failedPairs = [:]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 61) { [weak self] in
+            if let self, Date() > self.secretExpires { self.pairingSecret = nil }
+        }
+    }
+
+    func cancelPairing() { pairingSecret = nil }
+
+    /// Owner's answer to a connection request (from the approval panel).
+    func decide(_ id: String, allow: Bool) {
+        guard let i = pending.firstIndex(where: { $0.id == id }), pending[i].decision == nil else { return }
+        pending[i].decision = allow
+        if allow {
+            let token = Self.random(32)
+            pending[i].token = token
+            devices.append(Device(hash: Self.hash(token), name: pending[i].device, issued: Date(), lastUsed: Date()))
+            saveDevices()
+        }
+        PairApproval.shared.update()
+    }
+
+    static func random(_ bytes: Int) -> String {
+        var b = [UInt8](repeating: 0, count: bytes)
+        _ = SecRandomCopyBytes(kSecRandomDefault, b.count, &b)
+        return b.map { String(format: "%02x", $0) }.joined()
     }
 
     func forgetDevices() { devices = []; saveDevices() }
@@ -215,6 +252,8 @@ final class MobileServer: ObservableObject {
             return (200, "text/html; charset=utf-8", Data(MobilePage.html.utf8), [:])
         case ("POST", "/pair"):
             return pair(r)
+        case ("GET", "/pair/status"):
+            return pairStatus(r)
         default: break
         }
         // Static art does not need auth (it is the same art shipped in the public app).
@@ -254,27 +293,56 @@ final class MobileServer: ObservableObject {
     }
 
     /// Code is valid for 10 minutes, one use; after 5 wrong tries in 10 minutes pairing locks for the rest of it.
+    /// Step 1: the phone sends the secret from the QR. It is single-use; a match only creates a request
+    /// that the owner must allow on the Mac — no token is issued here.
     private func pair(_ r: Request) -> (Int, String, Data, [String: String]) {
         let who = client(r)
         failedPairs[who] = (failedPairs[who] ?? []).filter { Date().timeIntervalSince($0) < 600 }
-        guard failedPairs[who]!.count < 5 else { return json(["error": "잠시 후 다시 시도 (10분) — Mac에서 새 코드를 만들면 바로 풀림"], 429) }
-        // Across all clients: after 20 misses the current code is retired (owner sees a new one on the Mac).
-        if failedPairs.values.reduce(0, { $0 + $1.count }) >= 20 { newCode() }
+        guard failedPairs[who]!.count < 5 else { return json(["error": "잠시 후 다시 시도 — Mac에서 '연결 시작'을 다시 누르면 바로 풀림"], 429) }
         let body = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
-        guard let code = body["code"] as? String, code == pairingCode, Date().timeIntervalSince(codeIssued) < 600 else {
+        guard let given = body["secret"] as? String, let secret = pairingSecret, Date() < secretExpires,
+              Self.equal(given, secret) else {
             failedPairs[who, default: []].append(Date())
-            return json(["error": "코드가 맞지 않거나 만료됨 — Mac의 수혁 설정에서 새 코드를 확인"], 403)
+            return json(["error": "연결 QR이 만료됨 — Mac의 수혁 설정에서 '연결 시작'을 누르고 QR을 다시 찍기"], 403)
         }
-        var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        let token = bytes.map { String(format: "%02x", $0) }.joined()
-        devices.append(Device(hash: Self.hash(token), name: Self.deviceName(r.headers["user-agent"] ?? ""),
-                              issued: Date(), lastUsed: Date()))
-        saveDevices()
-        newCode()  // single use
-        let cookie = "sh=\(token); Path=/; Max-Age=\(Self.maxAge); HttpOnly; Secure; SameSite=Strict"
-        let (s, t, d, _) = json(["ok": true])
-        return (s, t, d, ["Set-Cookie": cookie])
+        pairingSecret = nil  // single use
+        pending.removeAll { Date().timeIntervalSince($0.created) > 120 }
+        let req = PendingPair(id: Self.random(16), device: Self.deviceName(r.headers["user-agent"] ?? ""),
+                              client: who == "local" ? "이 Mac" : who, created: Date())
+        pending.append(req)
+        PairApproval.shared.show(server: self)
+        return json(["pending": req.id])
+    }
+
+    /// Step 2: the phone polls until the owner decides. The token is handed over once, as a cookie.
+    private func pairStatus(_ r: Request) -> (Int, String, Data, [String: String]) {
+        guard let id = r.query["id"], let i = pending.firstIndex(where: { $0.id == id }) else {
+            return json(["error": "요청을 찾을 수 없음 — 다시 연결"], 404)
+        }
+        if Date().timeIntervalSince(pending[i].created) > 120 {
+            pending.remove(at: i); PairApproval.shared.update()
+            return json(["error": "Mac에서 2분 안에 허용하지 않아 만료됨"], 410)
+        }
+        switch pending[i].decision {
+        case nil:
+            return json(["waiting": true])
+        case false?:
+            pending.remove(at: i)
+            return json(["error": "Mac에서 거부됨"], 403)
+        case true?:
+            let token = pending[i].token ?? ""
+            pending.remove(at: i)
+            let cookie = "sh=\(token); Path=/; Max-Age=\(Self.maxAge); HttpOnly; Secure; SameSite=Strict"
+            let (st, t, d, _) = json(["ok": true])
+            return (st, t, d, ["Set-Cookie": cookie])
+        }
+    }
+
+    /// Constant-time comparison for secrets.
+    private static func equal(_ a: String, _ b: String) -> Bool {
+        let x = Array(a.utf8), y = Array(b.utf8)
+        guard x.count == y.count else { return false }
+        return zip(x, y).reduce(0) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
     private static func deviceName(_ ua: String) -> String {
@@ -370,5 +438,65 @@ final class MobileTunnel: ObservableObject {
         process?.terminate()
         process = nil
         url = nil
+    }
+}
+
+
+/// Floating panel on the Mac: "iPhone wants to connect — allow / deny". Non-modal, so the server keeps running.
+@MainActor
+final class PairApproval {
+    static let shared = PairApproval()
+    private var panel: NSPanel?
+    private weak var server: MobileServer?
+
+    func show(server: MobileServer) {
+        self.server = server
+        update()
+        NSApp.requestUserAttention(.criticalRequest)
+        NSSound(named: "Glass")?.play()
+    }
+
+    func update() {
+        guard let server else { return }
+        let waiting = server.pending.filter { $0.decision == nil && Date().timeIntervalSince($0.created) < 120 }
+        guard let req = waiting.first else { panel?.close(); panel = nil; return }
+        let view = PairApprovalView(request: req,
+                                    allow: { server.decide(req.id, allow: true) },
+                                    deny: { server.decide(req.id, allow: false) })
+        if panel == nil {
+            let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 190),
+                            styleMask: [.titled, .nonactivatingPanel, .hudWindow, .utilityWindow], backing: .buffered, defer: false)
+            p.level = .floating
+            p.title = "수혁 · 새 기기 연결"
+            p.isReleasedWhenClosed = false
+            p.center()
+            panel = p
+        }
+        panel?.contentView = NSHostingView(rootView: view)
+        panel?.orderFrontRegardless()
+    }
+}
+
+struct PairApprovalView: View {
+    let request: MobileServer.PendingPair
+    let allow: () -> Void
+    let deny: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("\(request.device)에서 수혁에 연결하려고 함", systemImage: "iphone.radiowaves.left.and.right")
+                .font(.headline)
+            Text("접속 위치: \(request.client) · \(request.created.formatted(date: .omitted, time: .standard))")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("허용하면 이 기기가 모든 에이전트를 보고 지시를 보낼 수 있음. 방금 직접 QR을 찍은 게 아니면 거부할 것.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("거부", role: .cancel, action: deny).keyboardShortcut(.cancelAction)
+                Button("허용", action: allow).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 380)
     }
 }

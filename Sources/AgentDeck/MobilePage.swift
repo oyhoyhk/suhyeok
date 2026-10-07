@@ -53,7 +53,7 @@ enum MobilePage {
   .keys button { background:#ffffff14; color:var(--fg); font-weight:600; padding:7px 12px; font-size:13px; }
   #pair { position:fixed; inset:0; display:none; place-items:center; background:var(--bg); padding:24px; }
   #pair.show { display:grid; }
-  #pair form { width:100%; max-width:340px; display:grid; gap:14px; text-align:center; }
+  #pair .pairBox { width:100%; max-width:340px; display:grid; gap:14px; text-align:center; }
   #pair h1 { margin:0; color:var(--gold); font-size:24px; }
   #pair p { margin:0; color:var(--muted); line-height:1.5; }
   #pair input { font:28px ui-monospace, Menlo, monospace; letter-spacing:.3em; text-align:center; padding:12px;
@@ -85,13 +85,11 @@ enum MobilePage {
   </div>
 </div>
 
-<div id="pair"><form id="pairForm">
+<div id="pair"><div class="pairBox">
   <h1>수혁 연결</h1>
-  <p>Mac의 수혁 → 설정(⌘,) → 모바일 접속에 보이는 6자리 코드를 입력하세요.</p>
-  <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">
+  <p id="pairMsg">Mac의 수혁 → 설정(⌘,) → 모바일 접속에서 <b>연결 시작</b>을 누르고, 나온 QR을 이 폰 카메라로 찍으세요.</p>
   <div id="pairErr"></div>
-  <button type="submit">연결</button>
-</form></div>
+</div></div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -304,14 +302,29 @@ async function send() {
 async function choose(i) { const r = await api("/api/choose", { id: selected, index: i }).catch(() => ({})); toast(r.ok ? "선택함" : "선택하지 못함"); loadChat(); }
 $("send").onclick = send;
 document.querySelectorAll(".keys button").forEach(b => b.onclick = () => api("/api/key", { id: selected, key: b.dataset.k }).then(loadChat));
-$("pairForm").onsubmit = async e => {
-  e.preventDefault();
-  const r = await fetch("/pair", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: $("code").value }), credentials: "same-origin" });
+// Pairing: the QR opens this page with #pair=<one-time secret>. Send it once, drop it from the address bar,
+// then wait for the owner to press "허용" on the Mac.
+async function pairFromHash() {
+  const m = location.hash.match(/^#pair=([0-9a-f]{32})$/);
+  if (!m) return false;
+  history.replaceState(null, "", location.pathname);
+  $("pair").classList.add("show");
+  $("pairMsg").textContent = "연결 요청을 보내는 중…";
+  const r = await fetch("/pair", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ secret: m[1] }), credentials: "same-origin" });
   const j = await r.json().catch(() => ({}));
-  if (r.ok) { $("pair").classList.remove("show"); $("pairErr").textContent = ""; } else $("pairErr").textContent = j.error || "연결하지 못함";
-};
+  if (!r.ok) { $("pairMsg").textContent = ""; $("pairErr").textContent = j.error || "연결하지 못함"; return true; }
+  $("pairMsg").innerHTML = "<b>Mac에서 [허용]을 눌러 주세요.</b><br>2분 안에 허용하지 않으면 만료됨.";
+  for (;;) {
+    await new Promise(res => setTimeout(res, 1500));
+    const s = await fetch("/pair/status?id=" + j.pending, { credentials: "same-origin" });
+    const k = await s.json().catch(() => ({}));
+    if (s.ok && k.ok) { $("pair").classList.remove("show"); $("pairErr").textContent = ""; poll(); return true; }
+    if (!s.ok) { $("pairMsg").textContent = ""; $("pairErr").textContent = k.error || "연결하지 못함"; return true; }
+  }
+}
 addEventListener("resize", resize);
-resize(); poll(); requestAnimationFrame(draw);
+resize(); requestAnimationFrame(draw);
+pairFromHash().then(paired => { if (!paired) poll(); });
 </script>
 </body></html>
 """#

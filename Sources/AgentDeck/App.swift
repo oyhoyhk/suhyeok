@@ -125,8 +125,20 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--serve-mobile"), i + 1 < args.count, let secs = Double(args[i + 1]) {
             let store = Snapshot.loadedStorePublic()
             MobileServer.shared.start(store: store)
-            print("code", MobileServer.shared.pairingCode)
+            MobileServer.shared.beginPairing()
+            print("secret", MobileServer.shared.pairingSecret ?? "")
             fflush(stdout)
+            // Test driver: decisions come on stdin ("allow" / "deny" answer the oldest waiting request),
+            // standing in for the approval panel without synthetic clicks.
+            FileHandle.standardInput.readabilityHandler = { h in
+                let line = String(data: h.availableData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                Task { @MainActor in
+                    if let req = MobileServer.shared.pending.first(where: { $0.decision == nil }), line == "allow" || line == "deny" {
+                        MobileServer.shared.decide(req.id, allow: line == "allow")
+                        print("decided", line); fflush(stdout)
+                    }
+                }
+            }
             let end = Date().addingTimeInterval(secs)
             while Date() < end {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.2))

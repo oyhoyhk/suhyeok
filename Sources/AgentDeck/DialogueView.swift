@@ -188,16 +188,24 @@ struct DialogueView: View {
             }
             // Open at the newest message and stay there as new ones arrive.
             .defaultScrollAnchor(.bottom)
-            .onChange(of: items.count) { proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: sessionId) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: items.count) { old, _ in
+                // The first load arrives after the view opened: keep pinning to the bottom while bubbles
+                // (markdown, tables, diagrams) finish measuring, so the newest progress is what you see.
+                if old == 0 { settleAtBottom(proxy) } else { proxy.scrollTo("end", anchor: .bottom) }
+            }
+            .onChange(of: sessionId) { settleAtBottom(proxy) }
             .onChange(of: live) { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: pending.count) { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: menu) { proxy.scrollTo("end", anchor: .bottom) }
-            .onAppear {
-                // Once more after layout settles; the first call can land before the bubbles are measured.
-                proxy.scrollTo("end", anchor: .bottom)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo("end", anchor: .bottom) }
-            }
+            .onAppear { settleAtBottom(proxy) }
+        }
+    }
+
+    /// Scroll to the end now and again as late layout (markdown, mermaid, images) changes the height.
+    private func settleAtBottom(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo("end", anchor: .bottom)
+        for delay in [0.1, 0.3, 0.6, 1.0, 1.6] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { proxy.scrollTo("end", anchor: .bottom) }
         }
     }
 
@@ -487,24 +495,34 @@ struct MobileSettings: View {
                 .onChange(of: enabled) { _, on in
                     if on { server.start(store: store); tunnel.start() } else { tunnel.stop(); server.stop() }
                 }
-            Text("폰 브라우저로 지도·대화·지시 보내기. Cloudflare 임시 주소로 열리며, 처음 연결할 때 아래 6자리 코드가 필요함. 주소는 앱을 다시 켜면 바뀜.")
+            Text("폰 브라우저로 지도·대화·지시 보내기. Cloudflare 임시 주소로 열리며 앱을 다시 켜면 바뀜. 새 기기는 QR을 찍은 뒤 이 Mac에서 허용해야 연결됨.")
                 .font(.caption).foregroundStyle(.secondary)
             if enabled {
                 if let e = tunnel.error { Text(e).font(.caption).foregroundStyle(.orange) }
                 HStack(alignment: .top, spacing: 14) {
-                    if let url = tunnel.url, let qr = Self.qr(url) {
-                        Image(nsImage: qr).interpolation(.none).resizable().frame(width: 120, height: 120)
+                    // The QR holds the page address plus a one-time secret after '#', so it never reaches
+                    // server logs; it is only shown for 60 s after pressing "연결 시작".
+                    if let url = tunnel.url, let secret = server.pairingSecret, let qr = Self.qr(url + "/#pair=" + secret) {
+                        VStack(spacing: 4) {
+                            Image(nsImage: qr).interpolation(.none).resizable().frame(width: 140, height: 140)
+                            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                                Text("\(max(0, Int(server.secretExpires.timeIntervalSinceNow)))초 남음")
+                                    .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                            }
+                        }
                     } else {
-                        ProgressView().frame(width: 120, height: 120)
+                        RoundedRectangle(cornerRadius: 6).fill(.quaternary).frame(width: 140, height: 140)
+                            .overlay(Image(systemName: "qrcode").font(.largeTitle).foregroundStyle(.secondary))
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         Text(tunnel.url ?? "주소 만드는 중…").font(.caption.monospaced()).textSelection(.enabled)
                         HStack {
-                            Text("연결 코드").font(.caption).foregroundStyle(.secondary)
-                            Text(server.pairingCode).font(.title3.monospacedDigit().bold()).textSelection(.enabled)
-                            Button("새 코드") { server.newCode() }.controlSize(.small)
+                            Button(server.pairingSecret == nil ? "연결 시작 (QR 60초 표시)" : "QR 숨기기") {
+                                server.pairingSecret == nil ? server.beginPairing() : server.cancelPairing()
+                            }
+                            .disabled(tunnel.url == nil)
                         }
-                        Text("코드는 10분 동안 한 번만 쓸 수 있음 · 연결은 7일 미사용 또는 30일 뒤 만료")
+                        Text("폰 카메라로 QR을 찍으면 이 Mac에 허용 창이 뜸 → 허용을 눌러야 연결됨. QR은 한 번만 쓸 수 있음.")
                             .font(.caption2).foregroundStyle(.secondary)
                         ForEach(server.devices) { d in
                             HStack(spacing: 6) {
