@@ -211,26 +211,35 @@ struct LiveReply: Equatable {
             i > 0 && lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("❯")
                 && lines[i - 1].trimmingCharacters(in: .whitespaces).hasPrefix("─")
         }) { lines = Array(lines[..<(box - 1)]) }
-        // Drop blank lines and the "⎿ Tip: …" hint Claude Code prints under its spinner.
-        while let l = lines.last?.trimmingCharacters(in: .whitespaces), l.isEmpty || l.hasPrefix("⎿  Tip") || l.hasPrefix("⎿ Tip") {
-            lines.removeLast()
-        }
-        // Spinner/status line just above the box.
+        // Below the reply Claude Code prints a spinner line ("· Transmuting… (2m 3s · ↓ 7.7k tokens)"),
+        // sometimes a "⎿ Tip" hint and right-aligned notices ("✔ Update installed"). Take the spinner as status
+        // and cut everything from it down.
         var status: String?
-        if let i = lines.lastIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
-            let t = lines[i].trimmingCharacters(in: .whitespaces)
-            if let first = t.first, first != "⏺", spinners.contains(first) || t.contains("…") {
-                status = String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
-                lines = Array(lines[..<i])
-            }
+        let tailStart = max(0, lines.count - 8)
+        if let i = lines[tailStart...].lastIndex(where: { l in
+            let t = l.trimmingCharacters(in: .whitespaces)
+            guard let first = t.first, first != "⏺", first != "⎿", first != "✔" else { return false }
+            return spinners.contains(first) && t.contains("…")
+        }) {
+            status = String(lines[i].trimmingCharacters(in: .whitespaces).dropFirst()).trimmingCharacters(in: .whitespaces)
+            lines = Array(lines[..<i])
+        }
+        while let l = lines.last?.trimmingCharacters(in: .whitespaces),
+              l.isEmpty || l.hasPrefix("⎿  Tip") || l.hasPrefix("✔") {
+            lines.removeLast()
         }
         // The newest "⏺ " block that is text (not a tool call like "⏺ Bash(…)").
         guard let start = lines.lastIndex(where: { $0.hasPrefix("⏺ ") }) else {
             return status.map { LiveReply(text: "", status: $0) }
         }
         let head = String(lines[start].dropFirst(2))
+        // Tool calls are "⏺ Bash(…)" or, in compact view, "⏺ <description>" followed by "⎿" output lines.
+        let nextLine = lines[(start + 1)...].first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         let isTool = head.range(of: #"^[A-Za-z_]+\("#, options: .regularExpression) != nil
-        var body = [head] + lines[(start + 1)...].map { $0.hasPrefix("  ") ? String($0.dropFirst(2)) : $0 }
+            || (nextLine?.trimmingCharacters(in: .whitespaces).hasPrefix("⎿") ?? false)
+        var body = [head] + lines[(start + 1)...]
+            .filter { !$0.contains("ctrl+enter to send") && !$0.contains("esc to interrupt") }  // UI hints, not reply text
+            .map { $0.hasPrefix("  ") ? String($0.dropFirst(2)) : $0 }
         while body.last?.trimmingCharacters(in: .whitespaces).isEmpty == true { body.removeLast() }
         let text = body.joined(separator: "\n")
         // Already in the log as a finished message: nothing live to add.

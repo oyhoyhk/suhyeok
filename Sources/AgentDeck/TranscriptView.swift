@@ -69,10 +69,17 @@ enum TranscriptRenderer {
         var out: [(ChatItem.Role, String)] = []
         for line in lines {
             if line["type"] as? String == "huge" { out.append((.result, "  ⎿ (이미지 등 큰 결과)")); continue }
+            // A message typed while the agent is busy is logged at once as a queue "enqueue", and again as a
+            // queued_command attachment when the agent picks it up; show the first, skip the repeat below.
+            if line["type"] as? String == "queue-operation", line["operation"] as? String == "enqueue",
+               let p = line["content"] as? String, !p.hasPrefix("<") {
+                out.append((.me, p))
+                continue
+            }
             // Messages typed while the agent was busy are stored as queued_command attachments.
             if let a = line["attachment"] as? [String: Any], a["type"] as? String == "queued_command",
                (a["origin"] as? [String: Any])?["kind"] as? String == "human", let p = a["prompt"] as? String {
-                out.append((.me, p))
+                if !out.contains(where: { $0.0 == .me && $0.1 == p }) { out.append((.me, p)) }
                 continue
             }
             guard line["isMeta"] as? Bool != true, let msg = line["message"] as? [String: Any] else { continue }

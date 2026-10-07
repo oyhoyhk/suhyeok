@@ -44,6 +44,8 @@ struct DialogueView: View {
     @State private var draft = ""
     @State private var screen: String?
     @State private var menu: TerminalMenu?
+    /// Sent from here but not yet in the log; shown right away so the message never seems lost.
+    @State private var pending: [Pending] = []
     @State private var live: LiveReply?
     @State private var showScreen = false
     @State private var notice: String?
@@ -136,14 +138,19 @@ struct DialogueView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(items.suffix(200)) { item in bubble(item, s) }
+                    ForEach(pending) { p in pendingBubble(p) }
                     if let live { liveBubble(live, s) }
                     if let menu { menuCard(menu, s) }
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(14)
             }
+            // Open at the newest message and stay there as new ones arrive.
+            .defaultScrollAnchor(.bottom)
             .onChange(of: items.count) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: sessionId) { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: live) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: pending.count) { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: menu) { proxy.scrollTo("end", anchor: .bottom) }
             .onAppear {
                 // Once more after layout settles; the first call can land before the bubbles are measured.
@@ -174,6 +181,26 @@ struct DialogueView: View {
             Label(item.text, systemImage: "hammer").font(.caption).foregroundStyle(.secondary).lineLimit(1)
         case .result:
             EmptyView()  // outputs stay in the terminal view; the chat shows only what was done
+        }
+    }
+
+    struct Pending: Identifiable, Equatable {
+        let id = UUID()
+        let text: String
+        var failed = false
+    }
+
+    private func pendingBubble(_ p: Pending) -> some View {
+        HStack {
+            Spacer(minLength: 60)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(p.text).textSelection(.enabled)
+                    .padding(10)
+                    .background(Color(red: 0.55, green: 0.42, blue: 0.12).opacity(p.failed ? 0.35 : 0.6),
+                                in: RoundedRectangle(cornerRadius: 10))
+                Text(p.failed ? "전달 실패" : "전달 중…").font(.caption2)
+                    .foregroundStyle(p.failed ? Color.orange : Color.secondary)
+            }
         }
     }
 
@@ -273,9 +300,16 @@ struct DialogueView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
+        let p = Pending(text: text)
+        pending.append(p)
+        let blockedByMenu = menu != nil
         Task.detached {
             let ok = SessionInput.send(s, text: text)
-            await MainActor.run { notice = ok ? nil : "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)" }
+            await MainActor.run {
+                if !ok, let i = pending.firstIndex(where: { $0.id == p.id }) { pending[i].failed = true }
+                notice = !ok ? "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)"
+                    : blockedByMenu ? "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것" : nil
+            }
         }
     }
 
@@ -301,6 +335,9 @@ struct DialogueView: View {
                 return (items, tail, menu, live)
             }.value
             if newItems != items { loaded = newItems }
+            // A pending message is done once the log has it (as a prompt or a queued command).
+            let mine = Set(newItems.filter { $0.role == .me }.suffix(30).map { $0.text.filter { !$0.isWhitespace } })
+            pending.removeAll { !$0.failed && mine.contains($0.text.filter { !$0.isWhitespace }) }
             screen = newScreen
             if newMenu != menu { menu = newMenu }
             if newLive != live { live = newLive }

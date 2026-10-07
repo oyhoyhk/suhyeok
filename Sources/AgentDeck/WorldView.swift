@@ -88,6 +88,9 @@ struct WorldView: View {
     @State private var walker = Walker()
     /// Latest drawn positions, for hit-testing, cards, the minimap and edge markers.
     @State private var drawn: [String: CGPoint] = [:]
+    /// Agents whose session just ended: they fade away where they stood.
+    @State private var departures: [Departure] = []
+    @State private var lastSeen: [String: (Character?, CGPoint)] = [:]
 
     init(store: SessionStore, initialSelection: String? = nil, initialDialogue: String? = nil) {
         self.store = store
@@ -131,7 +134,25 @@ struct WorldView: View {
                                     }
                             }
                         }
-                        .onChange(of: Int(t * 2)) { drawn = positions }  // twice a second is enough for overlays
+                        .onChange(of: Int(t * 2)) {
+                            drawn = positions  // twice a second is enough for overlays
+                            // Debug: play a departure for the first agent once (SUHYEOK_FAKE_DEPART=1).
+                            if ProcessInfo.processInfo.environment["SUHYEOK_FAKE_DEPART"] != nil, departures.isEmpty,
+                               let first = items.first, lastSeen["__fake"] == nil {
+                                lastSeen["__fake"] = (nil, .zero)
+                                departures.append(Departure(id: first.session.id + "-fake", character: first.character,
+                                                            point: positions[first.session.id] ?? first.point, start: t))
+                            }
+                        }
+                        .overlay(alignment: .topLeading) {
+                            ZStack(alignment: .topLeading) {
+                                ForEach(departures) { d in
+                                    DepartureView(departure: d, time: t, height: cam.scale * World.avatarHeight)
+                                        .position(cam.screen(d.point, in: size))
+                                }
+                            }
+                            .frame(width: size.width, height: size.height)
+                        }
                     }
                 }
                 .frame(width: size.width, height: size.height)
@@ -163,12 +184,30 @@ struct WorldView: View {
                     }
                 }
                 .onAppear { input.size = size; input.install() }
+                .onChange(of: store.sessions.map(\.id)) { _, ids in
+                    let live = Set(ids)
+                    let now = Date().timeIntervalSinceReferenceDate
+                    for (id, seen) in lastSeen where !live.contains(id) {
+                        departures.append(Departure(id: id, character: seen.0, point: drawn[id] ?? seen.1, start: now))
+                        if ProcessInfo.processInfo.environment["SUHYEOK_DEBUG"] != nil {
+                            FileHandle.standardError.write("depart \(id) at \(now)\n".data(using: .utf8)!)
+                        }
+                    }
+                    lastSeen = Dictionary(uniqueKeysWithValues: items.map { ($0.session.id, ($0.character, drawn[$0.session.id] ?? $0.point)) })
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                        departures.removeAll { Date().timeIntervalSinceReferenceDate - $0.start > 1.6 }
+                    }
+                }
+                .onChange(of: Int(Date().timeIntervalSinceReferenceDate)) {
+                    // Keep last known positions fresh so a departure starts where the agent stood.
+                    lastSeen = Dictionary(uniqueKeysWithValues: items.map { ($0.session.id, ($0.character, drawn[$0.session.id] ?? $0.point)) })
+                }
                 .onChange(of: size) { input.size = size }
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 edgeMarkers(items, cam: cam, size: size)
                 // Agent count per state, top-right of whatever part of the map is visible.
-                let mapRight = dialogueId != nil && dialogueLarge ? size.width - max(360, size.width * 0.5) : size.width
+                let mapRight = size.width
                 HStack { Spacer(); StatusCounts(sessions: store.sessions).fixedSize() }
                     .frame(width: max(0, mapRight - 12))
                     .offset(y: 12)
@@ -181,7 +220,6 @@ struct WorldView: View {
                 }
                 .frame(width: 220, height: 220 * World.size.height / World.size.width)
                 .position(x: size.width - 122, y: size.height - 12 - 110 * World.size.height / World.size.width)
-                .opacity(dialogueId != nil && dialogueLarge ? 0 : 1)
 
                 // Cards live outside the clipped map so they can overflow its edges.
                 if let id = hoveredId, id != selectedId, let item = items.first(where: { $0.session.id == id }) {
@@ -222,10 +260,14 @@ struct WorldView: View {
                                      pipDrag = .zero
                                  })
                     if dialogueLarge {
+                        // Right half, with a margin above and the minimap left visible below.
                         let width = max(360, geo.size.width * 0.5)
+                        let top: CGFloat = 50  // below the status counts
+                        let bottom = minimapHeight + 24
+                        let height = max(240, geo.size.height - top - bottom)
                         panel
-                            .frame(width: width, height: geo.size.height)
-                            .position(x: geo.size.width - width / 2, y: geo.size.height / 2)
+                            .frame(width: width, height: height)
+                            .position(x: geo.size.width - 8 - width / 2, y: top + height / 2)
                             .shadow(radius: 16)
                             .transition(.move(edge: .trailing))
                     } else {
@@ -242,6 +284,8 @@ struct WorldView: View {
         .animation(.easeInOut(duration: 0.25), value: dialogueId)
         .endSessionDialog(store: store, ending: $ending, migrating: $migrating)
     }
+
+    private var minimapHeight: CGFloat { 220 * World.size.height / World.size.width }
 
     /// Keeps a fraction inside [margin, 1 - margin] so the PIP never leaves the view.
     private func clamp(_ v: Double, _ margin: Double) -> Double { min(max(v, margin), 1 - margin) }
@@ -806,5 +850,44 @@ extension EnvironmentValues {
     var anvilOnRight: Bool {
         get { self[AnvilOnRightKey.self] }
         set { self[AnvilOnRightKey.self] = newValue }
+    }
+}
+
+
+struct Departure: Identifiable {
+    let id: String
+    let character: Character?
+    let point: CGPoint
+    let start: TimeInterval
+}
+
+/// A finished agent waves goodbye: it rises, shrinks and fades in a puff of sparkles (about 1.5 s).
+struct DepartureView: View {
+    let departure: Departure
+    let time: TimeInterval
+    let height: CGFloat
+
+    var body: some View {
+        let t = min(max((time - departure.start) / 1.5, 0), 1)
+        ZStack {
+            if let c = departure.character, let img = Art.image("frames/\(c.id)/walk_down_1") ?? Art.image("sprites/\(c.id)") {
+                Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                    .frame(height: height)
+                    .scaleEffect(1 - 0.6 * t, anchor: .bottom)
+                    .offset(y: -height * 0.5 * t)
+                    .opacity(1 - t)
+                    .brightness(0.6 * t)
+            }
+            ForEach(0..<10, id: \.self) { i in
+                let a = Double(i) / 10 * 2 * .pi
+                let r = height * (0.15 + 0.7 * t)
+                Image(systemName: "sparkle")
+                    .font(.system(size: height * 0.18))
+                    .foregroundStyle(i % 2 == 0 ? Color.yellow : Color.white)
+                    .offset(x: cos(a) * r, y: sin(a) * r * 0.7 - height * 0.4 * t)
+                    .opacity(t < 0.1 ? t * 10 : 1 - t)
+            }
+        }
+        .allowsHitTesting(false)
     }
 }

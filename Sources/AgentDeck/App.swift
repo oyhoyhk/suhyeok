@@ -398,6 +398,9 @@ enum Snapshot {
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         RunLoop.main.run(until: Date().addingTimeInterval(wait))
+        if ProcessInfo.processInfo.environment["SUHYEOK_DEBUG"] != nil {
+            FileHandle.standardError.write("snapshot at \(Date().timeIntervalSinceReferenceDate)\n".data(using: .utf8)!)
+        }
         if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
             host.cacheDisplay(in: host.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
