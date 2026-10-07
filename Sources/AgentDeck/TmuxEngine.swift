@@ -49,15 +49,17 @@ enum TmuxEngine {
     }
 
     /// Starts an agent in a new detached session and returns its name.
-    static func create(agent: Agent, cwd: String, prompt: String?, resume: String? = nil, extraArgs: [String] = []) -> String? {
+    static func create(agent: Agent, cwd: String, prompt: String?, resume: String? = nil, fork: Bool = false,
+                       extraArgs: [String] = []) -> String? {
         guard let tmux else { return nil }
         let name = "sh-" + String(UUID().uuidString.lowercased().prefix(6))
         var cmd: [String]
         switch agent {
         case .claude:
-            cmd = ["claude"] + (resume.map { ["--resume", $0] } ?? [])
+            // --fork-session: start a new conversation that begins with a copy of the resumed one.
+            cmd = ["claude"] + (resume.map { ["--resume", $0] + (fork ? ["--fork-session"] : []) } ?? [])
         case .codex:
-            cmd = ["codex"] + (resume.map { ["resume", $0] } ?? [])
+            cmd = ["codex"] + (resume.map { [fork ? "fork" : "resume", $0] } ?? [])
         }
         cmd += extraArgs
         if let p = prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty { cmd.append(p) }
@@ -65,7 +67,7 @@ enum TmuxEngine {
         let inner = cmd.map(quote).joined(separator: " ")
             + "; echo; echo '[에이전트 종료됨 — exit 로 창 닫기]'; exec zsh -l"
         let shell = "exec /bin/zsh -lic " + quote(inner)
-        let title = titleFor(prompt: prompt, cwd: cwd, resume: resume)
+        let title = fork ? titleFor(prompt: prompt, cwd: cwd, resume: nil) + " (클론)" : titleFor(prompt: prompt, cwd: cwd, resume: resume)
         var env = ProcessInfo.processInfo.environment["LANG"] == nil ? ["-e", "LANG=ko_KR.UTF-8"] : []
         env += ["-e", "SUHYEOK_SESSION=\(name)"]
         let args = base + ["new-session", "-d", "-s", name, "-c", cwd, "-x", "200", "-y", "50"] + env + [shell]

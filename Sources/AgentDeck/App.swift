@@ -38,7 +38,7 @@ struct AgentDeckApp: App {
         }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
-        for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
+        for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--clone", "--summary", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
             }
@@ -182,6 +182,45 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// A new agent that starts from a copy of this session's conversation; the original keeps running.
+    func clone(_ s: AgentSession) {
+        guard let id = s.conversationId else { return }
+        let flags = Self.permissionFlags(s)
+        Task.detached {
+            let name = TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: id, fork: true, extraArgs: flags)
+            await MainActor.run {
+                self.hosted = TmuxEngine.list()
+                if let name { self.selection = .hosted(name) }
+                self.refresh()
+            }
+        }
+    }
+
+    // MARK: summaries
+
+    /// The user's own one-line summary per conversation, shown instead of the generated title.
+    /// Session whose summary sheet is open (set from the right-click menu).
+    @Published var editingSummary: AgentSession?
+    @Published private(set) var summaries: [String: String] =
+        UserDefaults.standard.dictionary(forKey: "summaries") as? [String: String] ?? [:]
+
+    private func summaryKey(_ s: AgentSession) -> String { s.conversationId ?? s.id }
+
+    func summary(for s: AgentSession) -> String? { summaries[summaryKey(s)] }
+
+    func setSummary(_ text: String, for s: AgentSession) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        summaries[summaryKey(s)] = t.isEmpty ? nil : t
+        UserDefaults.standard.set(summaries, forKey: "summaries")
+        if let i = sessions.firstIndex(where: { $0.id == s.id }) {  // show it now, not at the next refresh
+            let original = sessions[i].generatedName ?? sessions[i].name
+            sessions[i].generatedName = t.isEmpty ? nil : original
+            sessions[i].name = t.isEmpty ? original : t
+        }
+    }
+
+    /// What to call the session in the UI: the user's summary, else the generated title.
+
     func resume(_ r: RecentConversation) { start(agent: r.agent, cwd: r.cwd, prompt: nil, resume: r.id) }
 
     func resume(conversationOf s: AgentSession) {
@@ -302,6 +341,12 @@ final class SessionStore: ObservableObject {
                 ? RecentSource.load(excluding: Set(all.compactMap { $0.conversationId ?? $0.id.replacingOccurrences(of: "codex-", with: "") }))
                 : nil
             await MainActor.run {
+                // The user's own summaries replace generated titles everywhere the session is shown.
+                let all = all.map { s -> AgentSession in
+                    var s = s
+                    if let mine = self.summaries[s.conversationId ?? s.id] { s.generatedName = s.name; s.name = mine }
+                    return s
+                }
                 self.hosted = hosted
                 if let recent { self.recent = recent; self.lastRecentLoad = Date() }
                 self.sessions = all
@@ -510,6 +555,17 @@ enum Snapshot {
                 }
                 usleep(500_000)
             }
+        case "--clone":
+            store.clone(s)
+            let deadline = Date().addingTimeInterval(5)
+            let before = Set(TmuxEngine.list().map(\.name))
+            while Date() < deadline, Set(TmuxEngine.list().map(\.name)).subtracting(before).isEmpty {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            }
+            print("clones:", TmuxEngine.list().filter { $0.title.hasSuffix("(클론)") }.map(\.name))
+        case "--summary":
+            store.setSummary(arg ?? "", for: s)
+            print("summary:", store.summary(for: s) ?? "(cleared)")
         case "--end":
             let done = DispatchSemaphore(value: 0)
             Task { @MainActor in

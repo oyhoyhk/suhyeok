@@ -30,7 +30,9 @@ enum SessionStatus: String {
 struct AgentSession: Identifiable {
     let id: String
     let agent: Agent
-    let name: String
+    var name: String
+    /// The title Claude/Codex generated, kept when the user sets their own summary as `name`.
+    var generatedName: String? = nil
     let cwd: String
     let status: SessionStatus
     let startedAt: Date?

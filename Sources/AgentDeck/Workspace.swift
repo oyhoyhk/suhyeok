@@ -449,6 +449,10 @@ struct AgentMenu: View {
     var body: some View {
         if let openDialogue { Button("대화하기", action: openDialogue) }
         Button("터미널 보기") { store.selection = store.pane(for: session) }
+        Divider()
+        Button("클론으로 새 에이전트 만들기") { store.clone(session) }
+            .disabled(session.conversationId == nil)
+        Button("진행 요약 수정…") { store.editingSummary = session }
         if session.hostedName == nil, session.conversationId != nil {
             Button("수혁으로 옮기기…") { migrating = session }
         }
@@ -486,5 +490,43 @@ struct EndSessionDialog: ViewModifier {
                 Button("확인") { failure = nil }
             } message: { Text(failure ?? "") }
             .sheet(item: $migrating) { s in MigrationSheet(store: store, only: s.id) }
+            .sheet(item: $store.editingSummary) { s in SummarySheet(store: store, session: s) }
+    }
+}
+
+
+/// Edit the one-line progress summary shown for an agent (hover card, status card, sidebar, dialogue).
+struct SummarySheet: View {
+    @ObservedObject var store: SessionStore
+    let session: AgentSession
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(store.agentName(for: session))의 진행 요약").font(.title3.bold())
+            if let g = session.generatedName ?? Optional(session.name) {
+                Text("자동 제목: \(g)").font(.caption).foregroundStyle(.secondary)
+            }
+            TextField("예: 결함 시각화 2차 — 리뷰 반영 중", text: $text, axis: .vertical)
+                .lineLimit(1...3)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(save)
+            HStack {
+                Button("자동 제목으로 되돌리기") { text = ""; save() }
+                    .disabled(store.summary(for: session) == nil)
+                Spacer()
+                Button("취소") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("저장", action: save).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .onAppear { text = store.summary(for: session) ?? "" }
+    }
+
+    private func save() {
+        store.setSummary(text, for: session)
+        dismiss()
     }
 }
