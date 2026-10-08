@@ -35,6 +35,8 @@ struct SettingsView: View {
             Text("대화는 그대로 이어서 열림. 작업 중이거나 입력칸에 보내지 않은 글이 있는 세션은 건너뜀.")
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
+            WakeWordSettings()
+            Divider()
             MobileSettings()
             Divider()
             Picker("세션 여는 방식", selection: $openMode) {

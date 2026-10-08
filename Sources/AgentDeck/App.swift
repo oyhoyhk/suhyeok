@@ -175,6 +175,9 @@ struct AgentDeckApp: App {
             }
             exit(0)
         }
+        if let i = args.firstIndex(of: "--wake-test"), i + 1 < args.count {
+            WakeWord.test(file: args[i + 1], names: Array(args.dropFirst(i + 2)))
+        }
         if args.contains("--reopen-permissions") {
             Snapshot.reopenPermissions()
         }
@@ -600,6 +603,8 @@ struct MenuBarLabel: View {
             if let icon = Self.icon { Image(nsImage: icon) } else { Image(systemName: "flag.fill") }
             if working > 0 { Text("\(working)") }
         }
+        // The menu bar label lives as long as the app, so the wake listener hangs off it.
+        .onAppear { WakeWord.shared.attach(store) }
     }
 
     /// Monochrome template derived from the app icon (art/out/menubar.png); macOS tints it for light/dark bars.

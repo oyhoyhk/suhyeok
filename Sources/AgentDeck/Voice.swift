@@ -13,7 +13,8 @@ import SwiftUI
 final class Dictation: ObservableObject {
     @Published var listening = false
     @Published var text = ""
-    @Published var error: String?
+    /// Any failure ends the attempt, so the wake listener gets the microphone back.
+    @Published var error: String? { didSet { if error != nil { WakeWord.shared.resume() } } }
 
     private let engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -35,6 +36,7 @@ final class Dictation: ObservableObject {
 
     func start() {
         error = nil
+        WakeWord.shared.pause()
         Self.log("start; speech auth=\(SFSpeechRecognizer.authorizationStatus().rawValue) mic auth=\(AVCaptureDevice.authorizationStatus(for: .audio).rawValue)")
         // Callbacks arrive on background queues; hop to the main actor explicitly.
         SFSpeechRecognizer.requestAuthorization { status in
@@ -120,6 +122,7 @@ final class Dictation: ObservableObject {
         task = nil
         request = nil
         listening = false
+        WakeWord.shared.resume()
     }
 }
 
@@ -139,6 +142,15 @@ final class Speaker: NSObject, ObservableObject {
     /// Bumped by every speak/stop so a summary that finishes late does not talk over a newer reply.
     private var generation = 0
 
+    /// Says a short fixed line as is (confirmations), in the same voice as replies.
+    func say(_ line: String) {
+        generation += 1
+        let mine = generation
+        synth.stopSpeaking(at: .immediate)
+        player?.stop()
+        Task { await play(line, characterId: nil, generation: mine) }
+    }
+
     /// Reads a short spoken summary of the reply (on-device model), or its opening when no model is available.
     func speak(_ text: String, characterId: String?) {
         let clean = Self.plain(text)
@@ -153,24 +165,28 @@ final class Speaker: NSObject, ObservableObject {
             // A question at the end of the reply is what the agent needs from you: always say it.
             if summary != nil, !said.contains("?"), let ask = clean.components(separatedBy: "\n").last(where: { !$0.isEmpty }),
                ask.hasSuffix("?") { said += " " + ask }
-            // Supertonic F1 when its model is installed; the system voice while it downloads or if it fails.
-            if let data = await NeuralVoice.shared.wav(said) {
-                guard mine == generation else { return }
-                if let p = try? AVAudioPlayer(data: data) {
-                    player = p
-                    p.delegate = self
-                    speaking = p.play()
-                    if speaking { return }
-                }
-            }
-            guard mine == generation else { return }
-            let u = AVSpeechUtterance(string: said)
-            let (voice, pitch) = Self.voice(for: characterId)
-            u.voice = voice
-            u.pitchMultiplier = pitch
-            u.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
-            synth.speak(u)
+            await play(said, characterId: characterId, generation: mine)
         }
+    }
+
+    /// Supertonic F1 when its model is installed; the system voice while it downloads or if it fails.
+    private func play(_ said: String, characterId: String?, generation mine: Int) async {
+        if let data = await NeuralVoice.shared.wav(said) {
+            guard mine == generation else { return }
+            if let p = try? AVAudioPlayer(data: data) {
+                player = p
+                p.delegate = self
+                speaking = p.play()
+                if speaking { return }
+            }
+        }
+        guard mine == generation else { return }
+        let u = AVSpeechUtterance(string: said)
+        let (voice, pitch) = Self.voice(for: characterId)
+        u.voice = voice
+        u.pitchMultiplier = pitch
+        u.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+        synth.speak(u)
     }
 
     func stop() {
