@@ -124,8 +124,11 @@ final class WakeWord: ObservableObject {
         // Ignore our own voice reading a reply aloud.
         if Speaker.shared.speaking { return }
         let said: String
-        if let c = Self.afterWake(text) { said = c }
-        else if state == .awake || continuing {
+        if let c = Self.afterWake(text) {
+            // The wake phrase said again starts the command over.
+            if continuing { carried = "" }
+            said = c
+        } else if state == .awake || continuing {
             // After a pause the recognizer reports a new segment without the earlier words: keep what was said.
             if !continuing { carried = pending; continuing = true }
             said = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -218,7 +221,7 @@ final class WakeWord: ObservableObject {
 
     // MARK: parsing (pure, so it can be checked without a microphone)
 
-    nonisolated private static let wake = try! NSRegularExpression(pattern: #"안녕\s*[,.!?]?\s*수\s*혁\s*(아|이|야)?[\s,.!?]*"#)
+    nonisolated private static let wake = try! NSRegularExpression(pattern: #"안녕\s*[,.!?]?\s*수\s*(혁|영|역|력)\s*(아|이|야)?[\s,.!?]*"#)
 
     /// The words after the last wake phrase, or nil if the phrase was not said.
     nonisolated static func afterWake(_ text: String) -> String? {
