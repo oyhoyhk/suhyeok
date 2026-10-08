@@ -14,12 +14,41 @@ struct AgentDeckApp: App {
         if args.contains("--voice-check") {
             let r = SFSpeechRecognizer(locale: Locale(identifier: "ko-KR"))
             print("stt ko-KR available=\(r?.isAvailable ?? false) onDevice=\(r?.supportsOnDeviceRecognition ?? false) auth=\(SFSpeechRecognizer.authorizationStatus().rawValue)")
-            for id in ["knight", "fox", "mage"] { print("voice", id, Speaker.voice(for: id)?.name ?? "-") }
+            for id in ["knight", "fox", "mage"] {
+                let (v, pitch) = Speaker.voice(for: id)
+                print("voice", id, v?.name ?? "-", "quality=\(v?.quality.rawValue ?? 0)", "pitch=\(pitch)")
+            }
+            // Spoken summary from the on-device model, if available (2nd arg: a reply file to summarize).
+            if let i = args.firstIndex(of: "--voice-check"), i + 1 < args.count,
+               let reply = try? String(contentsOfFile: args[i + 1], encoding: .utf8) {
+                var summary: String?? = .none
+                Task { summary = .some(await SpokenSummary.make(Speaker.plain(reply))) }
+                while summary == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+                print("summary:", (summary ?? nil) ?? "(model unavailable)")
+            }
+            // Supertonic F1: `--voice-check --install` downloads the model first if it is missing.
+            if args.contains("--install"), !NeuralVoice.shared.installed {
+                var done = false
+                Task.detached { do { try await NeuralVoice.shared.install(); print("supertonic installed") } catch { print("supertonic install failed:", error) }; done = true }
+                while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+            }
+            if NeuralVoice.shared.installed {
+                var wav: Data?? = .none
+                let started = Date()
+                Task.detached { wav = .some(await NeuralVoice.shared.wav("작업을 마쳤습니다. 결과는 정상입니다.")) }
+                while wav == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+                print("supertonic F1 wav bytes=\((wav ?? nil)?.count ?? 0) secs=\(String(format: "%.2f", Date().timeIntervalSince(started)))")
+                let out = NSTemporaryDirectory() + "suhyeok-voice-check.wav"
+                try? (wav ?? nil)?.write(to: URL(fileURLWithPath: out))
+                print("supertonic sample:", out)
+            } else {
+                print("supertonic F1 not installed (\(NeuralVoice.dir))")
+            }
             let synth = AVSpeechSynthesizer()
             var frames = 0
             let done = DispatchSemaphore(value: 0)
             let u = AVSpeechUtterance(string: Speaker.plain("**작업을 마쳤습니다.** `build.sh`를 실행했고\n```\nok\n```\n결과는 정상입니다."))
-            u.voice = Speaker.voice(for: "fox")
+            u.voice = Speaker.voice(for: "fox").0
             print("spoken text:", u.speechString.replacingOccurrences(of: "\n", with: " / "))
             synth.write(u) { buf in
                 if let pcm = buf as? AVAudioPCMBuffer, pcm.frameLength > 0 { frames += Int(pcm.frameLength) } else { done.signal() }
