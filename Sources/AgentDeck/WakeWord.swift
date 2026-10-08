@@ -226,10 +226,19 @@ final class WakeWord: ObservableObject {
         conversationUntil = Date().addingTimeInterval(Self.conversationLength)
         // Just the name: pick that agent for what comes next.
         guard !text.isEmpty else { Speaker.shared.say("\(name), 말씀하세요."); return }
+        // Typing into a permission or question menu would pick an option: have the user answer it first.
+        if session.status == .waiting {
+            Speaker.shared.say("\(Self.subject(name)) 선택지에서 멈춰 있어요. 화면에서 먼저 골라 주세요.")
+            return
+        }
+        // A busy agent reads the message only when its current turn ends (Claude Code queues it).
+        let busy = session.status == .busy
         Task.detached {
             let ok = SessionInput.send(session, text: text)
             await MainActor.run {
-                Speaker.shared.say(ok ? "\(name)에게 전달했어요." : "\(name)에게 보내지 못했어요.")
+                Speaker.shared.say(!ok ? "\(name)에게 보내지 못했어요."
+                                   : busy ? "\(Self.topic(name)) 지금 하던 작업이 끝나면 읽을 거예요."
+                                   : "\(name)에게 전달했어요.")
                 if ok { self.awaiting[session.id] = Awaiting(since: Date(), before: session.lastAssistant) }
             }
         }
@@ -270,12 +279,18 @@ final class WakeWord: ObservableObject {
                 Task.detached {
                     let reply = path.flatMap { TranscriptRenderer.items(path: $0, agent: agent).last { $0.role == .agent }?.text }
                     await MainActor.run {
-                        if let reply { Speaker.shared.speak(reply, characterId: characterId) }
+                        if let reply { Speaker.shared.announce(reply, characterId: characterId) }
                         else { Speaker.shared.say("\(Self.subject(name)) 작업을 마쳤어요.") }
                     }
                 }
             }
         }
+    }
+
+    /// "펠릭스는" / "린은": the topic particle that fits the name's last syllable.
+    nonisolated static func topic(_ name: String) -> String {
+        guard let v = name.unicodeScalars.last?.value, (0xAC00...0xD7A3).contains(v) else { return name + "는" }
+        return name + ((v - 0xAC00) % 28 == 0 ? "는" : "은")
     }
 
     /// "펠릭스가" / "린이": the subject particle that fits the name's last syllable.

@@ -175,6 +175,15 @@ struct AgentDeckApp: App {
             }
             exit(0)
         }
+        // `AgentDeck --say-test`: two confirmations and a reply summary, queued; each should finish before the next.
+        if args.contains("--say-test") {
+            Speaker.shared.say("첫 번째 안내예요.")
+            Speaker.shared.announce("작업을 마쳤습니다. 테스트 열두 개가 모두 통과했고 커밋까지 끝냈습니다.", characterId: nil)
+            Speaker.shared.say("세 번째 안내예요.")
+            let end = Date().addingTimeInterval(30)
+            while Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+            exit(0)
+        }
         if let i = args.firstIndex(of: "--snapshot-talk"), i + 1 < args.count {
             TalkModeCapsule.snapshot(path: args[i + 1])
         }

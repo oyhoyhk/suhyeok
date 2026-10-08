@@ -142,31 +142,76 @@ final class Speaker: NSObject, ObservableObject {
     /// Bumped by every speak/stop so a summary that finishes late does not talk over a newer reply.
     private var generation = 0
 
-    /// Says a short fixed line as is (confirmations), in the same voice as replies.
-    func say(_ line: String) {
+    /// Reads a short spoken summary of the reply right away, cutting off whatever is being said
+    /// (the dialogue's "답변 읽어 주기": the reply on screen is the one you want to hear).
+    func speak(_ text: String, characterId: String?) {
         generation += 1
         let mine = generation
         synth.stopSpeaking(at: .immediate)
         player?.stop()
-        Task { await play(line, characterId: nil, generation: mine) }
-    }
-
-    /// Reads a short spoken summary of the reply (on-device model), or its opening when no model is available.
-    func speak(_ text: String, characterId: String?) {
-        let clean = Self.plain(text)
-        guard !clean.isEmpty else { return }
-        generation += 1
-        let mine = generation
-        synth.stopSpeaking(at: .immediate)
+        resumeFinished()
         Task {
-            let summary = await SpokenSummary.make(clean).map(Self.plain)
-            guard mine == generation else { return }
-            var said = summary ?? Self.gist(clean)
-            // A question at the end of the reply is what the agent needs from you: always say it.
-            if summary != nil, !said.contains("?"), let ask = clean.components(separatedBy: "\n").last(where: { !$0.isEmpty }),
-               ask.hasSuffix("?") { said += " " + ask }
+            guard let said = await Self.spoken(text), mine == generation else { return }
             await play(said, characterId: characterId, generation: mine)
         }
+    }
+
+    /// The summary to say for a reply (on-device model), or its opening when no model is available.
+    static func spoken(_ text: String) async -> String? {
+        let clean = plain(text)
+        guard !clean.isEmpty else { return nil }
+        let summary = await SpokenSummary.make(clean).map(plain)
+        var said = summary ?? gist(clean)
+        // A question at the end of the reply is what the agent needs from you: always say it.
+        if summary != nil, !said.contains("?"), let ask = clean.components(separatedBy: "\n").last(where: { !$0.isEmpty }),
+           ask.hasSuffix("?") { said += " " + ask }
+        return said
+    }
+
+    // MARK: queued speech for voice commands
+
+    /// Voice-command speech waits its turn: two agents finishing together are both heard in full,
+    /// and a confirmation never cuts off a reply being read.
+    private struct Line { let text: String; let summarize: Bool; let characterId: String? }
+    private var lines: [Line] = []
+    private var draining = false
+    private var finished: CheckedContinuation<Void, Never>?
+
+    /// Says a short fixed line as is (confirmations), after anything already queued.
+    func say(_ line: String) { enqueue(Line(text: line, summarize: false, characterId: nil)) }
+
+    /// Reads a finished agent's reply, summarized, after anything already queued.
+    func announce(_ reply: String, characterId: String?) { enqueue(Line(text: reply, summarize: true, characterId: characterId)) }
+
+    private func enqueue(_ line: Line) {
+        lines.append(line)
+        // Mark it here, not inside the task: lines queued back to back must not start a second drain.
+        guard !draining else { return }
+        draining = true
+        Task { await drain() }
+    }
+
+    private func drain() async {
+        while !lines.isEmpty {
+            let line = lines.removeFirst()
+            guard let said = line.summarize ? await Self.spoken(line.text) : line.text, !said.isEmpty else { continue }
+            NSLog("[voice] saying: %@", said)
+            generation += 1
+            let mine = generation
+            await withCheckedContinuation { c in
+                finished = c
+                Task {
+                    await play(said, characterId: line.characterId, generation: mine)
+                    if !speaking { resumeFinished() }  // nothing started: do not wait for a finish that never comes
+                }
+            }
+        }
+        draining = false
+    }
+
+    private func resumeFinished() {
+        finished?.resume()
+        finished = nil
     }
 
     /// Supertonic F1 when its model is installed; the system voice while it downloads or if it fails.
@@ -181,6 +226,7 @@ final class Speaker: NSObject, ObservableObject {
             }
         }
         guard mine == generation else { return }
+        speaking = true  // the synthesizer reports its start later; the queue checks this right away
         let u = AVSpeechUtterance(string: said)
         let (voice, pitch) = Self.voice(for: characterId)
         u.voice = voice
@@ -191,10 +237,12 @@ final class Speaker: NSObject, ObservableObject {
 
     func stop() {
         generation += 1
+        lines.removeAll()
         synth.stopSpeaking(at: .immediate)
         player?.stop()
         player = nil
         speaking = false
+        resumeFinished()
     }
 
     /// The best-quality Korean voices installed on this Mac (Premium > Enhanced > default), one per character
@@ -240,7 +288,7 @@ final class Speaker: NSObject, ObservableObject {
 
 extension Speaker: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ p: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in if self.player === p { self.player = nil; self.speaking = false } }
+        Task { @MainActor in if self.player === p { self.player = nil; self.speaking = false; self.resumeFinished() } }
     }
 }
 
@@ -292,10 +340,10 @@ extension Speaker: AVSpeechSynthesizerDelegate {
         Task { @MainActor in self.speaking = true }
     }
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
-        Task { @MainActor in self.speaking = false }
+        Task { @MainActor in self.speaking = false; self.resumeFinished() }
     }
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) {
-        Task { @MainActor in self.speaking = false }
+        Task { @MainActor in self.speaking = false; self.resumeFinished() }
     }
 }
 
