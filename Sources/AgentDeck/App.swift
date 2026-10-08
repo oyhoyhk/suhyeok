@@ -243,6 +243,13 @@ struct AgentDeckApp: App {
             WorkspaceView(store: store)
                 .frame(minWidth: 900, minHeight: 560)
         }
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("세션 이름 수정…") { store.editingSummary = store.selectedSession }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .disabled(store.selectedSession == nil)
+            }
+        }
         Settings { SettingsView().environmentObject(store) }
         MenuBarExtra {
             MenuBarContent(store: store)
@@ -368,6 +375,15 @@ final class SessionStore: ObservableObject {
     }
 
     /// Where a session's terminal lives in the main window.
+    /// The session open in the detail pane (sidebar selection), if any.
+    var selectedSession: AgentSession? {
+        switch selection {
+        case .hosted(let name): return session(hosted: name)
+        case .external(let id): return sessions.first { $0.id == id }
+        case .world, .list: return nil
+        }
+    }
+
     func pane(for s: AgentSession) -> Pane { s.hostedName.map(Pane.hosted) ?? .external(s.id) }
 
     /// Folders seen in live, hosted and recent sessions, for the new-session picker.
