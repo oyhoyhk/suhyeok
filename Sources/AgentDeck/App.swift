@@ -587,6 +587,7 @@ final class SessionStore: ObservableObject {
                 self.assignments = self.assigner.update(all)
                 self.names = AgentNames.assign(all)
                 self.lastRefresh = Date()
+                WakeWord.shared.observe(all)
                 self.loading = false
             }
         }

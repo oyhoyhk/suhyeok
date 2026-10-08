@@ -167,8 +167,53 @@ final class WakeWord: ObservableObject {
             let ok = SessionInput.send(session, text: text)
             await MainActor.run {
                 Speaker.shared.say(ok ? "\(name)에게 전달했어요." : "\(name)에게 보내지 못했어요.")
+                if ok { self.awaiting[session.id] = Awaiting(since: Date(), before: session.lastAssistant) }
             }
         }
+    }
+
+    // MARK: answering by voice
+
+    /// Sessions given a spoken command, waiting for their turn to end so the reply can be read aloud.
+    private struct Awaiting { let since: Date; let before: String?; var sawBusy = false }
+    private var awaiting: [String: Awaiting] = [:]
+
+    /// Called after every refresh: a session asked by voice that has finished its turn gets its reply read
+    /// aloud (summarized, in the F1 voice); one that stops on a question says so.
+    func observe(_ sessions: [AgentSession]) {
+        for (id, var a) in awaiting {
+            guard let s = sessions.first(where: { $0.id == id }), Date().timeIntervalSince(a.since) < 3600 else {
+                awaiting[id] = nil; continue
+            }
+            let name = store?.agentName(for: s) ?? "에이전트"
+            switch s.status {
+            case .busy:
+                a.sawBusy = true
+                awaiting[id] = a
+            case .waiting:
+                awaiting[id] = nil
+                Speaker.shared.say("\(Self.subject(name)) 선택을 기다리고 있어요.")
+            case .idle, .shell, .unknown:
+                // Not started yet (the command may still be queued): wait for the turn to begin. A turn short
+                // enough to fall between two refreshes shows up as a new reply instead.
+                guard a.sawBusy || (s.lastAssistant != a.before && (s.updatedAt ?? .distantPast) > a.since) else { continue }
+                awaiting[id] = nil
+                let path = s.transcriptPath, agent = s.agent, characterId = store?.character(for: s)?.id
+                Task.detached {
+                    let reply = path.flatMap { TranscriptRenderer.items(path: $0, agent: agent).last { $0.role == .agent }?.text }
+                    await MainActor.run {
+                        if let reply { Speaker.shared.speak(reply, characterId: characterId) }
+                        else { Speaker.shared.say("\(Self.subject(name)) 작업을 마쳤어요.") }
+                    }
+                }
+            }
+        }
+    }
+
+    /// "펠릭스가" / "린이": the subject particle that fits the name's last syllable.
+    nonisolated static func subject(_ name: String) -> String {
+        guard let v = name.unicodeScalars.last?.value, (0xAC00...0xD7A3).contains(v) else { return name + "가" }
+        return name + ((v - 0xAC00) % 28 == 0 ? "가" : "이")
     }
 
     // MARK: parsing (pure, so it can be checked without a microphone)
