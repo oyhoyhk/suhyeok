@@ -68,9 +68,22 @@ enum ClaudeSource {
             .first { FileManager.default.fileExists(atPath: $0) }
     }
 
-    private static func transcriptInfo(sessionId: String, cwd: String)
-        -> (title: String?, user: String?, assistant: String?, action: AgentAction?) {
+    private typealias TranscriptInfo = (title: String?, user: String?, assistant: String?, action: AgentAction?)
+    /// Parsed tail per transcript, reused while the file's size and mtime stay the same.
+    /// Only refresh() calls load(), one run at a time, so this needs no lock.
+    private static var infoCache: [String: (stamp: String, info: TranscriptInfo)] = [:]
+
+    private static func transcriptInfo(sessionId: String, cwd: String) -> TranscriptInfo {
         guard let path = transcriptPath(sessionId: sessionId, cwd: cwd) else { return (nil, nil, nil, nil) }
+        let attrs = (try? FileManager.default.attributesOfItem(atPath: path)) ?? [:]
+        let stamp = "\(attrs[.size] ?? "")|\((attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
+        if let hit = infoCache[path], hit.stamp == stamp { return hit.info }
+        let info = parseTranscript(path: path)
+        infoCache[path] = (stamp, info)
+        return info
+    }
+
+    private static func parseTranscript(path: String) -> TranscriptInfo {
         var title: String?, user: String?, assistant: String?, action: AgentAction?, sawAssistant = false
         // Large tool results (screenshots) can fill the tail, so widen the window if needed.
         for maxBytes in [512 * 1024, 4 * 1024 * 1024] {
