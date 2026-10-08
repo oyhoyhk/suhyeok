@@ -204,6 +204,18 @@ struct WorldView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 edgeMarkers(items, cam: cam, size: size)
+                // Agents waiting on you, top-left; a row goes to the agent and opens its conversation.
+                WaitingBoard(store: store) { s in
+                    var n = cam; n.center = drawn[s.id] ?? items.first { $0.session.id == s.id }?.point ?? cam.center; n.clamp(size)
+                    withAnimation(.easeInOut(duration: 0.4)) { input.camera = n }
+                    if openMode == OpenMode.dialogue.rawValue {
+                        selectedId = nil
+                        dialogueId = s.id
+                    } else {
+                        store.selection = store.pane(for: s)
+                    }
+                }
+                .offset(x: 12, y: 12)
                 // Agent count per state, top-right of whatever part of the map is visible.
                 let mapRight = size.width
                 HStack { Spacer(); StatusCounts(store: store).fixedSize() }
