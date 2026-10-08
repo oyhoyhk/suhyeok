@@ -21,8 +21,12 @@ final class WakeWord: ObservableObject {
     private var round = 0
     private var silence: Task<Void, Never>?
     private var paused = false
-    /// What follows the wake phrase so far in this round.
+    /// What follows the wake phrase so far.
     private var pending = ""
+    /// Command words from earlier rounds: recognition often ends a round at the pause after "안녕 수혁아",
+    /// so the command continues in the next round, which has no wake phrase in it.
+    private var carried = ""
+    private var continuing = false
 
     var enabled: Bool { UserDefaults.standard.bool(forKey: Self.enabledKey) }
 
@@ -91,9 +95,10 @@ final class WakeWord: ObservableObject {
 
     /// A fresh recognition request, so each command starts from empty text. On-device tasks also end on
     /// their own after a while; they are restarted the same way.
-    private func newRound() {
+    private func newRound(continuing: Bool = false) {
         guard let recognizer, engine.isRunning else { return }
-        silence?.cancel()
+        self.continuing = continuing
+        if !continuing { silence?.cancel() }
         task?.cancel()
         round += 1
         let mine = round
@@ -107,8 +112,10 @@ final class WakeWord: ObservableObject {
             DispatchQueue.main.async {
                 guard let self, mine == self.round else { return }
                 if let text { self.heard(text) }
-                // A task that ends mid-command (on-device recognition finalizes after a pause) still counts.
-                if done, mine == self.round { self.state == .awake ? self.finish(self.pending) : self.newRound() }
+                // A round that ends while awake keeps listening for the rest of the command.
+                if done, mine == self.round {
+                    if self.state == .awake { self.carried = self.pending; self.newRound(continuing: true) } else { self.newRound() }
+                }
             }
         }
     }
@@ -116,7 +123,15 @@ final class WakeWord: ObservableObject {
     private func heard(_ text: String) {
         // Ignore our own voice reading a reply aloud.
         if Speaker.shared.speaking { return }
-        guard let command = Self.afterWake(text) else { return }
+        let said: String
+        if let c = Self.afterWake(text) { said = c }
+        else if state == .awake || continuing {
+            // After a pause the recognizer reports a new segment without the earlier words: keep what was said.
+            if !continuing { carried = pending; continuing = true }
+            said = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            NSLog("[wake] continued: %@", said)
+        } else { return }
+        let command = [carried, said].filter { !$0.isEmpty }.joined(separator: " ")
         pending = command
         if state != .awake {
             NSLog("[wake] wake phrase heard: %@", text)
@@ -125,7 +140,7 @@ final class WakeWord: ObservableObject {
         }
         // The command is done once the words stop changing for a moment; with nothing said yet, wait longer.
         silence?.cancel()
-        let wait: Duration = command.isEmpty ? .seconds(6) : .seconds(1.6)
+        let wait: Duration = command.isEmpty ? .seconds(6) : .seconds(2)
         silence = Task { [weak self] in
             try? await Task.sleep(for: wait)
             guard !Task.isCancelled, let self else { return }
@@ -137,6 +152,7 @@ final class WakeWord: ObservableObject {
         NSLog("[wake] command: %@", command)
         state = .listening
         pending = ""
+        carried = ""
         newRound()
         guard !command.isEmpty else { NSSound(named: "Bottle")?.play(); return }
         guard let store else { return }
@@ -166,34 +182,62 @@ final class WakeWord: ObservableObject {
         return ns.substring(from: m.range.location + m.range.length).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Splits "펠릭스야, 커밋해 줘" into the named agent and the instruction. The name has to come first;
-    /// the longest name wins, so "아린" is not read as "린". Names are compared by sound, not spelling:
-    /// speech recognition writes "아린아" as "아리 나" (the final ㄴ moves to the next syllable).
+    /// Finds the agent named near the start of a command ("펠릭스야, 커밋해 줘", "지금 하루한테 …") and returns
+    /// it with the instruction left once the name is taken out. Names are compared by sound, not spelling,
+    /// and allow small mistakes: recognition writes "펠릭스" as "필릭스", "필립스" or "필리 스", and "아린아"
+    /// as "아리 나" (the final ㄴ moves to the next syllable). Longer names get more slack; 2-syllable names
+    /// must sound exact so ordinary words are not taken for names.
     nonisolated static func route(_ command: String, names: [String]) -> (name: String, text: String)? {
         let c = Array(command.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)))
-        // Sounds of the command with where each one came from; spaces carry no sound.
-        var sounds: [(sound: Swift.Character, at: Int)] = []
-        for (i, ch) in c.enumerated() where !ch.isWhitespace { sounds += Self.sounds(ch).map { ($0, i) } }
-        var best: (name: String, end: Int, midSyllable: Bool)?
-        for name in names {
-            let n = name.flatMap(Self.sounds)
-            guard !n.isEmpty, n.count <= sounds.count, zip(n, sounds).allSatisfy({ $0 == $1.sound }) else { continue }
-            let last = sounds[n.count - 1].at
-            let midSyllable = n.count < sounds.count && sounds[n.count].at == last
-            if best == nil || name.count > best!.name.count { best = (name, last, midSyllable) }
+        let wordStarts = c.indices.filter { !c[$0].isWhitespace && ($0 == 0 || c[$0 - 1].isWhitespace) }
+        typealias Hit = (name: String, distance: Int, word: Int, start: Int, end: Int, midSyllable: Bool)
+        var best: Hit?
+        for (w, start) in wordStarts.prefix(4).enumerated() {
+            var sounds: [(sound: Swift.Character, at: Int)] = []
+            for i in start..<c.count where !c[i].isWhitespace && !c[i].isPunctuation { sounds += Self.sounds(c[i]).map { ($0, i) } }
+            for name in names {
+                let n = name.flatMap(Self.sounds)
+                let slack = n.count >= 7 ? 2 : n.count >= 5 ? 1 : 0
+                guard !n.isEmpty, n.count - slack <= sounds.count else { continue }
+                for len in max(1, n.count - slack)...min(sounds.count, n.count + slack) {
+                    let d = Self.distance(n, sounds.prefix(len).map(\.sound))
+                    guard d <= slack else { continue }
+                    let end = sounds[len - 1].at
+                    let hit: Hit = (name, d, w, start, end, len < sounds.count && sounds[len].at == end)
+                    // Closest sound first, then the earliest word, then the longer name ("아린" over "린").
+                    if let b = best, (b.distance, b.word, -b.name.count) <= (d, w, -name.count) { continue }
+                    best = hit
+                }
+            }
         }
         guard let best else { return nil }
         // The name ended inside a syllable ("아리 나"): the rest of it is the vocative 아/이, so skip it.
         var rest = Substring(String(c[(best.end + 1)...]))
         if !best.midSyllable {
-            // Vocative and dative endings after the name: 펠릭스야 / 펠릭스한테 / 펠릭스에게 / 펠릭스님 …
+            // Endings after the name: 펠릭스야 / 펠릭스한테 / 펠릭스에게 / 펠릭스님 …
             for ending in ["한테", "에게", "님", "씨", "야", "아", "이", "은", "는"] where rest.hasPrefix(ending) {
                 let after = rest.dropFirst(ending.count)
                 if after.isEmpty || after.first!.isWhitespace || after.first!.isPunctuation { rest = after; break }
             }
         }
-        let text = rest.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
-        return (best.name, text)
+        let before = String(c[..<best.start]).trimmingCharacters(in: .whitespaces)
+        let after = rest.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return (best.name, [before, after].filter { !$0.isEmpty }.joined(separator: " "))
+    }
+
+    /// Edit distance between two letter sequences.
+    nonisolated static func distance(_ a: [Swift.Character], _ b: [Swift.Character]) -> Int {
+        var row = Array(0...b.count)
+        for (i, x) in a.enumerated() {
+            var prev = row[0]
+            row[0] = i + 1
+            for (j, y) in b.enumerated() {
+                let cur = row[j + 1]
+                row[j + 1] = min(row[j + 1] + 1, row[j] + 1, prev + (x == y ? 0 : 1))
+                prev = cur
+            }
+        }
+        return row[b.count]
     }
 
     private nonisolated static let initials = Array("ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ")
