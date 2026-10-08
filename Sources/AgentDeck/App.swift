@@ -175,10 +175,21 @@ struct AgentDeckApp: App {
             }
             exit(0)
         }
+        // `AgentDeck --announce-test <reply file> <agent> [request]`: print what the agent would say (no sound).
+        if let i = args.firstIndex(of: "--announce-test"), i + 2 < args.count,
+           let reply = try? String(contentsOfFile: args[i + 1], encoding: .utf8) {
+            var said: String?? = .none
+            let agent = args[i + 2], request = args.dropFirst(i + 3).first
+            Task { said = .some(await SpokenSummary.answer(agent: agent, request: request, reply: reply)) }
+            while said == nil { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+            print((said ?? nil) ?? "(nothing)")
+            exit(0)
+        }
         // `AgentDeck --say-test`: two confirmations and a reply summary, queued; each should finish before the next.
         if args.contains("--say-test") {
             Speaker.shared.say("첫 번째 안내예요.")
-            Speaker.shared.announce("작업을 마쳤습니다. 테스트 열두 개가 모두 통과했고 커밋까지 끝냈습니다.", characterId: nil)
+            Speaker.shared.announce("작업을 마쳤습니다. 테스트 열두 개가 모두 통과했고 커밋까지 끝냈습니다.", agent: "펠릭스",
+                                    request: "테스트 돌리고 커밋해 줘", characterId: nil)
             Speaker.shared.say("세 번째 안내예요.")
             let end = Date().addingTimeInterval(30)
             while Date() < end { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }

@@ -172,7 +172,13 @@ final class Speaker: NSObject, ObservableObject {
 
     /// Voice-command speech waits its turn: two agents finishing together are both heard in full,
     /// and a confirmation never cuts off a reply being read.
-    private struct Line { let text: String; let summarize: Bool; let characterId: String? }
+    private struct Line {
+        let text: String
+        let summarize: Bool
+        let characterId: String?
+        var agent: String? = nil
+        var request: String? = nil
+    }
     private var lines: [Line] = []
     private var draining = false
     private var finished: CheckedContinuation<Void, Never>?
@@ -180,8 +186,11 @@ final class Speaker: NSObject, ObservableObject {
     /// Says a short fixed line as is (confirmations), after anything already queued.
     func say(_ line: String) { enqueue(Line(text: line, summarize: false, characterId: nil)) }
 
-    /// Reads a finished agent's reply, summarized, after anything already queued.
-    func announce(_ reply: String, characterId: String?) { enqueue(Line(text: reply, summarize: true, characterId: characterId)) }
+    /// Reads a finished agent's reply after anything already queued: the agent says who it is, the request
+    /// it answers and its intent, then the answer in short.
+    func announce(_ reply: String, agent: String, request: String?, characterId: String?) {
+        enqueue(Line(text: reply, summarize: true, characterId: characterId, agent: agent, request: request))
+    }
 
     private func enqueue(_ line: Line) {
         lines.append(line)
@@ -194,7 +203,13 @@ final class Speaker: NSObject, ObservableObject {
     private func drain() async {
         while !lines.isEmpty {
             let line = lines.removeFirst()
-            guard let said = line.summarize ? await Self.spoken(line.text) : line.text, !said.isEmpty else { continue }
+            let said: String?
+            if line.summarize, let agent = line.agent {
+                said = await SpokenSummary.answer(agent: agent, request: line.request, reply: line.text)
+            } else {
+                said = line.summarize ? await Self.spoken(line.text) : line.text
+            }
+            guard let said, !said.isEmpty else { continue }
             NSLog("[voice] saying: %@", said)
             generation += 1
             let mine = generation
@@ -263,7 +278,7 @@ final class Speaker: NSObject, ObservableObject {
     }
 
     /// Without a model: the opening line (replies lead with the conclusion) and a closing question, if any.
-    static func gist(_ clean: String) -> String {
+    nonisolated static func gist(_ clean: String) -> String {
         let lines = clean.components(separatedBy: "\n").filter { !$0.isEmpty }
         let head = String((lines.first ?? "").prefix(200))
         guard let ask = lines.last, ask != lines.first, ask.hasSuffix("?") else { return head }
@@ -271,7 +286,7 @@ final class Speaker: NSObject, ObservableObject {
     }
 
     /// Markdown and code are noise when spoken: drop code blocks, tables and symbols, keep the prose.
-    static func plain(_ s: String) -> String {
+    nonisolated static func plain(_ s: String) -> String {
         var out: [String] = []
         var inCode = false
         for line in s.components(separatedBy: "\n") {
@@ -357,10 +372,44 @@ enum SpokenSummary {
         return nil
     }
 
+    /// What an agent says when its work is done: who it is, the request it answers and what you wanted
+    /// from it, then the answer. Voice commands ask the agent to open its reply with exactly that
+    /// ("펠릭스입니다. 요청하신 것은 …이고, …하려는 것으로 이해했습니다."), so that paragraph is read as written
+    /// and only the rest is summarized. Otherwise the request is quoted as you put it.
+    static func answer(agent: String, request: String?, reply: String) async -> String? {
+        let clean = Speaker.plain(reply)
+        guard !clean.isEmpty else { return nil }
+        let paragraphs = clean.components(separatedBy: "\n").filter { !$0.isEmpty }
+        if let first = paragraphs.first, first.hasPrefix(agent), paragraphs.count > 1 {
+            let rest = paragraphs.dropFirst().joined(separator: "\n")
+            let summary = await make(rest) ?? Speaker.gist(rest)
+            return oneLine(first, limit: 220) + " " + summary
+        }
+        let me = agent + (endsWithConsonant(agent) ? "이에요." : "예요.")
+        let ask = request.map { Speaker.plain($0) }.flatMap(firstSentence)
+        let opening = ask.map { "'\($0)'라고 하신 것에 답할게요." }
+        let summary = await make(clean) ?? Speaker.gist(clean)
+        return [me, opening, summary].compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// The request as said, cut to its first sentence and a length that is quick to hear.
+    static func firstSentence(_ s: String) -> String? {
+        let line = oneLine(s, limit: 300)
+        let cut = line.firstIndex(where: { ".?!\n".contains($0) }).map { String(line[...$0]) } ?? line
+        let t = cut.trimmingCharacters(in: .whitespaces.union(CharacterSet(charactersIn: ".")))
+        guard !t.isEmpty else { return nil }
+        return t.count > 60 ? String(t.prefix(60)) + "…" : t
+    }
+
+    static func endsWithConsonant(_ word: String) -> Bool {
+        guard let v = word.unicodeScalars.last?.value, (0xAC00...0xD7A3).contains(v) else { return false }
+        return (v - 0xAC00) % 28 != 0
+    }
+
     #if canImport(FoundationModels)
     @available(macOS 26, *)
     @Generable struct Spoken {
-        @Guide(description: "소리 내어 읽을 한국어 요약. 존댓말 구어체 두세 문장, 150자 이내. 모든 문장을 끝맺는다. 결론을 먼저 말하고 질문이 있으면 마지막에 말한다. 마크다운·코드·파일 경로·기호를 쓰지 않는다.")
+        @Guide(description: "소리 내어 읽을 한국어 요약. 존댓말 구어체 두세 문장, 150자 이내. 모든 문장을 끝맺는다. 결론을 먼저 말하고 질문이 있으면 마지막에 말한다. 마크다운·코드·파일 경로·기호를 쓰지 않는다. 답변에 없는 인사나 '질문이 있으면 말씀해 주세요' 같은 맺음말을 붙이지 않는다.")
         var text: String
     }
 

@@ -233,13 +233,14 @@ final class WakeWord: ObservableObject {
         }
         // A busy agent reads the message only when its current turn ends (Claude Code queues it).
         let busy = session.status == .busy
+        let message = text + "\n\n" + Self.voiceNote(name)
         Task.detached {
-            let ok = SessionInput.send(session, text: text)
+            let ok = SessionInput.send(session, text: message)
             await MainActor.run {
                 Speaker.shared.say(!ok ? "\(name)에게 보내지 못했어요."
                                    : busy ? "\(Self.topic(name)) 지금 하던 작업이 끝나면 읽을 거예요."
                                    : "\(name)에게 전달했어요.")
-                if ok { self.awaiting[session.id] = Awaiting(since: Date(), before: session.lastAssistant) }
+                if ok { self.awaiting[session.id] = Awaiting(since: Date(), before: session.lastAssistant, request: text) }
             }
         }
     }
@@ -247,7 +248,7 @@ final class WakeWord: ObservableObject {
     // MARK: answering by voice
 
     /// Sessions given a spoken command, waiting for their turn to end so the reply can be read aloud.
-    private struct Awaiting { let since: Date; let before: String?; var sawBusy = false }
+    private struct Awaiting { let since: Date; let before: String?; var request: String? = nil; var sawBusy = false }
     private var awaiting: [String: Awaiting] = [:]
 
     /// Called after every refresh: a session asked by voice that has finished its turn gets its reply read
@@ -276,15 +277,24 @@ final class WakeWord: ObservableObject {
                 guard a.sawBusy || (s.lastAssistant != a.before && (s.updatedAt ?? .distantPast) > a.since) else { continue }
                 awaiting[id] = nil
                 let path = s.transcriptPath, agent = s.agent, characterId = store?.character(for: s)?.id
+                // What was asked: the spoken command, else the last prompt the agent got (typed ones in talk mode).
+                let request = a.request ?? s.lastUser
                 Task.detached {
                     let reply = path.flatMap { TranscriptRenderer.items(path: $0, agent: agent).last { $0.role == .agent }?.text }
                     await MainActor.run {
-                        if let reply { Speaker.shared.announce(reply, characterId: characterId) }
+                        if let reply { Speaker.shared.announce(reply, agent: name, request: request, characterId: characterId) }
                         else { Speaker.shared.say("\(Self.subject(name)) 작업을 마쳤어요.") }
                     }
                 }
             }
         }
+    }
+
+    /// Appended to spoken commands: the reply will be heard, so the agent opens with who it is, the request
+    /// in its own words and what it takes you to want; 수혁 reads that paragraph as written.
+    nonisolated static func voiceNote(_ name: String) -> String {
+        "(수혁 음성 지시 — 답변은 소리로 읽힘. 답변 첫 문단은 '\(name)입니다. 요청하신 것은 …이고, …하려는 것으로 이해했습니다.' "
+            + "형식의 두 문장으로 시작하고, 다음 문단부터 답할 것.)"
     }
 
     /// "펠릭스는" / "린은": the topic particle that fits the name's last syllable.
