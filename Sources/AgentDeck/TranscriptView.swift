@@ -15,8 +15,11 @@ enum TranscriptRenderer {
     private static var cache: [String: Cached] = [:]
     private static let lock = NSLock()
     /// How far back the first read goes. Screenshots make single lines over 1 MB, so a small tail
-    /// can hold no conversation at all; the window is wide and huge lines are skipped unparsed.
+    /// can hold no conversation at all: the first read tries `firstWindow`, then widens to `window`
+    /// when that holds fewer than `enough` entries. Huge lines are skipped unparsed.
+    private static let firstWindow: UInt64 = 4 * 1024 * 1024
     private static let window: UInt64 = 32 * 1024 * 1024
+    private static let enough = 120
     private static let hugeLine = 256 * 1024
     private static let keep = 600
 
@@ -25,30 +28,40 @@ enum TranscriptRenderer {
         guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
-        var c = cache[path] ?? Cached(offset: size > window ? size - window : 0, entries: [])
-        if c.offset > size { c = Cached(offset: size > window ? size - window : 0, entries: []) }  // file was replaced
-        let fresh = c.offset == 0 || cache[path] == nil
-        if size > c.offset {
-            try? handle.seek(toOffset: c.offset)
-            let data = handle.readData(ofLength: Int(size - c.offset))
-            // Only complete lines; a half-written last line is read again next time.
-            guard let lastNL = data.lastIndex(of: UInt8(ascii: "\n")) else { cache[path] = c; return wrap(c.entries) }
-            var chunks = data[data.startIndex...lastNL].split(separator: UInt8(ascii: "\n"))
-            if fresh, c.offset > 0, !chunks.isEmpty { chunks.removeFirst() }  // started mid-line
-            var parsed: [[String: Any]] = []
-            for chunk in chunks {
-                if chunk.count > hugeLine {
-                    parsed.append(["type": "huge"])  // an image-heavy tool result; shown as a placeholder
-                } else if let obj = (try? JSONSerialization.jsonObject(with: Data(chunk))) as? [String: Any] {
-                    parsed.append(obj)
-                }
+        var c: Cached
+        if let old = cache[path], old.offset <= size {
+            c = extend(old, handle, size: size, agent: agent, midLine: false)
+        } else {  // first read, or the file was replaced
+            c = extend(Cached(offset: size > firstWindow ? size - firstWindow : 0, entries: []), handle, size: size, agent: agent, midLine: true)
+            if c.entries.count < enough, size > firstWindow {
+                c = extend(Cached(offset: size > window ? size - window : 0, entries: []), handle, size: size, agent: agent, midLine: true)
             }
-            c.entries += agent == .claude ? claude(parsed) : codex(parsed)
-            if c.entries.count > keep { c.entries.removeFirst(c.entries.count - keep) }
-            c.offset += UInt64(data.distance(from: data.startIndex, to: lastNL) + 1)
         }
         cache[path] = c
         return wrap(c.entries)
+    }
+
+    /// Parses the complete lines from `c.offset` to `size`; a half-written last line is read again next time.
+    private static func extend(_ c: Cached, _ handle: FileHandle, size: UInt64, agent: Agent, midLine: Bool) -> Cached {
+        guard size > c.offset else { return c }
+        var c = c
+        try? handle.seek(toOffset: c.offset)
+        let data = handle.readData(ofLength: Int(size - c.offset))
+        guard let lastNL = data.lastIndex(of: UInt8(ascii: "\n")) else { return c }
+        var chunks = data[data.startIndex...lastNL].split(separator: UInt8(ascii: "\n"))
+        if midLine, c.offset > 0, !chunks.isEmpty { chunks.removeFirst() }  // started mid-line
+        var parsed: [[String: Any]] = []
+        for chunk in chunks {
+            if chunk.count > hugeLine {
+                parsed.append(["type": "huge"])  // an image-heavy tool result; shown as a placeholder
+            } else if let obj = (try? JSONSerialization.jsonObject(with: Data(chunk))) as? [String: Any] {
+                parsed.append(obj)
+            }
+        }
+        c.entries += agent == .claude ? claude(parsed) : codex(parsed)
+        if c.entries.count > keep { c.entries.removeFirst(c.entries.count - keep) }
+        c.offset += UInt64(data.distance(from: data.startIndex, to: lastNL) + 1)
+        return c
     }
 
     private static func wrap(_ e: [(ChatItem.Role, String)]) -> [ChatItem] {

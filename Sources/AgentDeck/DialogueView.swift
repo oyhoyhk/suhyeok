@@ -67,6 +67,8 @@ struct DialogueView: View {
     var onHeaderDragEnd: ((CGSize) -> Void)? = nil
 
     @State private var loaded: [ChatItem]?
+    /// How many of the newest messages are drawn.
+    @State private var shown = 40
     private var items: [ChatItem] { loaded ?? preload }
     @State private var draft = ""
     @State private var screen: String?
@@ -178,16 +180,19 @@ struct DialogueView: View {
                     } else if items.isEmpty {
                         Text(s.transcriptPath == nil ? "이 세션의 대화 기록 파일을 찾지 못함" : "아직 주고받은 대화가 없음")
                             .font(.caption).foregroundStyle(.secondary)
-                    } else if items.count > 120 {
-                        Text("이전 대화 \(items.count - 120)개는 터미널·대화 기록 보기에서 확인").font(.caption2).foregroundStyle(.secondary)
+                    } else if items.count > shown {
+                        // Bubbles with tables and code are slow to lay out, so the chat opens with the newest few.
+                        Button("이전 대화 더 보기 (\(items.count - shown)개 더 있음)") { shown += 80 }
+                            .font(.caption2).buttonStyle(.link)
                     }
-                    ForEach(items.suffix(120)) { item in bubble(item, s) }
+                    ForEach(items.suffix(shown)) { item in bubble(item, s) }
                     ForEach(pending) { p in pendingBubble(p) }
                     if let live { liveBubble(live, s) }
                     if let menu { menuCard(menu, s) }
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(14)
+                .environment(\.openURL, FileLinks.openAction)
             }
             // Open at the newest message and stay there as new ones arrive.
             .defaultScrollAnchor(.bottom)
@@ -196,7 +201,7 @@ struct DialogueView: View {
                 // (markdown, tables, diagrams) finish measuring, so the newest progress is what you see.
                 if old == 0 { settleAtBottom(proxy) } else { proxy.scrollTo("end", anchor: .bottom) }
             }
-            .onChange(of: sessionId) { settleAtBottom(proxy) }
+            .onChange(of: sessionId) { shown = 40; settleAtBottom(proxy) }
             .onChange(of: live) { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: pending.count) { proxy.scrollTo("end", anchor: .bottom) }
             .onChange(of: menu) { proxy.scrollTo("end", anchor: .bottom) }
@@ -217,20 +222,20 @@ struct DialogueView: View {
         case .me:
             HStack {
                 Spacer(minLength: 60)
-                Text(item.text).textSelection(.enabled)
+                Text(FileLinks.link(AttributedString(item.text), cwd: s.cwd)).textSelection(.enabled)
                     .padding(10)
                     .background(Color(red: 0.55, green: 0.42, blue: 0.12), in: RoundedRectangle(cornerRadius: 10))
             }
         case .agent:
             VStack(alignment: .leading, spacing: 3) {
                 Text(store.agentName(for: s)).font(.caption.bold()).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
-                MarkdownView(text: item.text).textSelection(.enabled)
+                MarkdownView(text: item.text, cwd: s.cwd).textSelection(.enabled)
                     .padding(10)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
             }
             .padding(.trailing, 60)
         case .tool:
-            Label(item.text, systemImage: "hammer").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Label { Text(FileLinks.link(AttributedString(item.text), cwd: s.cwd)) } icon: { Image(systemName: "hammer") }.font(.caption).foregroundStyle(.secondary).lineLimit(1)
         case .result:
             EmptyView()  // outputs stay in the terminal view; the chat shows only what was done
         }
@@ -438,6 +443,10 @@ struct DialogueView: View {
 
     private func poll(_ s: AgentSession) async {
         while !Task.isCancelled {
+            // Show the log at once on open; reading the terminal (0.1–0.2 s through cmux) follows.
+            if loaded == nil, let path = s.transcriptPath {
+                loaded = await Task.detached { TranscriptRenderer.items(path: path, agent: s.agent) }.value
+            }
             let busy = store.sessions.first { $0.id == sessionId }?.status == .busy
             let lastAgent = items.last { $0.role == .agent }?.text
             let (newItems, newScreen, newMenu, newLive) = await Task.detached {

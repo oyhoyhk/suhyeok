@@ -5,6 +5,8 @@ import WebKit
 /// diagrams. Inline styling (bold, code, links) goes through AttributedString.
 struct MarkdownView: View {
     let text: String
+    /// Base for relative file paths, which become ⌘-click links (see FileLinks).
+    var cwd: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -45,7 +47,7 @@ struct MarkdownView: View {
                 MermaidView(source: body)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    Text(body)
+                    Text(FileLinks.link(AttributedString(body), cwd: cwd))
                         .font(.system(size: 12, design: .monospaced))
                         .textSelection(.enabled)
                         .fixedSize()
@@ -75,8 +77,8 @@ struct MarkdownView: View {
     }
 
     private func inline(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(s)
+        FileLinks.link((try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(s), cwd: cwd)
     }
 }
 
