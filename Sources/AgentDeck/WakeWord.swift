@@ -34,10 +34,14 @@ final class WakeWord: ObservableObject {
     private var segmentCommand = ""
     /// Conversation mode: until this moment, speech counts as a command without the wake phrase.
     private var conversationUntil = Date.distantPast
-    private var lastAgent: String?
+    /// The agent spoken to last, or picked by saying its name; commands without a name go here.
+    @Published private(set) var target: String?
+    /// Talk mode (the toggle at the top of the window): always listening, no wake phrase, no time limit.
+    static let talkModeKey = "talkMode"
+    @Published private(set) var talkMode = UserDefaults.standard.bool(forKey: WakeWord.talkModeKey)
     private var speakingSink: AnyCancellable?
     static let conversationLength: TimeInterval = 60
-    private var inConversation: Bool { Date() < conversationUntil }
+    private var inConversation: Bool { talkMode || Date() < conversationUntil }
 
     var enabled: Bool { UserDefaults.standard.bool(forKey: Self.enabledKey) }
 
@@ -51,17 +55,29 @@ final class WakeWord: ObservableObject {
             if self.inConversation { self.conversationUntil = Date().addingTimeInterval(Self.conversationLength) }
             self.newRound()
         }
-        if enabled { start() }
+        if enabled || talkMode { start() }
+    }
+
+    func setTalkMode(_ on: Bool) {
+        talkMode = on
+        UserDefaults.standard.set(on, forKey: Self.talkModeKey)
+        if on {
+            start()
+            Speaker.shared.say(target.map { "대화 모드를 켰어요. 지금은 \($0)에게 보내요." } ?? "대화 모드를 켰어요. 에이전트 이름을 먼저 말해 주세요.")
+        } else {
+            target = nil
+            if !enabled { stop() }
+        }
     }
 
     func setEnabled(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: Self.enabledKey)
-        on ? start() : stop()
+        if on { start() } else if !talkMode { stop() }
     }
 
     /// Dictation in the dialogue needs the microphone to itself.
     func pause() { paused = true; stopAudio() }
-    func resume() { paused = false; if enabled { start() } }
+    func resume() { paused = false; if enabled || talkMode { start() } }
 
     private func start() {
         guard state == .off || state.isFailed, !paused else { return }
@@ -189,22 +205,27 @@ final class WakeWord: ObservableObject {
         newRound()
         guard !command.isEmpty else { NSSound(named: "Bottle")?.play(); return }
         guard let store else { return }
-        if Self.isGoodbye(command) {
+        if !talkMode, Self.isGoodbye(command) {
             conversationUntil = .distantPast
             Speaker.shared.say("네, 필요하면 수혁아 하고 불러 주세요.")
             return
         }
         let named = store.sessions.map { (store.agentName(for: $0), $0) }
+        // No name in a conversation: the agent spoken to last, else the one open in the window.
+        let fallback = target ?? (talkMode ? store.selectedSession.map { store.agentName(for: $0) } : nil)
         let routed = Self.route(command, names: named.map(\.0))
-            // No name in a conversation: the agent spoken to last.
-            ?? (inConversation ? lastAgent.map { ($0, command) } : nil)
+            ?? (inConversation ? fallback.map { ($0, command) } : nil)
         guard let (name, text) = routed, let session = named.first(where: { $0.0 == name })?.1 else {
             Speaker.shared.say("누구에게 시킬지 못 들었어요. 에이전트 이름을 먼저 말해 주세요.")
             return
         }
-        lastAgent = name
+        if target != name {
+            target = name
+            store.selection = store.pane(for: session)  // show the agent being talked to
+        }
         conversationUntil = Date().addingTimeInterval(Self.conversationLength)
-        guard !text.isEmpty else { Speaker.shared.say("\(name)에게 무엇을 시킬까요?"); return }
+        // Just the name: pick that agent for what comes next.
+        guard !text.isEmpty else { Speaker.shared.say("\(name), 말씀하세요."); return }
         Task.detached {
             let ok = SessionInput.send(session, text: text)
             await MainActor.run {
@@ -223,6 +244,11 @@ final class WakeWord: ObservableObject {
     /// Called after every refresh: a session asked by voice that has finished its turn gets its reply read
     /// aloud (summarized, in the F1 voice); one that stops on a question says so.
     func observe(_ sessions: [AgentSession]) {
+        // In talk mode the picked agent's finished turns are read too, even ones typed rather than spoken.
+        if talkMode, let target, let s = sessions.first(where: { store?.agentName(for: $0) == target }),
+           s.status == .busy, awaiting[s.id] == nil {
+            awaiting[s.id] = Awaiting(since: Date(), before: s.lastAssistant, sawBusy: true)
+        }
         for (id, var a) in awaiting {
             guard let s = sessions.first(where: { $0.id == id }), Date().timeIntervalSince(a.since) < 3600 else {
                 awaiting[id] = nil; continue
@@ -417,5 +443,33 @@ struct WakeWordSettings: View {
         Text("예: \"수혁아, 펠릭스 커밋해 줘\" — 에이전트 이름을 먼저 말하면 그 에이전트에게 지시를 보냄. 그 뒤 1분 동안은 \"수혁아\" 없이 이어 말할 수 있고, 이름을 빼면 방금 그 에이전트에게 감. \"그만\"이라고 하면 끝. 소리 인식은 이 Mac 안에서만 처리하지만, 켜 두는 동안 마이크가 계속 켜져 있음.")
             .font(.caption).foregroundStyle(.secondary)
         if case .failed(let msg) = wake.state { Text(msg).font(.caption).foregroundStyle(.orange) }
+    }
+}
+
+/// Top-of-window switch for talk mode, with who is being talked to.
+struct TalkModeToggle: View {
+    @ObservedObject private var wake = WakeWord.shared
+    @ObservedObject private var speaker = Speaker.shared
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Toggle(isOn: Binding(get: { wake.talkMode }, set: { wake.setTalkMode($0) })) {
+                Label("대화 모드", systemImage: wake.talkMode ? "mic.fill" : "mic.slash")
+            }
+            .toggleStyle(.button)
+            .labelStyle(.titleAndIcon)
+            .tint(wake.talkMode ? .green : nil)
+            .help("켜면 호출어 없이 계속 들음. 에이전트 이름을 말하면 그 에이전트를 고르고, 이어서 말한 것은 그 에이전트에게 보냄. 끝난 작업은 요약해서 읽어 줌.")
+            if wake.talkMode {
+                Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+    }
+
+    private var status: String {
+        if case .failed(let msg) = wake.state { return msg }
+        if speaker.speaking { return "말하는 중" }
+        let who = wake.target.map { "→ \($0)" } ?? "에이전트 이름을 말해 주세요"
+        return (wake.state == .awake ? "듣는 중… " : "") + who
     }
 }

@@ -154,6 +154,7 @@ struct WorkspaceView: View {
             case .external(let id): ExternalSessionView(store: store, id: id)
             }
         }
+        .toolbar { ToolbarItem(placement: .principal) { TalkModeToggle() } }
         .sheet(isPresented: $showNew) { NewSessionSheet(store: store) }
         .sheet(isPresented: $showMigrate) { MigrationSheet(store: store) }
         .endSessionDialog(store: store, ending: $ending, migrating: $migrating)
