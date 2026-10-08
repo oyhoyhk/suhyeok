@@ -147,7 +147,7 @@ struct TerminalPanel: View {
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .background(Color(white: 0.08), in: RoundedRectangle(cornerRadius: 8))
-                .task(id: TaskKey(id: session.id, mode: mode)) {
+                .task(id: TaskKey(id: session.id, conversation: session.conversationId, mode: mode)) {
                     while !Task.isCancelled {
                         let (screen, from) = await Task.detached { [session, mode] in TerminalPanel.load(session, mode) }.value
                         let changed = screen != text
@@ -161,7 +161,7 @@ struct TerminalPanel: View {
         }
     }
 
-    private struct TaskKey: Hashable { let id: String; let mode: Mode }
+    private struct TaskKey: Hashable { let id: String; let conversation: String?; let mode: Mode }
 
     nonisolated static func load(_ s: AgentSession, _ mode: Mode) -> (String, String) {
         var note = ""

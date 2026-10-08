@@ -97,7 +97,8 @@ struct DialogueView: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.85, green: 0.68, blue: 0.25), lineWidth: 3))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .environment(\.colorScheme, .dark)
-            .task(id: sessionId) { await poll(s) }
+            // /clear starts a new conversation (and log file) in the same process, so key by both.
+            .task(id: "\(sessionId)|\(s.conversationId ?? "")") { await poll(s) }
             .onChange(of: dictation.text) { _, t in if dictation.listening || !t.isEmpty { draft = t } }
             .onAppear { focused = true }
         } else {

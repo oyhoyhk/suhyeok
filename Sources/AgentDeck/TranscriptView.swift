@@ -86,6 +86,7 @@ enum TranscriptRenderer {
             let type = line["type"] as? String
             if let s = msg["content"] as? String {
                 if type == "user", !s.hasPrefix("<") { out.append((.me, s)) }
+                else if type == "user", let c = slashCommand(s) { out.append((.me, c)) }
                 continue
             }
             for item in msg["content"] as? [[String: Any]] ?? [] {
@@ -104,6 +105,17 @@ enum TranscriptRenderer {
             }
         }
         return out
+    }
+
+    /// A slash command the user typed ("/clear", "/model haiku"), logged as <command-name>…<command-args>… tags.
+    private static func slashCommand(_ s: String) -> String? {
+        func tag(_ t: String) -> String? {
+            guard let a = s.range(of: "<\(t)>"), let b = s.range(of: "</\(t)>", range: a.upperBound..<s.endIndex) else { return nil }
+            return s[a.upperBound..<b.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let name = tag("command-name"), name.hasPrefix("/") else { return nil }
+        let args = tag("command-args") ?? ""
+        return args.isEmpty ? name : name + " " + args
     }
 
     private static func codex(_ lines: [[String: Any]]) -> [(ChatItem.Role, String)] {
