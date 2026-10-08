@@ -1,9 +1,12 @@
 import AVFoundation
+import Combine
 import Speech
 import SwiftUI
 
-/// "안녕 수혁아" voice commands. When turned on in Settings, on-device recognition listens all the time;
-/// after the wake phrase, what follows goes to the agent it names: "안녕 수혁아, 펠릭스 커밋해 줘".
+/// "수혁아" voice commands. When turned on in Settings, on-device recognition listens all the time;
+/// after the wake phrase, what follows goes to the agent it names: "수혁아, 펠릭스 커밋해 줘".
+/// Then a conversation stays open: for a minute after the last exchange no wake phrase is needed, and
+/// a command without a name goes to the agent spoken to last. "그만" or "고마워" closes it.
 @MainActor
 final class WakeWord: ObservableObject {
     static let shared = WakeWord()
@@ -23,16 +26,31 @@ final class WakeWord: ObservableObject {
     private var paused = false
     /// What follows the wake phrase so far.
     private var pending = ""
-    /// Command words from earlier rounds: recognition often ends a round at the pause after "안녕 수혁아",
-    /// so the command continues in the next round, which has no wake phrase in it.
+    /// Command words from earlier segments or rounds: recognition often breaks off at the pause after
+    /// "수혁아", and the rest of the command arrives without the wake phrase.
     private var carried = ""
-    private var continuing = false
+    /// The current recognizer segment as heard, and the command part of it.
+    private var segmentText = ""
+    private var segmentCommand = ""
+    /// Conversation mode: until this moment, speech counts as a command without the wake phrase.
+    private var conversationUntil = Date.distantPast
+    private var lastAgent: String?
+    private var speakingSink: AnyCancellable?
+    static let conversationLength: TimeInterval = 60
+    private var inConversation: Bool { Date() < conversationUntil }
 
     var enabled: Bool { UserDefaults.standard.bool(forKey: Self.enabledKey) }
 
     func attach(_ store: SessionStore) {
         NSLog("[wake] attach enabled=%d", enabled ? 1 : 0)
         self.store = store
+        // While 수혁 talks the recognizer hears it too: drop that round once it is done talking,
+        // and give the user the full conversation window to answer.
+        speakingSink = Speaker.shared.$speaking.removeDuplicates().dropFirst().sink { [weak self] speaking in
+            guard let self, !speaking, self.engine.isRunning, self.state != .awake else { return }
+            if self.inConversation { self.conversationUntil = Date().addingTimeInterval(Self.conversationLength) }
+            self.newRound()
+        }
         if enabled { start() }
     }
 
@@ -97,7 +115,8 @@ final class WakeWord: ObservableObject {
     /// their own after a while; they are restarted the same way.
     private func newRound(continuing: Bool = false) {
         guard let recognizer, engine.isRunning else { return }
-        self.continuing = continuing
+        segmentText = ""
+        segmentCommand = ""
         if !continuing { silence?.cancel() }
         task?.cancel()
         round += 1
@@ -123,32 +142,43 @@ final class WakeWord: ObservableObject {
     private func heard(_ text: String) {
         // Ignore our own voice reading a reply aloud.
         if Speaker.shared.speaking { return }
-        let said: String
-        if let c = Self.afterWake(text) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // After a pause the recognizer may start a new segment that drops the earlier words: keep them.
+        let newSegment = !segmentText.isEmpty && !t.hasPrefix(String(segmentText.prefix(2)))
+        if newSegment { carried = Self.join(carried, segmentCommand) }
+        if let c = Self.afterWake(t) {
             // The wake phrase said again starts the command over.
-            if continuing { carried = "" }
-            said = c
-        } else if state == .awake || continuing {
-            // After a pause the recognizer reports a new segment without the earlier words: keep what was said.
-            if !continuing { carried = pending; continuing = true }
-            said = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            NSLog("[wake] continued: %@", said)
-        } else { return }
-        let command = [carried, said].filter { !$0.isEmpty }.joined(separator: " ")
+            if newSegment || state != .awake { carried = "" }
+            segmentCommand = c
+        } else if state == .awake || inConversation {
+            // In a conversation, or once awake, everything said is the command.
+            segmentCommand = t
+        } else {
+            segmentText = ""
+            return
+        }
+        segmentText = t
+        let command = Self.join(carried, segmentCommand)
+        if state == .awake, inConversation, command.count < 2 { return }
         pending = command
         if state != .awake {
-            NSLog("[wake] wake phrase heard: %@", text)
+            NSLog("[wake] %@: %@", inConversation ? "conversation" : "wake phrase heard", t)
             state = .awake
-            NSSound(named: "Tink")?.play()
+            if !inConversation { NSSound(named: "Tink")?.play() }
         }
+        NSLog("[wake] so far: %@", command)
         // The command is done once the words stop changing for a moment; with nothing said yet, wait longer.
         silence?.cancel()
-        let wait: Duration = command.isEmpty ? .seconds(6) : .seconds(2)
+        let wait: Duration = command.isEmpty ? .seconds(6) : .seconds(3)
         silence = Task { [weak self] in
             try? await Task.sleep(for: wait)
             guard !Task.isCancelled, let self else { return }
             self.finish(command)
         }
+    }
+
+    nonisolated static func join(_ a: String, _ b: String) -> String {
+        [a, b].filter { !$0.isEmpty }.joined(separator: " ")
     }
 
     private func finish(_ command: String) {
@@ -159,12 +189,21 @@ final class WakeWord: ObservableObject {
         newRound()
         guard !command.isEmpty else { NSSound(named: "Bottle")?.play(); return }
         guard let store else { return }
+        if Self.isGoodbye(command) {
+            conversationUntil = .distantPast
+            Speaker.shared.say("네, 필요하면 수혁아 하고 불러 주세요.")
+            return
+        }
         let named = store.sessions.map { (store.agentName(for: $0), $0) }
-        guard let (name, text) = Self.route(command, names: named.map(\.0)),
-              let session = named.first(where: { $0.0 == name })?.1 else {
+        let routed = Self.route(command, names: named.map(\.0))
+            // No name in a conversation: the agent spoken to last.
+            ?? (inConversation ? lastAgent.map { ($0, command) } : nil)
+        guard let (name, text) = routed, let session = named.first(where: { $0.0 == name })?.1 else {
             Speaker.shared.say("누구에게 시킬지 못 들었어요. 에이전트 이름을 먼저 말해 주세요.")
             return
         }
+        lastAgent = name
+        conversationUntil = Date().addingTimeInterval(Self.conversationLength)
         guard !text.isEmpty else { Speaker.shared.say("\(name)에게 무엇을 시킬까요?"); return }
         Task.detached {
             let ok = SessionInput.send(session, text: text)
@@ -219,9 +258,15 @@ final class WakeWord: ObservableObject {
         return name + ((v - 0xAC00) % 28 == 0 ? "가" : "이")
     }
 
+    /// "그만", "고마워", "됐어" on their own close the conversation.
+    nonisolated static func isGoodbye(_ command: String) -> Bool {
+        let c = command.filter { $0.isLetter }
+        return ["그만", "그만해", "고마워", "고마워요", "됐어", "끝", "수고했어"].contains(c)
+    }
+
     // MARK: parsing (pure, so it can be checked without a microphone)
 
-    nonisolated private static let wake = try! NSRegularExpression(pattern: #"안녕\s*[,.!?]?\s*수\s*(혁|영|역|력)\s*(아|이|야)?[\s,.!?]*"#)
+    nonisolated private static let wake = try! NSRegularExpression(pattern: #"(안녕\s*[,.!?]?\s*수\s*(혁|영|역|력)\s*(아|이|야)?|수\s*혁\s*(아|야))[\s,.!?]*"#)
 
     /// The words after the last wake phrase, or nil if the phrase was not said.
     nonisolated static func afterWake(_ text: String) -> String? {
@@ -367,9 +412,9 @@ struct WakeWordSettings: View {
     @State private var on = WakeWord.shared.enabled
 
     var body: some View {
-        Toggle("\"안녕 수혁아\"로 음성 지시", isOn: $on)
+        Toggle("\"수혁아\"로 음성 지시", isOn: $on)
             .onChange(of: on) { _, v in wake.setEnabled(v) }
-        Text("예: \"안녕 수혁아, 펠릭스 커밋해 줘\" — 에이전트 이름을 먼저 말하면 그 에이전트에게 지시를 보냄. 소리 인식은 이 Mac 안에서만 처리하지만, 켜 두는 동안 마이크가 계속 켜져 있음.")
+        Text("예: \"수혁아, 펠릭스 커밋해 줘\" — 에이전트 이름을 먼저 말하면 그 에이전트에게 지시를 보냄. 그 뒤 1분 동안은 \"수혁아\" 없이 이어 말할 수 있고, 이름을 빼면 방금 그 에이전트에게 감. \"그만\"이라고 하면 끝. 소리 인식은 이 Mac 안에서만 처리하지만, 켜 두는 동안 마이크가 계속 켜져 있음.")
             .font(.caption).foregroundStyle(.secondary)
         if case .failed(let msg) = wake.state { Text(msg).font(.caption).foregroundStyle(.orange) }
     }
