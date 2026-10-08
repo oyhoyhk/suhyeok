@@ -175,6 +175,9 @@ struct AgentDeckApp: App {
             }
             exit(0)
         }
+        if let i = args.firstIndex(of: "--snapshot-talk"), i + 1 < args.count {
+            TalkModeCapsule.snapshot(path: args[i + 1])
+        }
         if let i = args.firstIndex(of: "--wake-test"), i + 1 < args.count {
             WakeWord.test(file: args[i + 1], names: Array(args.dropFirst(i + 2)))
         }

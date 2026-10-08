@@ -446,30 +446,129 @@ struct WakeWordSettings: View {
     }
 }
 
-/// Top-of-window switch for talk mode, with who is being talked to.
+/// Top-of-window switch for talk mode, wired to the live listener.
 struct TalkModeToggle: View {
+    @ObservedObject var store: SessionStore
     @ObservedObject private var wake = WakeWord.shared
     @ObservedObject private var speaker = Speaker.shared
 
     var body: some View {
-        HStack(spacing: 6) {
-            Toggle(isOn: Binding(get: { wake.talkMode }, set: { wake.setTalkMode($0) })) {
-                Label("대화 모드", systemImage: wake.talkMode ? "mic.fill" : "mic.slash")
+        let target = wake.target
+        let cwd = target.flatMap { name in store.sessions.first { store.agentName(for: $0) == name }?.cwd } ?? ""
+        TalkModeCapsule(on: wake.talkMode, phase: phase, target: target, targetColor: projectColor(cwd)) {
+            wake.setTalkMode(!wake.talkMode)
+        }
+    }
+
+    private var phase: TalkModeCapsule.Phase {
+        if case .failed = wake.state { return .failed }
+        if speaker.speaking { return .speaking }
+        return wake.state == .awake ? .hearing : .listening
+    }
+}
+
+/// One capsule that shows whether 수혁 is listening, hearing you or talking, and which agent your words
+/// go to, in the same colored name tag as the sidebar.
+struct TalkModeCapsule: View {
+    enum Phase { case listening, hearing, speaking, failed }
+    let on: Bool
+    let phase: Phase
+    let target: String?
+    let targetColor: Color
+    let toggle: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 8) {
+                icon.frame(width: 16)
+                Text(title).font(.callout.weight(.medium))
+                if on, phase != .failed { targetTag }
             }
-            .toggleStyle(.button)
-            .labelStyle(.titleAndIcon)
-            .tint(wake.talkMode ? .green : nil)
-            .help("켜면 호출어 없이 계속 들음. 에이전트 이름을 말하면 그 에이전트를 고르고, 이어서 말한 것은 그 에이전트에게 보냄. 끝난 작업은 요약해서 읽어 줌.")
-            if wake.talkMode {
-                Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            .padding(.leading, 10).padding(.trailing, on && phase != .failed ? 4 : 12).padding(.vertical, 4)
+            .background {
+                Capsule(style: .circular).fill(tint.opacity(on ? 0.16 : (hovering ? 0.12 : 0.06)))
+                    .overlay(Capsule(style: .circular).inset(by: 0.5).stroke(tint.opacity(on ? 0.55 : 0.2), lineWidth: 1))
+            }
+            .foregroundStyle(on ? tint : Color.secondary)
+            .contentShape(Capsule(style: .circular))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: on)
+        .help(on
+              ? "대화 모드 끄기 — 지금은 호출어 없이 듣는 중. 이름을 말하면 그 에이전트로 바뀜."
+              : "대화 모드 켜기 — 호출어 없이 계속 듣고, 이름을 말한 에이전트에게 이어지는 말을 보냄. 끝난 작업은 요약해서 읽어 줌.")
+    }
+
+    private var tint: Color {
+        guard on else { return .secondary }
+        return phase == .failed ? .orange : .green
+    }
+
+    @ViewBuilder private var icon: some View {
+        if !on {
+            Image(systemName: "mic.slash")
+        } else {
+            switch phase {
+            case .failed: Image(systemName: "exclamationmark.triangle.fill")
+            case .speaking: Image(systemName: "speaker.wave.2.fill").symbolEffect(.variableColor.iterative, isActive: true)
+            case .hearing: Image(systemName: "waveform").symbolEffect(.variableColor.iterative, isActive: true)
+            case .listening: Image(systemName: "mic.fill").symbolEffect(.pulse, isActive: true)
             }
         }
     }
 
-    private var status: String {
-        if case .failed(let msg) = wake.state { return msg }
-        if speaker.speaking { return "말하는 중" }
-        let who = wake.target.map { "→ \($0)" } ?? "에이전트 이름을 말해 주세요"
-        return (wake.state == .awake ? "듣는 중… " : "") + who
+    private var title: String {
+        guard on else { return "대화 모드" }
+        switch phase {
+        case .failed: return "음성 인식 안 됨"
+        case .speaking: return "말하는 중"
+        case .hearing: return "듣고 있어요"
+        case .listening: return "대화 모드"
+        }
+    }
+
+    /// Who the next words go to; a hint until an agent is picked.
+    @ViewBuilder private var targetTag: some View {
+        if let target {
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.right").font(.caption2.weight(.bold))
+                Text(target).font(.callout.bold())
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(targetColor.opacity(0.85), in: Capsule(style: .circular))
+        } else {
+            Text("이름을 불러 주세요")
+                .font(.caption).foregroundStyle(.secondary)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Color.secondary.opacity(0.12), in: Capsule(style: .circular))
+        }
+    }
+
+    /// `AgentDeck --snapshot-talk out.png`: every state of the capsule, light and dark, offscreen.
+    @MainActor static func snapshot(path: String) {
+        let states: [(Bool, Phase, String?)] = [(false, .listening, nil), (true, .listening, nil), (true, .listening, "펠릭스"),
+                                                 (true, .hearing, "토토"), (true, .speaking, "펠릭스"), (true, .failed, nil)]
+        let column = { (scheme: ColorScheme) in
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(states.indices, id: \.self) { i in
+                    TalkModeCapsule(on: states[i].0, phase: states[i].1, target: states[i].2, targetColor: .teal) {}
+                }
+            }
+            .padding(16).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme)
+        }
+        let host = NSHostingView(rootView: HStack(spacing: 0) { column(.light); column(.dark) })
+        host.frame = NSRect(x: 0, y: 0, width: 640, height: 300)
+        let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 640, height: 300),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+        }
+        exit(0)
     }
 }
