@@ -23,6 +23,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.requestAuthorization(options: [.alert, .sound]) { ok, _ in
+            NSLog("[notify] macOS notifications allowed: %d", ok ? 1 : 0)
             Task { @MainActor in Notifier.shared.authorized = ok }
         }
     }
