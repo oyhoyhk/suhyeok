@@ -203,6 +203,9 @@ final class MobileServer: ObservableObject {
         c.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in c.cancel() })
     }
 
+    /// Where android/publish.sh leaves the latest phone app (suhyeok.apk + version.json).
+    static let androidDir = FileManager.default.homeDirectoryForCurrentUser.path + "/Library/Application Support/Suhyeok/android"
+
     private func json(_ o: Any, _ status: Int = 200) -> (Int, String, Data, [String: String]) {
         (status, "application/json; charset=utf-8", (try? JSONSerialization.data(withJSONObject: o)) ?? Data(), [:])
     }
@@ -266,6 +269,13 @@ final class MobileServer: ObservableObject {
         let body = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
         func session(_ id: String?) -> AgentSession? { store.sessions.first { $0.id == id } }
         switch (r.method, r.path) {
+        // The phone app's own updates, put here by android/publish.sh: paired phones only.
+        case ("GET", "/app/android.json"):
+            guard let data = FileManager.default.contents(atPath: Self.androidDir + "/version.json") else { return json(["error": "none"], 404) }
+            return (200, "application/json; charset=utf-8", data, ["Cache-Control": "no-store"])
+        case ("GET", "/app/android.apk"):
+            guard let data = FileManager.default.contents(atPath: Self.androidDir + "/suhyeok.apk") else { return json(["error": "none"], 404) }
+            return (200, "application/vnd.android.package-archive", data, ["Cache-Control": "no-store"])
         case ("GET", "/api/state"):
             return json(state(store))
         case ("GET", "/api/chat"):

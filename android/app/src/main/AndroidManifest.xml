@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.CAMERA" />
+  <!-- Installs updates downloaded from the Mac (Android asks the owner to allow this once). -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
   <!-- The system speech recognizer (dictation) and text-to-speech engines, visible on Android 11+. -->
   <queries>
     <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent>
@@ -22,6 +24,14 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
+    <!-- Hands the downloaded update to the system installer. -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.files"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
+    </provider>
     <!-- Portrait QR scanner (zxing-android-embedded defaults to landscape). -->
     <activity
         android:name="com.journeyapps.barcodescanner.CaptureActivity"

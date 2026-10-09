@@ -26,6 +26,8 @@ data class Agent(
     val busy get() = status == "busy"
 }
 
+data class Release(val code: Int, val name: String, val sha256: String, val notes: String)
+
 data class ChatItem(val role: String, val text: String)   // me / agent / tool
 data class Chat(
     val items: List<ChatItem>,
@@ -81,6 +83,43 @@ class Api(val base: String, private val token: String?) {
     }
 
     fun portrait(character: String) = "$base/art/portraits/$character.jpg"
+
+    // App updates the Mac hands out (android/publish.sh → MobileServer /app/…).
+
+    /** The newest phone app on the Mac, or null when none was published there. */
+    suspend fun latestApp(): Release? = withContext(Dispatchers.IO) {
+        val c = open("GET", "/app/android.json")
+        val code = c.responseCode
+        if (code == 401) throw Unpaired()
+        if (code != 200) return@withContext null
+        val o = read(c, code)
+        Release(o.getInt("versionCode"), o.getString("versionName"), o.optString("sha256"), o.optString("notes"))
+    }
+
+    /** Downloads the published APK into [file], checking it against the published SHA-256. */
+    suspend fun downloadApp(release: Release, file: java.io.File, progress: (Float) -> Unit) = withContext(Dispatchers.IO) {
+        val c = open("GET", "/app/android.apk")
+        c.readTimeout = 60000
+        if (c.responseCode != 200) throw Exception("업데이트 파일을 받지 못함 (${c.responseCode})")
+        val total = c.contentLengthLong.coerceAtLeast(1)
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.parentFile?.mkdirs()
+        c.inputStream.use { input ->
+            file.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var done = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n); digest.update(buf, 0, n)
+                    done += n
+                    progress(done.toFloat() / total)
+                }
+            }
+        }
+        val sha = digest.digest().joinToString("") { "%02x".format(it) }
+        if (release.sha256.isNotEmpty() && sha != release.sha256) { file.delete(); throw Exception("받은 파일이 손상됨 — 다시 시도") }
+    }
 
     // Pairing: the QR's one-time secret makes a request the owner allows on the Mac; the token comes back once.
 

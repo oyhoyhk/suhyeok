@@ -29,6 +29,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -97,6 +100,7 @@ fun AgentsScreen(api: Api, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRe
         error?.let {
             Text(it, color = Color(0xFFFFB74D), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
         }
+        UpdateBanner(api)
         val list = agents
         if (list == null) {
             Text("불러오는 중…", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(18.dp))
@@ -160,5 +164,61 @@ fun ago(epochSeconds: Double): String {
         m < 60 -> "${m}분 전"
         m < 1440 -> "${m / 60}시간 전"
         else -> "${m / 1440}일 전"
+    }
+}
+
+/** A newer phone app published on the Mac (android/publish.sh): checked on open and every 30 minutes. */
+@Composable
+private fun UpdateBanner(api: Api) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var release by remember { mutableStateOf<Release?>(null) }
+    var progress by remember { mutableStateOf<Float?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    LaunchedEffect(api) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                runCatching { api.latestApp() }.getOrNull()
+                    ?.let { release = if (it.code > BuildConfig.VERSION_CODE) it else null }
+                delay(30 * 60 * 1000L)
+            }
+        }
+    }
+    val r = release ?: return
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)
+            .background(Gold.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+            .border(1.dp, Gold.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+            .clickable(enabled = progress == null) {
+                scope.launch {
+                    message = null
+                    try {
+                        val file = Updater.file(context, r.code)
+                        if (!file.exists()) {
+                            progress = 0f
+                            api.downloadApp(r, file) { progress = it }
+                        }
+                        progress = null
+                        if (!Updater.install(context, file)) message = "'이 출처 허용'을 켠 뒤 다시 누르기"
+                    } catch (e: Exception) {
+                        progress = null
+                        Updater.file(context, r.code).delete()
+                        message = e.message
+                    }
+                }
+            }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("새 버전 ${r.name}", color = Gold, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(message ?: progress?.let { "받는 중 ${(it * 100).toInt()}%" } ?: (r.notes.ifEmpty { "눌러서 업데이트" }),
+                color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(if (progress != null) "…" else "업데이트", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+            modifier = Modifier.background(Gold, RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp))
     }
 }
