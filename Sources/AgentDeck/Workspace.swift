@@ -97,26 +97,18 @@ struct WorkspaceView: View {
                     if store.hosted.isEmpty {
                         Text("＋ 버튼으로 새 세션 시작").font(.caption).foregroundStyle(.secondary)
                     }
-                    ForEach(store.hosted) { h in
-                        SessionRow(title: store.session(hosted: h.name).map { $0.name } ?? h.title,
-                                   subtitle: h.agent.rawValue + " · " + (h.cwd as NSString).lastPathComponent,
-                                   session: store.session(hosted: h.name), store: store)
-                            .tag(Pane.hosted(h.name))
-                            .contextMenu {
-                                if let s = store.session(hosted: h.name) {
-                                    AgentMenu(store: store, session: s, ending: $ending, migrating: $migrating)
-                                } else {
-                                    Button("세션 종료", role: .destructive) { store.kill(h.name) }
-                                }
-                            }
-                    }
+                    sortedRows(store.hosted.map { h in
+                        let s = store.session(hosted: h.name)
+                        return SidebarItem(id: h.name, tag: .hosted(h.name), title: s?.name ?? h.title,
+                                           subtitle: h.agent.rawValue + " · " + (h.cwd as NSString).lastPathComponent,
+                                           session: s, cwd: h.cwd, created: s?.startedAt ?? h.created, hosted: h)
+                    })
                 }
                 Section {
-                    ForEach(store.sessions.filter { $0.hostedName == nil }) { s in
-                        SessionRow(title: s.name, subtitle: s.agent.rawValue + " · " + s.project, session: s, store: store)
-                            .tag(Pane.external(s.id))
-                            .contextMenu { AgentMenu(store: store, session: s, ending: $ending, migrating: $migrating) }
-                    }
+                    sortedRows(store.sessions.filter { $0.hostedName == nil }.map { s in
+                        SidebarItem(id: s.id, tag: .external(s.id), title: s.name, subtitle: s.agent.rawValue + " · " + s.project,
+                                    session: s, cwd: s.cwd, created: s.startedAt, hosted: nil)
+                    })
                 } header: {
                     HStack {
                         Text("다른 터미널")
@@ -145,6 +137,7 @@ struct WorkspaceView: View {
                         .keyboardShortcut("n")
                 }
             }
+            .safeAreaInset(edge: .top) { SidebarSortBar() }
             .safeAreaInset(edge: .bottom) { updateBanner }
         } detail: {
             switch store.selection {
@@ -165,6 +158,31 @@ struct WorkspaceView: View {
             Text(updater.viaBrew
                  ? "brew로 새 버전을 설치하고 앱을 다시 엶. 실행 중인 에이전트 세션은 tmux에 있어 끊기지 않음."
                  : "brew로 설치한 앱이 아니라서 GitHub 릴리스 페이지를 엶.")
+        }
+    }
+
+    @AppStorage(SidebarSort.key) private var sortKey = SidebarSort.lastActivity.rawValue
+    @AppStorage(SidebarSort.ascendingKey) private var ascending = false
+
+    /// Agent rows in the order chosen at the top of the sidebar; with "폴더별", under a header per folder.
+    @ViewBuilder private func sortedRows(_ items: [SidebarItem]) -> some View {
+        let groups = store.ordered(items, by: SidebarSort(rawValue: sortKey) ?? .lastActivity, ascending: ascending)
+        ForEach(groups, id: \.folder) { group in
+            if let folder = group.folder {
+                Label(folder, systemImage: "folder").font(.caption.bold()).foregroundStyle(.secondary)
+                    .padding(.top, 4)
+            }
+            ForEach(group.items) { item in
+                SessionRow(title: item.title, subtitle: item.subtitle, session: item.session, store: store)
+                    .tag(item.tag)
+                    .contextMenu {
+                        if let s = item.session {
+                            AgentMenu(store: store, session: s, ending: $ending, migrating: $migrating)
+                        } else if let h = item.hosted {
+                            Button("세션 종료", role: .destructive) { store.kill(h.name) }
+                        }
+                    }
+            }
         }
     }
 
