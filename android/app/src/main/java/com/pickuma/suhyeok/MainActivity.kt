@@ -23,6 +23,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(this)
+        // Debug builds: `adb shell am start … --es base <url> --es token <t>` connects without the QR (UI checks).
+        if (BuildConfig.DEBUG) {
+            intent.getStringExtra("base")?.let { prefs.base = it }
+            intent.getStringExtra("token")?.let { prefs.token = it }
+        }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Gold, background = Navy, surface = Navy)) {
                 Surface(Modifier.fillMaxSize(), color = Navy) {

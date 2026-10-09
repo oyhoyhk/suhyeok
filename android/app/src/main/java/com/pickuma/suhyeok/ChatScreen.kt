@@ -15,6 +15,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -31,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -77,6 +82,7 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
     var draft by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf<String?>(null) }
     var readAloud by remember { mutableStateOf(prefs.readAloud) }
+    var showKeys by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
@@ -100,9 +106,12 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
                         c.items.lastOrNull { it.role == "agent" }?.let { tts.value?.speak(spoken(it.text), TextToSpeech.QUEUE_FLUSH, null, "reply") }
                     }
                     seenReplies = replies
-                    val grew = c.items.size != chat?.items?.size
+                    val grew = c.items.size != chat?.items?.size || c.live != chat?.live
+                    // Follow new content only while the end is on screen, so reading older messages is not interrupted.
+                    val info = list.layoutInfo
+                    val atEnd = info.totalItemsCount == 0 || (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 2
                     chat = c
-                    if (grew) list.animateScrollToItem((c.items.size + 2).coerceAtLeast(0))
+                    if (grew && atEnd) list.scrollToItem((list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
                 } catch (e: Unpaired) {
                     onUnpaired(); return@repeatOnLifecycle
                 } catch (e: Exception) {
@@ -134,12 +143,23 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
         // Header: back, portrait, name, read-aloud toggle.
         Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Color.White) }
-            AsyncImage(api.portrait(agent.character), agent.name, contentScale = ContentScale.Crop,
-                modifier = Modifier.size(34.dp).clip(CircleShape).background(Panel))
+            val status = chat?.status ?: agent.status
+            val activity = chat?.activity ?: agent.activity
+            Portrait(api, agent.character, agent.name, 36.dp, statusColor(status, activity))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(agent.name, color = Gold, fontWeight = FontWeight.Bold)
-                Text(agent.title, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, maxLines = 1)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    NameTag(agent.name, agent.cwd)
+                    Spacer(Modifier.width(6.dp))
+                    Text(agent.title, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                val action = chat?.action ?: agent.action
+                val line = when {
+                    status == "waiting" -> "선택 필요 — 아래에서 골라 주세요"
+                    status == "busy" -> "작업 중" + (if (action.isNotEmpty()) " · $action" else "")
+                    else -> activity
+                }
+                Text(line, color = statusColor(status, activity), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             IconButton(onClick = { readAloud = !readAloud; prefs.readAloud = readAloud; if (!readAloud) tts.value?.stop() }) {
                 Icon(if (readAloud) Icons.Filled.VolumeUp else Icons.Filled.VolumeOff, "답변 읽어 주기",
@@ -163,13 +183,14 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
 
         notice?.let { Text(it, color = Color(0xFFFFB74D), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 14.dp)) }
 
-        // Quick keys for menus and the terminal.
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
+        // Quick keys for menus and the terminal: shown with a menu on screen or on request.
+        if (showKeys || chat?.menu?.isNotEmpty() == true) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("Esc" to "Escape", "↑" to "Up", "↓" to "Down", "⏎" to "Enter", "1" to "1", "2" to "2", "3" to "3").forEach { (label, key) ->
                 OutlinedButton(onClick = { scope.launch { runCatching { api.key(agent.id, key) } } },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)) {
-                    Text(label, color = Color.White)
+                    modifier = Modifier.height(32.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
+                    Text(label, color = Color.White, fontSize = 13.sp)
                 }
             }
         }
@@ -187,6 +208,9 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
                     .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
                     .putExtra(RecognizerIntent.EXTRA_PROMPT, "${agent.name}에게 말하기"))
             }) { Icon(Icons.Filled.Mic, "말로 지시", tint = Gold) }
+            IconButton(onClick = { showKeys = !showKeys }) {
+                Icon(Icons.Filled.Keyboard, "빠른 키", tint = if (showKeys) Gold else Color.White.copy(alpha = 0.5f))
+            }
             IconButton(onClick = ::send, enabled = draft.isNotBlank()) {
                 Icon(Icons.AutoMirrored.Filled.Send, "보내기", tint = if (draft.isNotBlank()) Gold else Color.Gray)
             }
@@ -201,16 +225,20 @@ private fun Bubble(item: ChatItem) {
             Text(item.text, color = Color.Black, modifier = Modifier.widthIn(max = 320.dp)
                 .background(Gold, RoundedCornerShape(12.dp)).padding(10.dp))
         }
-        "agent" -> Text(plainMarkdown(item.text), color = Color.White, modifier = Modifier.fillMaxWidth()
-            .background(Panel, RoundedCornerShape(12.dp)).padding(10.dp))
+        "agent" -> Box(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(10.dp)) { Markdown(item.text) }
         else -> Text("🔧 " + item.text, color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp, maxLines = 2)
     }
 }
 
 @Composable
 private fun LiveBox(live: String) {
-    Text(live, color = Color(0xFFB9F6CA), fontFamily = FontFamily.Monospace, fontSize = 11.sp,
-        modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(8.dp))
+    // The whole turn can be pages long; the last lines say what is happening now.
+    val tail = live.lines().takeLast(14).joinToString("\n")
+    Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(8.dp)) {
+        Text("작업 중 화면 (마지막 14줄)", color = Color(0xFF66BB6A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(tail, color = Color(0xFFB9F6CA), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp,
+            modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState(), reverseScrolling = true))
+    }
 }
 
 @Composable

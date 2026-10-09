@@ -10,7 +10,8 @@ import AppKit
 @MainActor
 final class MobileServer: ObservableObject {
     static let shared = MobileServer()
-    static let port: UInt16 = 4380
+    /// SUHYEOK_MOBILE_PORT moves it, so a test server (`--serve-mobile`) can run next to the app's own.
+    static let port: UInt16 = UInt16(ProcessInfo.processInfo.environment["SUHYEOK_MOBILE_PORT"] ?? "") ?? 4380
 
     @Published private(set) var running = false
     /// One-time pairing secret shown only inside the QR code, for 60 seconds after "연결 시작".
@@ -360,7 +361,7 @@ final class MobileServer: ObservableObject {
         let agents: [[String: Any]] = store.placements().map { p in
             let s = p.session
             return [
-                "id": s.id, "name": store.agentName(for: s), "title": s.name, "project": s.project,
+                "id": s.id, "name": store.agentName(for: s), "title": s.name, "project": s.project, "cwd": s.cwd,
                 "agent": s.agent.rawValue, "status": s.status.rawValue, "activity": s.activity.label,
                 "character": store.character(for: s)?.id ?? "", "x": p.point.x, "y": p.point.y,
                 "tier": p.tier.map { World.key($0) } ?? NSNull(), "hunt": store.huntLine(for: s),
@@ -381,6 +382,8 @@ final class MobileServer: ObservableObject {
             let items = s.transcriptPath.map { TranscriptRenderer.items(path: $0, agent: s.agent) } ?? []
             var out: [String: Any] = [
                 "items": items.suffix(80).filter { $0.role != .result }.map { ["role": "\($0.role)", "text": $0.text] },
+                // The phone's header shows where the agent is now, fresher than the list it was opened from.
+                "status": s.status.rawValue, "activity": s.activity.label, "action": s.action?.detail ?? "",
             ]
             if let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 60) {
                 if let m = TerminalMenu.parse(t) {

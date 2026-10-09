@@ -18,6 +18,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -64,12 +71,29 @@ fun AgentsScreen(api: Api, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRe
         }
     }
 
+    var menu by remember { mutableStateOf(false) }
+    var confirm by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("수혁", color = Gold, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = onRepair) { Text("다시 연결", color = Color.White.copy(alpha = 0.6f)) }
+        Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 4.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("수혁", color = Gold, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text((if (error == null) "● " else "○ ") + api.base.removePrefix("https://").removePrefix("http://"),
+                    color = if (error == null) Color(0xFF66BB6A) else Color(0xFFFFB74D), fontSize = 12.sp)
+            }
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "메뉴", tint = Color.White.copy(alpha = 0.7f)) }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(text = { Text("다른 Mac에 연결 / 연결 끊기") }, onClick = { menu = false; confirm = true })
+                }
+            }
         }
+        if (confirm) AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("연결을 끊을까요?") },
+            text = { Text("이 폰의 연결 정보를 지움. 다시 쓰려면 Mac에서 QR을 찍고 허용해야 함.") },
+            confirmButton = { TextButton(onClick = { confirm = false; onRepair() }) { Text("끊기", color = Color(0xFFFF6B6B)) } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("취소") } },
+        )
         error?.let {
             Text(it, color = Color(0xFFFFB74D), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
         }
@@ -99,29 +123,20 @@ fun AgentsScreen(api: Api, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRe
 
 @Composable
 private fun AgentRow(api: Api, a: Agent, onClick: () -> Unit) {
-    val ring = when {
-        a.asking -> Color(0xFFFF6B6B)
-        a.busy -> Color(0xFF66BB6A)
-        a.activity == "대기 중" -> Color(0xFFFFA726)
-        else -> Color.Gray
-    }
+    val ring = statusColor(a.status, a.activity)
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
-            AsyncImage(
-                model = api.portrait(a.character), contentDescription = a.name, contentScale = ContentScale.Crop,
-                modifier = Modifier.size(46.dp).clip(CircleShape).background(Panel).border(2.dp, ring, CircleShape),
-            )
+            Portrait(api, a.character, a.name, 46.dp, ring)
             if (a.asking) Text("!", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp,
                 modifier = Modifier.align(Alignment.TopEnd).background(Color(0xFFE53935), CircleShape).padding(horizontal = 6.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(a.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                    modifier = Modifier.background(Color(0xFF3D5AFE).copy(alpha = 0.8f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 1.dp))
+                NameTag(a.name, a.cwd)
                 Spacer(Modifier.width(6.dp))
                 Text(a.title, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }

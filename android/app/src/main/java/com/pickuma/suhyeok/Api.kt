@@ -13,6 +13,7 @@ data class Agent(
     val name: String,
     val title: String,
     val project: String,
+    val cwd: String,
     val status: String,      // busy / waiting / shell / idle / unknown
     val activity: String,    // 작업 중 / 대기 중 / 휴식 중
     val character: String,
@@ -26,7 +27,14 @@ data class Agent(
 }
 
 data class ChatItem(val role: String, val text: String)   // me / agent / tool
-data class Chat(val items: List<ChatItem>, val live: String?, val menu: List<String>)
+data class Chat(
+    val items: List<ChatItem>,
+    val live: String?,
+    val menu: List<String>,
+    val status: String,      // as in Agent
+    val activity: String,
+    val action: String,
+)
 
 /** Thrown when the Mac no longer accepts this phone's token: pair again. */
 class Unpaired : Exception("pair")
@@ -44,7 +52,7 @@ class Api(val base: String, private val token: String?) {
             val a = arr.getJSONObject(i)
             Agent(
                 id = a.getString("id"), name = a.getString("name"), title = a.optString("title"),
-                project = a.optString("project"), status = a.optString("status"), activity = a.optString("activity"),
+                project = a.optString("project"), cwd = a.optString("cwd"), status = a.optString("status"), activity = a.optString("activity"),
                 character = a.optString("character"), action = a.optString("action"), last = a.optDouble("last", 0.0),
                 canSend = a.optBoolean("canSend", false),
             )
@@ -59,6 +67,7 @@ class Api(val base: String, private val token: String?) {
             items = (0 until items.length()).map { items.getJSONObject(it).let { j -> ChatItem(j.getString("role"), j.getString("text")) } },
             live = o.optString("live").ifEmpty { null },
             menu = (0 until menu.length()).map { menu.getJSONObject(it).getString("label") },
+            status = o.optString("status"), activity = o.optString("activity"), action = o.optString("action"),
         )
     }
 
