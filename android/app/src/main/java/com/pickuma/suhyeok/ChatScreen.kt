@@ -27,7 +27,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -108,12 +108,12 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
                         c.items.lastOrNull { it.role == "agent" }?.let { tts.value?.speak(spoken(it.text), TextToSpeech.QUEUE_FLUSH, null, "reply") }
                     }
                     seenReplies = replies
-                    val grew = c.items.size != chat?.items?.size || c.live != chat?.live
-                    // Follow new content only while the end is on screen, so reading older messages is not interrupted.
-                    val info = list.layoutInfo
-                    val atEnd = info.totalItemsCount == 0 || (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 2
+                    val grew = c.items.size != chat?.items?.size || c.live != chat?.live || c.menu != chat?.menu
+                    // The list is laid out from the bottom (item 0 = newest), so it opens on the latest message.
+                    // Follow new content only while the newest is on screen, so reading older messages is not interrupted.
+                    val atEnd = list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset < 200
                     chat = c
-                    if (grew && atEnd) list.scrollToItem((list.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
+                    if (grew && atEnd) list.scrollToItem(0)
                 } catch (e: Unpaired) {
                     onUnpaired(); return@repeatOnLifecycle
                 } catch (e: Exception) {
@@ -170,16 +170,19 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
         }
 
         val c = chat
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = list,
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Bottom-up: the first item drawn is the newest one at the bottom, so the conversation opens at its end
+        // and a long last reply shows its ending, as in a messenger. Items are therefore listed newest first.
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), state = list, reverseLayout = true,
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom)) {
             if (c == null) item { Text("불러오는 중…", color = Color.White.copy(alpha = 0.6f)) }
             else {
-                if (c.items.isEmpty()) item { Text("아직 주고받은 대화가 없음", color = Color.White.copy(alpha = 0.6f)) }
-                itemsIndexed(c.items) { _, it -> Bubble(it) }
-                c.live?.let { live -> item { LiveBox(live) } }
-                if (c.menu.isNotEmpty()) item {
+                if (c.menu.isNotEmpty()) item(key = "menu") {
                     MenuCard(c.menu) { i -> scope.launch { if (runCatching { api.choose(agent.id, i) }.getOrDefault(false)) notice = null else notice = "선택하지 못함" } }
                 }
+                c.live?.let { live -> item(key = "live") { LiveBox(live) } }
+                val newestFirst = c.items.withIndex().reversed()
+                items(newestFirst, key = { "m${it.index}" }) { Bubble(it.value) }
+                if (c.items.isEmpty()) item { Text("아직 주고받은 대화가 없음", color = Color.White.copy(alpha = 0.6f)) }
             }
         }
 
