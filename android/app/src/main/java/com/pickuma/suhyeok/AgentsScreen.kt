@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
@@ -53,7 +56,7 @@ import kotlinx.coroutines.delay
 
 /** Agents on the Mac, the ones that need you first: stopped on a question, then finished and waiting. */
 @Composable
-fun AgentsScreen(api: Api, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRepair: () -> Unit) {
+fun AgentsScreen(api: Api, prefs: Prefs, openRequest: String?, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRepair: () -> Unit) {
     var agents by remember { mutableStateOf<List<Agent>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -76,6 +79,18 @@ fun AgentsScreen(api: Api, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRe
 
     var menu by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
+    // Kept here, not in the menu: the menu closes before Android answers the permission request.
+    val context = LocalContext.current
+    var notifyOn by remember { mutableStateOf(prefs.notify) }
+    val enable = { prefs.notify = true; notifyOn = true; NotifyService.start(context) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { if (it) enable() }
+    val setNotify: (Boolean) -> Unit = { want ->
+        when {
+            !want -> { prefs.notify = false; notifyOn = false; NotifyService.stop(context) }
+            android.os.Build.VERSION.SDK_INT >= 33 -> permission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            else -> enable()
+        }
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 4.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -86,6 +101,7 @@ fun AgentsScreen(api: Api, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRe
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "메뉴", tint = Color.White.copy(alpha = 0.7f)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    NotifyMenuItems(prefs, notifyOn, setNotify) { menu = false }
                     DropdownMenuItem(text = { Text("다른 Mac에 연결 / 연결 끊기") }, onClick = { menu = false; confirm = true })
                 }
             }
@@ -101,6 +117,10 @@ fun AgentsScreen(api: Api, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRe
             Text(it, color = Color(0xFFFFB74D), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
         }
         UpdateBanner(api)
+        // Opened from a notification: go straight to that agent once it is in the list.
+        LaunchedEffect(openRequest, agents) {
+            openRequest?.let { id -> agents?.firstOrNull { it.id == id }?.let(onOpen) }
+        }
         val list = agents
         if (list == null) {
             Text("불러오는 중…", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(18.dp))
@@ -112,7 +132,12 @@ fun AgentsScreen(api: Api, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRe
             "다음 지시 대기" to list.filter { !it.asking && !it.busy && it.activity == "대기 중" },
             "휴식 중" to list.filter { !it.asking && !it.busy && it.activity != "대기 중" },
         ).filter { it.second.isNotEmpty() }
-        LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // New entries above (an agent that now needs a choice) would otherwise stay above the screen, because the
+        // list keeps the item you were looking at in place. Near the top, show them.
+        val listState = rememberLazyListState()
+        val head = groups.firstOrNull()?.let { (t, m) -> t + m.joinToString { it.id } }
+        LaunchedEffect(head) { if (listState.firstVisibleItemIndex <= 3) listState.scrollToItem(0) }
+        LazyColumn(Modifier.fillMaxSize(), state = listState, verticalArrangement = Arrangement.spacedBy(2.dp)) {
             groups.forEach { (title, members) ->
                 item(key = "h-$title") {
                     Text("$title ${members.size}", color = if (title == "선택 필요") Color(0xFFFF6B6B) else Gold,
@@ -221,4 +246,16 @@ private fun UpdateBanner(api: Api) {
         Text(if (progress != null) "…" else "업데이트", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp,
             modifier = Modifier.background(Gold, RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp))
     }
+}
+
+/** ⋮ menu entries for background notifications: on/off, and which kinds. */
+@Composable
+private fun NotifyMenuItems(prefs: Prefs, on: Boolean, setOn: (Boolean) -> Unit, close: () -> Unit) {
+    var asking by remember { mutableStateOf(prefs.notifyAsking) }
+    var done by remember { mutableStateOf(prefs.notifyDone) }
+    DropdownMenuItem(text = { Text(if (on) "백그라운드 알림 끄기" else "백그라운드 알림 켜기") }, onClick = { close(); setOn(!on) })
+    DropdownMenuItem(text = { Text((if (asking) "✓ " else "   ") + "알림: 선택 필요") },
+        onClick = { asking = !asking; prefs.notifyAsking = asking })
+    DropdownMenuItem(text = { Text((if (done) "✓ " else "   ") + "알림: 작업 완료") },
+        onClick = { done = !done; prefs.notifyDone = done })
 }

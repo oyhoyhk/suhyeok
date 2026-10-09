@@ -26,6 +26,9 @@ data class Agent(
     val busy get() = status == "busy"
 }
 
+data class AgentEvent(val id: String, val name: String, val title: String, val kind: String, val text: String)  // kind: asking / done
+data class Events(val boot: String, val seq: Int, val events: List<AgentEvent>)
+
 data class Release(val code: Int, val name: String, val sha256: String, val notes: String)
 
 data class ChatItem(val role: String, val text: String)   // me / agent / tool
@@ -71,6 +74,18 @@ class Api(val base: String, private val token: String?) {
             menu = (0 until menu.length()).map { menu.getJSONObject(it).getString("label") },
             status = o.optString("status"), activity = o.optString("activity"), action = o.optString("action"),
         )
+    }
+
+    /**
+     * State changes the Mac saw since [after] in its run [boot] (MobileServer /api/events). With an unknown boot
+     * (first call, or the Mac restarted) no events come back, only the boot and sequence number to continue from.
+     */
+    suspend fun events(boot: String?, after: Int): Events = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/events?after=$after&boot=" + java.net.URLEncoder.encode(boot ?: "", "UTF-8"))
+        val arr = o.optJSONArray("events") ?: JSONArray()
+        Events(o.getString("boot"), o.getInt("seq"), (0 until arr.length()).map { i ->
+            arr.getJSONObject(i).let { e -> AgentEvent(e.getString("id"), e.getString("name"), e.optString("title"), e.getString("kind"), e.optString("text")) }
+        })
     }
 
     suspend fun send(id: String, text: String): Boolean = post("/api/send", JSONObject().put("id", id).put("text", text))

@@ -21,6 +21,17 @@ class Prefs(context: Context) {
         get() = prefs.getString("token", null)
         set(v) = prefs.edit().putString("token", v).apply()
 
+    /** Background notifications (NotifyService) and which kinds. */
+    var notify: Boolean
+        get() = prefs.getBoolean("notify", false)
+        set(v) = prefs.edit().putBoolean("notify", v).apply()
+    var notifyAsking: Boolean
+        get() = prefs.getBoolean("notifyAsking", true)
+        set(v) = prefs.edit().putBoolean("notifyAsking", v).apply()
+    var notifyDone: Boolean
+        get() = prefs.getBoolean("notifyDone", true)
+        set(v) = prefs.edit().putBoolean("notifyDone", v).apply()
+
     var readAloud: Boolean
         get() = prefs.getBoolean("readAloud", false)
         set(v) = prefs.edit().putBoolean("readAloud", v).apply()

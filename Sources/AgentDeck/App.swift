@@ -627,6 +627,7 @@ final class SessionStore: ObservableObject {
                 self.names = AgentNames.assign(all)
                 self.lastRefresh = Date()
                 WakeWord.shared.observe(all)
+                Notifier.shared.observe(all, store: self)
                 self.loading = false
             }
         }
@@ -644,7 +645,7 @@ struct MenuBarLabel: View {
             if working > 0 { Text("\(working)") }
         }
         // The menu bar label lives as long as the app, so the wake listener hangs off it.
-        .onAppear { WakeWord.shared.attach(store) }
+        .onAppear { WakeWord.shared.attach(store); Notifier.shared.attach(store) }
     }
 
     /// Monochrome template derived from the app icon (art/out/menubar.png); macOS tints it for light/dark bars.

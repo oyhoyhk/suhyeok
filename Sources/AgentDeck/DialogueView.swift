@@ -37,6 +37,8 @@ struct SettingsView: View {
             Divider()
             WakeWordSettings()
             Divider()
+            NotificationSettings()
+            Divider()
             MobileSettings()
             Divider()
             Picker("세션 여는 방식", selection: $openMode) {

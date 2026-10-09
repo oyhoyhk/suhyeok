@@ -276,6 +276,15 @@ final class MobileServer: ObservableObject {
         case ("GET", "/app/android.apk"):
             guard let data = FileManager.default.contents(atPath: Self.androidDir + "/suhyeok.apk") else { return json(["error": "none"], 404) }
             return (200, "application/vnd.android.package-archive", data, ["Cache-Control": "no-store"])
+        // State changes since `after` (see Notifier.events); a different boot means the Mac restarted.
+        case ("GET", "/api/events"):
+            let n = Notifier.shared
+            let after = Int(r.query["after"] ?? "") ?? Int.max
+            let fresh = r.query["boot"] == n.boot ? n.events.filter { $0.seq > after } : []
+            return json(["boot": n.boot, "seq": n.seq, "events": fresh.map {
+                ["seq": $0.seq, "id": $0.session, "name": $0.name, "title": $0.title, "kind": $0.kind, "text": $0.text,
+                 "at": $0.at.timeIntervalSince1970]
+            }])
         case ("GET", "/api/state"):
             return json(state(store))
         case ("GET", "/api/chat"):

@@ -20,9 +20,19 @@ val Panel = Color(0xFF1C2550)
 val Gold = Color(0xFFD9AD40)
 
 class MainActivity : ComponentActivity() {
+    /** An agent to open, from a tapped notification. */
+    private val openRequest = mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(NotifyService.EXTRA_AGENT)?.let { openRequest.value = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(this)
+        openRequest.value = intent.getStringExtra(NotifyService.EXTRA_AGENT)
+        if (prefs.notify && prefs.token != null) NotifyService.start(this)
         // Debug builds: `adb shell am start … --es base <url> --es token <t>` connects without the QR (UI checks).
         if (BuildConfig.DEBUG) {
             intent.getStringExtra("base")?.let { prefs.base = it }
@@ -41,7 +51,8 @@ class MainActivity : ComponentActivity() {
                         api == null || token == null -> PairScreen(prefs.base, prefs.token) { b, t ->
                             prefs.base = b; prefs.token = t; base = b; token = t
                         }
-                        open == null -> AgentsScreen(api, onOpen = { open = it }, onUnpaired = unpair, onRepair = unpair)
+                        open == null -> AgentsScreen(api, prefs, openRequest.value,
+                            onOpen = { open = it; openRequest.value = null }, onUnpaired = unpair, onRepair = unpair)
                         else -> {
                             BackHandler { open = null }
                             ChatScreen(api, open!!, prefs, onBack = { open = null }, onUnpaired = unpair)
