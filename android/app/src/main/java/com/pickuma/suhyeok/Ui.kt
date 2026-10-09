@@ -21,6 +21,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
@@ -134,11 +138,25 @@ private fun Table(rows: List<String>, color: Color) {
     }
 }
 
-/** **bold** and `code` inside a line. */
-private fun inline(s: String): AnnotatedString = buildAnnotatedString {
+/** `[label](https://…)` or a bare http(s) address at the start of `s`; trailing sentence punctuation is not part of it. */
+private val linkPattern = Regex("""^\[([^\]\n]+)]\((https?://[^\s)]+)\)|^https?://[^\s<>"'`)\]]+""")
+
+/** **bold**, `code` and links inside a line; tapping a link opens it in the browser. */
+fun inline(s: String, linkColor: Color = Gold): AnnotatedString = buildAnnotatedString {
+    val linkStyle = TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
     var i = 0
     while (i < s.length) {
+        val link = if (s[i] == '[' || s[i] == 'h') linkPattern.find(s.substring(i)) else null
         when {
+            link != null -> {
+                var url = link.groupValues[2].ifEmpty { link.value }
+                val label = link.groupValues[1].ifEmpty { null }
+                var tail = ""
+                if (label == null) url.takeLastWhile { it in ".,;:!?" }.let { if (it.isNotEmpty()) { tail = it; url = url.dropLast(it.length) } }
+                withLink(LinkAnnotation.Url(url, linkStyle)) { append(label ?: url) }
+                append(tail)
+                i += link.value.length
+            }
             s.startsWith("**", i) && s.indexOf("**", i + 2) > 0 -> {
                 val end = s.indexOf("**", i + 2)
                 withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(s.substring(i + 2, end)) }

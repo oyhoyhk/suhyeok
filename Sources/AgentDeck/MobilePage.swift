@@ -38,6 +38,7 @@ enum MobilePage {
   .m { max-width:86%; padding:8px 10px; border-radius:10px; white-space:pre-wrap; word-break:break-word; line-height:1.45; }
   .m.me { align-self:flex-end; background:var(--me); }
   .m.agent { align-self:flex-start; background:#ffffff14; }
+  .m a { color:var(--gold); text-decoration:underline; word-break:break-all; }
   .m.tool { align-self:flex-start; background:none; color:var(--muted); font-size:12px; padding:0 2px; }
   .live { font:11.5px ui-monospace, Menlo, monospace; background:#000a; border:1px solid #4cc38a66; border-radius:8px;
           padding:8px; white-space:pre; overflow-x:auto; color:#ddd; max-width:100%; min-width:0; flex-shrink:0; }
@@ -276,7 +277,7 @@ async function loadChat() {
       lastLog = key;
       const log = $("log"), stick = log.scrollTop + log.clientHeight > log.scrollHeight - 40;
       log.innerHTML = "";
-      for (const it of c.items || []) { const d = document.createElement("div"); d.className = "m " + it.role; d.textContent = it.role === "tool" ? "🔨 " + it.text : it.text; log.appendChild(d); }
+      for (const it of c.items || []) { const d = document.createElement("div"); d.className = "m " + it.role; if (it.role === "tool") d.textContent = "🔨 " + it.text; else d.innerHTML = linkify(it.text); log.appendChild(d); }
       if (c.live) { const d = document.createElement("div"); d.className = "live"; d.textContent = c.live; log.appendChild(d); }
       if (c.menu) {
         const m = document.createElement("div"); m.className = "menu";
@@ -291,6 +292,19 @@ async function loadChat() {
   chatTimer = setTimeout(loadChat, 1200);
 }
 const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// Message text as HTML with links that open: [label](https://…) and bare http(s) addresses. Everything else is
+// escaped, and only http(s) targets become links, so a reply cannot inject markup or javascript: URLs.
+function linkify(text) {
+  const re = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<>"'`)\]]+/g;
+  let out = "", last = 0, m;
+  while ((m = re.exec(text))) {
+    let url = m[2] || m[0], label = m[1] || url, tail = "";
+    if (!m[2]) { const t = url.match(/[.,;:!?]+$/); if (t) { tail = t[0]; url = url.slice(0, -tail.length); label = url; } }
+    out += esc(text.slice(last, m.index)) + '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(label) + "</a>" + esc(tail);
+    last = m.index + m[0].length;
+  }
+  return out + esc(text.slice(last));
+}
 function toast(s) { const t = $("toast"); t.textContent = s; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 2200); }
 async function send() {
   const text = $("msg").value.trim(); if (!text || !selected) return;

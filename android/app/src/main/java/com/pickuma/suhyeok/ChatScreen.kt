@@ -222,7 +222,7 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
 private fun Bubble(item: ChatItem) {
     when (item.role) {
         "me" -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            Text(item.text, color = Color.Black, modifier = Modifier.widthIn(max = 320.dp)
+            Text(inline(item.text, linkColor = Color(0xFF0D2A8A)), color = Color.Black, modifier = Modifier.widthIn(max = 320.dp)
                 .background(Gold, RoundedCornerShape(12.dp)).padding(10.dp))
         }
         "agent" -> Box(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(10.dp)) { Markdown(item.text) }
