@@ -3,6 +3,7 @@ package com.pickuma.suhyeok
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,6 +80,8 @@ fun AgentsScreen(api: Api, prefs: Prefs, openRequest: String?, onOpen: (Agent) -
 
     var menu by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
+    var menuFor by remember { mutableStateOf<Agent?>(null) }
+    var result by remember { mutableStateOf<String?>(null) }
     // Kept here, not in the menu: the menu closes before Android answers the permission request.
     val context = LocalContext.current
     var notifyOn by remember { mutableStateOf(prefs.notify) }
@@ -116,6 +119,11 @@ fun AgentsScreen(api: Api, prefs: Prefs, openRequest: String?, onOpen: (Agent) -
         error?.let {
             Text(it, color = Color(0xFFFFB74D), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
         }
+        result?.let {
+            Text(it, color = Color(0xFF66BB6A), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
+            LaunchedEffect(it) { delay(4000); result = null }
+        }
+        menuFor?.let { a -> SessionMenu(api, a, onOpen = { onOpen(a) }, onDismiss = { menuFor = null }, onResult = { result = it }) }
         UpdateBanner(api)
         // Opened from a notification: go straight to that agent once it is in the list.
         LaunchedEffect(openRequest, agents) {
@@ -144,17 +152,22 @@ fun AgentsScreen(api: Api, prefs: Prefs, openRequest: String?, onOpen: (Agent) -
                         fontWeight = FontWeight.Bold, fontSize = 13.sp,
                         modifier = Modifier.padding(start = 18.dp, top = 14.dp, bottom = 4.dp))
                 }
-                items(members.sortedByDescending { it.last }, key = { it.id }) { a -> AgentRow(api, a) { onOpen(a) } }
+                items(members.sortedByDescending { it.last }, key = { it.id }) { a -> AgentRow(api, a, { menuFor = a }) { onOpen(a) } }
             }
         }
     }
 }
 
 @Composable
-private fun AgentRow(api: Api, a: Agent, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun AgentRow(api: Api, a: Agent, onLongClick: () -> Unit, onClick: () -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     val ring = statusColor(a.status, a.activity)
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 8.dp),
+        // Long press: the same options as right-clicking the agent on the Mac.
+        Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = {
+            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); onLongClick()
+        }).padding(horizontal = 18.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {

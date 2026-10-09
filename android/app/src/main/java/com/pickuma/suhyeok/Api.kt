@@ -20,6 +20,9 @@ data class Agent(
     val action: String,
     val last: Double,
     val canSend: Boolean,
+    val kind: String,        // Claude / Codex
+    val hosted: Boolean,     // runs on 수혁's own terminal server
+    val canClone: Boolean,   // has a conversation to copy or resume
 ) {
     /** Stopped on a permission or question menu: blocked until you answer. */
     val asking get() = status == "waiting"
@@ -59,7 +62,8 @@ class Api(val base: String, private val token: String?) {
                 id = a.getString("id"), name = a.getString("name"), title = a.optString("title"),
                 project = a.optString("project"), cwd = a.optString("cwd"), status = a.optString("status"), activity = a.optString("activity"),
                 character = a.optString("character"), action = a.optString("action"), last = a.optDouble("last", 0.0),
-                canSend = a.optBoolean("canSend", false),
+                canSend = a.optBoolean("canSend", false), kind = a.optString("agent"),
+                hosted = a.optBoolean("hosted", false), canClone = a.optBoolean("canClone", false),
             )
         }
     }
@@ -86,6 +90,14 @@ class Api(val base: String, private val token: String?) {
         Events(o.getString("boot"), o.getInt("seq"), (0 until arr.length()).map { i ->
             arr.getJSONObject(i).let { e -> AgentEvent(e.getString("id"), e.getString("name"), e.optString("title"), e.getString("kind"), e.optString("text")) }
         })
+    }
+
+    /** The Mac's right-click menu: clone / rename / clear / migrate / end. Returns whether it worked and the Mac's note. */
+    suspend fun action(id: String, action: String, text: String? = null): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("id", id).put("action", action)
+        if (text != null) body.put("text", text)
+        val o = request("POST", "/api/action", body)
+        o.optBoolean("ok", false) to o.optString("message")
     }
 
     suspend fun send(id: String, text: String): Boolean = post("/api/send", JSONObject().put("id", id).put("text", text))

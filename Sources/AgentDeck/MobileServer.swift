@@ -294,6 +294,32 @@ final class MobileServer: ObservableObject {
             guard let s = session(body["id"] as? String), let text = body["text"] as? String, !text.isEmpty else { return json(["ok": false], 400) }
             let ok = await Task.detached { SessionInput.send(s, text: text) }.value
             return json(["ok": ok])
+        // The Mac's right-click menu, from the phone's long press (AgentMenu in Workspace.swift).
+        case ("POST", "/api/action"):
+            guard let s = session(body["id"] as? String), let action = body["action"] as? String else { return json(["ok": false], 400) }
+            switch action {
+            case "clone":
+                guard s.conversationId != nil else { return json(["ok": false, "message": "이어 열 대화가 없음"]) }
+                store.clone(s)
+                return json(["ok": true, "message": "클론을 만드는 중"])
+            case "rename":
+                store.setSummary(body["text"] as? String ?? "", for: s)
+                store.refresh()
+                return json(["ok": true])
+            case "clear":
+                guard s.agent == .claude else { return json(["ok": false, "message": "Claude 세션만 가능"]) }
+                let ok = await Task.detached { SessionInput.send(s, text: "/clear") }.value
+                return json(["ok": ok])
+            case "migrate":
+                guard s.hostedName == nil, s.conversationId != nil else { return json(["ok": false, "message": "옮길 수 없는 세션"]) }
+                let r = await store.migrate([s], closeOriginal: true).first
+                return json(["ok": r?.ok ?? false, "message": r?.message ?? ""])
+            case "end":
+                let note = await store.end(s)
+                return json(["ok": true, "message": note ?? "종료함"])
+            default:
+                return json(["ok": false], 400)
+            }
         case ("POST", "/api/choose"):
             guard let s = session(body["id"] as? String), let i = body["index"] as? Int else { return json(["ok": false], 400) }
             let ok = await Task.detached { () -> Bool in
@@ -386,6 +412,8 @@ final class MobileServer: ObservableObject {
                 "tier": p.tier.map { World.key($0) } ?? NSNull(), "hunt": store.huntLine(for: s),
                 "action": s.action?.detail ?? "", "last": store.lastActivity(for: s)?.timeIntervalSince1970 ?? 0,
                 "canSend": SessionInput.canSend(s),
+                // What the long-press menu on the phone may offer (same rules as the Mac's context menu).
+                "hosted": s.hostedName != nil, "canClone": s.conversationId != nil,
             ]
         }
         let bosses: [[String: Any]] = Hunt.Tier.allCases.map { t in
