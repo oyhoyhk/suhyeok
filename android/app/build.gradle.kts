@@ -41,4 +41,6 @@ dependencies {
   implementation("io.coil-kt:coil-compose:2.7.0")
   // The pairing token is kept encrypted on the phone.
   implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+  testImplementation("junit:junit:4.13.2")
 }

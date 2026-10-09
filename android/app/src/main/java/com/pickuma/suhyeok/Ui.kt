@@ -164,10 +164,26 @@ fun inline(s: String, linkColor: Color = Gold): AnnotatedString = buildAnnotated
             }
             s[i] == '`' && s.indexOf('`', i + 1) > 0 -> {
                 val end = s.indexOf('`', i + 1)
-                withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = Color(0xFFFFE082))) { append(s.substring(i + 1, end)) }
+                val code = s.substring(i + 1, end)
+                // Replies often quote addresses as code (`https://…`): still a link.
+                if (Regex("""https?://\S+""").matches(code)) withLink(LinkAnnotation.Url(code, linkStyle)) { append(code) }
+                else withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = Color(0xFFFFE082))) { append(code) }
                 i = end + 1
             }
             else -> { append(s[i]); i++ }
         }
     }
+}
+
+/** Terminal text as is, with its http(s) addresses tappable (no Markdown: the screen is shown verbatim). */
+fun linksOnly(s: String, linkColor: Color): AnnotatedString = buildAnnotatedString {
+    val style = TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
+    var last = 0
+    for (m in Regex("""https?://[^\s<>"'`)\]]+""").findAll(s)) {
+        val url = m.value.trimEnd('.', ',', ';', ':', '!', '?')
+        append(s.substring(last, m.range.first))
+        withLink(LinkAnnotation.Url(url, style)) { append(url) }
+        last = m.range.first + url.length
+    }
+    append(s.substring(last))
 }
