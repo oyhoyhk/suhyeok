@@ -412,6 +412,24 @@ final class MobileTunnel: ObservableObject {
         error = nil
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
+        // A named tunnel, when set up, gives the phone an address that survives restarts.
+        if let named = Self.namedTunnel {
+            p.arguments = ["tunnel", "--config", named.config, "--no-autoupdate", "run"]
+            let log = Pipe()
+            p.standardError = log
+            p.standardOutput = log
+            log.fileHandleForReading.readabilityHandler = { h in
+                let data = h.availableData
+                if data.isEmpty { h.readabilityHandler = nil; return }
+                // The address is fixed; it is live once cloudflared has a connection to Cloudflare.
+                if String(data: data, encoding: .utf8)?.contains("Registered tunnel connection") == true {
+                    Task { @MainActor in MobileTunnel.shared.url = named.url }
+                }
+            }
+            p.terminationHandler = { _ in Task { @MainActor in MobileTunnel.shared.process = nil; MobileTunnel.shared.url = nil } }
+            do { try p.run(); process = p } catch { self.error = "터널을 시작하지 못함: \(error.localizedDescription)" }
+            return
+        }
         // An empty config of our own: a user's ~/.cloudflared/config.yml (named tunnels, catch-all 404 ingress)
         // would otherwise be applied to this quick tunnel and answer every request with 404.
         let conf = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Suhyeok/cloudflared.yml")
@@ -432,6 +450,17 @@ final class MobileTunnel: ObservableObject {
         }
         p.terminationHandler = { _ in Task { @MainActor in MobileTunnel.shared.process = nil; MobileTunnel.shared.url = nil } }
         do { try p.run(); process = p } catch { self.error = "터널을 시작하지 못함: \(error.localizedDescription)" }
+    }
+
+    /// `~/Library/Application Support/Suhyeok/named-tunnel.yml`: a cloudflared config for a named tunnel whose
+    /// first ingress hostname forwards to the phone server (see README). Absent: a quick tunnel, new address each run.
+    static var namedTunnel: (config: String, url: String)? {
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Suhyeok/named-tunnel.yml").path
+        guard let yml = try? String(contentsOfFile: path, encoding: .utf8),
+              let r = yml.range(of: #"hostname:\s*([A-Za-z0-9.-]+)"#, options: .regularExpression) else { return nil }
+        let host = yml[r].split(separator: ":").last!.trimmingCharacters(in: .whitespaces)
+        return (path, "https://" + host)
     }
 
     func stop() {

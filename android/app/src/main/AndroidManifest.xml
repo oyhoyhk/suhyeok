@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.CAMERA" />
+  <!-- The system speech recognizer (dictation) and text-to-speech engines, visible on Android 11+. -->
+  <queries>
+    <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent>
+    <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+  </queries>
+  <application
+      android:label="수혁"
+      android:icon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher"
+      android:theme="@style/Theme.Suhyeok"
+      android:allowBackup="false">
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:windowSoftInputMode="adjustResize">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+    <!-- Portrait QR scanner (zxing-android-embedded defaults to landscape). -->
+    <activity
+        android:name="com.journeyapps.barcodescanner.CaptureActivity"
+        android:screenOrientation="fullSensor"
+        tools:replace="screenOrientation"
+        xmlns:tools="http://schemas.android.com/tools" />
+  </application>
+</manifest>
