@@ -972,6 +972,15 @@ enum Snapshot {
                                   styleMask: [.borderless], backing: .buffered, defer: false)
             window.contentView = host
             RunLoop.main.run(until: Date().addingTimeInterval(2.5))
+            // SUHYEOK_SNAPSHOT_SCROLL=top: scroll the conversation up first (shows the "맨 아래로" button).
+            if ProcessInfo.processInfo.environment["SUHYEOK_SNAPSHOT_SCROLL"] == "top" {
+                func scrollViews(_ v: NSView) -> [NSScrollView] { (v as? NSScrollView).map { [$0] } ?? v.subviews.flatMap(scrollViews) }
+                if let chat = scrollViews(host).max(by: { $0.frame.height < $1.frame.height }) {
+                    chat.contentView.scroll(to: .zero)
+                    chat.reflectScrolledClipView(chat.contentView)
+                }
+                RunLoop.main.run(until: Date().addingTimeInterval(1))
+            }
             if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                 host.cacheDisplay(in: host.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arg ?? "dialogue.png"))

@@ -83,6 +83,8 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
     var notice by remember { mutableStateOf<String?>(null) }
     var readAloud by remember { mutableStateOf(prefs.readAloud) }
     var showKeys by remember { mutableStateOf(false) }
+    /** What was last sent from this screen (the ↑ button brings it back). */
+    var sentHere by remember { mutableStateOf<String?>(null) }
     val list = rememberLazyListState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
@@ -134,7 +136,7 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
         if (text.isEmpty()) return
         scope.launch {
             val ok = runCatching { api.send(agent.id, text) }.getOrDefault(false)
-            if (ok) { draft = ""; notice = if (agent.busy) "작업이 끝나면 읽을 거예요" else null }
+            if (ok) { sentHere = text; draft = ""; notice = if (agent.busy) "작업이 끝나면 읽을 거예요" else null }
             else notice = "보내지 못함"
         }
     }
@@ -182,6 +184,24 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
         }
 
         notice?.let { Text(it, color = Color(0xFFFFB74D), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 14.dp)) }
+
+        // As in Claude Code and Codex: stop the running turn (Esc), then bring back the last instruction to fix.
+        val busyNow = (chat?.status ?: agent.status) == "busy"
+        val last = (sentHere ?: chat?.items?.lastOrNull { it.role == "me" && !it.text.startsWith("/") }?.text)
+            ?.substringBefore("\n\n(수혁 음성 지시")
+        if (busyNow || (draft.isBlank() && last != null)) Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (busyNow) Button(
+                onClick = { scope.launch { if (runCatching { api.key(agent.id, "Escape") }.getOrDefault(false)) notice = "중단함 — '마지막 지시 불러오기'로 고쳐 보낼 수 있음" } },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828), contentColor = Color.White),
+                modifier = Modifier.height(34.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+            ) { Text("■ 중단", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+            if (draft.isBlank() && last != null) OutlinedButton(onClick = { draft = last }, modifier = Modifier.height(34.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
+                Text("↑ 마지막 지시 불러오기", color = Color.White, fontSize = 13.sp)
+            }
+        }
 
         // Quick keys for menus and the terminal: shown with a menu on screen or on request.
         if (showKeys || chat?.menu?.isNotEmpty() == true) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),

@@ -73,10 +73,16 @@ struct DialogueView: View {
     @State private var shown = 40
     private var items: [ChatItem] { loaded ?? preload }
     @State private var draft = ""
+    /// What was last sent from this window (↑ brings it back).
+    @State private var sentHere: String?
     @State private var screen: String?
     @State private var menu: TerminalMenu?
     /// Sent from here but not yet in the log; shown right away so the message never seems lost.
     @State private var pending: [Pending] = []
+    /// Whether the end of the conversation is on screen. While reading older messages, new ones do not
+    /// pull the view down; a "새 메시지" button appears instead.
+    @State private var atBottom = true
+    @State private var unseen = 0
     @StateObject private var dictation = Dictation()
     @ObservedObject private var speaker = Speaker.shared
     @AppStorage("readReplies") private var readReplies = false
@@ -153,9 +159,16 @@ struct DialogueView: View {
                 }
                 .buttonStyle(.borderless).help(large ? "작게 보기" : "크게 보기 (화면 절반)")
             }
+            if s.agent == .claude, SessionInput.canSend(s) {
+                Button("새 대화 (/clear)") { Task.detached { _ = SessionInput.send(s, text: "/clear") } }
+                    .controlSize(.small)
+                    .help("이 에이전트의 대화를 비우고 새로 시작 — 이전 대화는 '최근 대화'에서 다시 열 수 있음")
+            }
             if let onTerminal { Button("터미널로", action: onTerminal).controlSize(.small) }
             if let onClose {
-                Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless).keyboardShortcut(.cancelAction)
+                // While the agent works, Esc interrupts it (as in its own terminal) instead of closing the dialogue.
+                Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
+                    .keyboardShortcut(s.status == .busy ? nil : .cancelAction)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -180,7 +193,7 @@ struct DialogueView: View {
                         HStack(spacing: 8) { ProgressView().controlSize(.small); Text("대화 기록 불러오는 중…") }
                             .font(.caption).foregroundStyle(.secondary)
                     } else if items.isEmpty {
-                        Text(s.transcriptPath == nil ? "이 세션의 대화 기록 파일을 찾지 못함" : "아직 주고받은 대화가 없음")
+                        Text("아직 주고받은 대화가 없음")  // also right after /clear, before the new log file exists
                             .font(.caption).foregroundStyle(.secondary)
                     } else if items.count > shown {
                         // Bubbles with tables and code are slow to lay out, so the chat opens with the newest few.
@@ -192,23 +205,50 @@ struct DialogueView: View {
                     if let live { liveBubble(live, s) }
                     if let menu { menuCard(menu, s) }
                     Color.clear.frame(height: 1).id("end")
+                        .background(GeometryReader { g in
+                            Color.clear.preference(key: EndOffset.self, value: g.frame(in: .named("chat")).maxY)
+                        })
                 }
                 .padding(14)
                 .environment(\.openURL, FileLinks.openAction)
+            }
+            .coordinateSpace(name: "chat")
+            .background(GeometryReader { g in Color.clear.preference(key: ViewportHeight.self, value: g.size.height) })
+            .modifier(AtBottomTracker { bottom in atBottom = bottom; if bottom { unseen = 0 } })
+            .overlay(alignment: .bottomTrailing) {
+                if !atBottom {
+                    Button {
+                        unseen = 0
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
+                    } label: {
+                        Label(unseen > 0 ? "새 메시지 \(unseen)개" : "맨 아래로", systemImage: "arrow.down")
+                            .font(.caption.bold())
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Color(red: 0.85, green: 0.68, blue: 0.25), in: Capsule())
+                            .foregroundStyle(.black)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(12)
+                }
             }
             // Open at the newest message and stay there as new ones arrive.
             .defaultScrollAnchor(.bottom)
             .onChange(of: items.count) { old, _ in
                 // The first load arrives after the view opened: keep pinning to the bottom while bubbles
                 // (markdown, tables, diagrams) finish measuring, so the newest progress is what you see.
-                if old == 0 { settleAtBottom(proxy) } else { proxy.scrollTo("end", anchor: .bottom) }
+                if old == 0 { settleAtBottom(proxy) } else { follow(proxy, new: items.count - old) }
             }
             .onChange(of: sessionId) { shown = 40; settleAtBottom(proxy) }
-            .onChange(of: live) { proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: pending.count) { proxy.scrollTo("end", anchor: .bottom) }
-            .onChange(of: menu) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: live) { follow(proxy, new: 0) }
+            .onChange(of: pending.count) { proxy.scrollTo("end", anchor: .bottom) }  // you just sent it: always show
+            .onChange(of: menu) { _, m in if m != nil { proxy.scrollTo("end", anchor: .bottom) } }  // a question needs you
             .onAppear { settleAtBottom(proxy) }
         }
+    }
+
+    /// Follow new content only when already at the bottom; otherwise count it for the button.
+    private func follow(_ proxy: ScrollViewProxy, new: Int) {
+        if atBottom { proxy.scrollTo("end", anchor: .bottom) } else { unseen += max(new, 0) }
     }
 
     /// Scroll to the end now and again as late layout (markdown, mermaid, images) changes the height.
@@ -386,6 +426,22 @@ struct DialogueView: View {
                     .focused($focused)
                     .disabled(!canSend)
                     .onSubmit { submit(s) }
+                    // As in Claude Code and Codex: Esc stops the running turn, ↑ in an empty box brings back the
+                    // last instruction to fix and send again.
+                    .onKeyPress(.escape) {
+                        guard s.status == .busy else { return .ignored }
+                        interrupt(s); return .handled
+                    }
+                    .onKeyPress(.upArrow) {
+                        guard draft.isEmpty, let last = lastInstruction else { return .ignored }
+                        draft = last; return .handled
+                    }
+                if s.status == .busy {
+                    Button(role: .destructive) { interrupt(s) } label: { Label("중단", systemImage: "stop.fill") }
+                        .help("지금 하는 작업을 멈춤 (Esc). 멈춘 뒤 ↑로 마지막 지시를 불러와 고쳐 보낼 수 있음")
+                        .tint(.red)
+                        .disabled(!canSend)
+                }
                 Button { dictation.toggle() } label: {
                     Image(systemName: dictation.listening ? "mic.fill" : "mic")
                         .foregroundStyle(dictation.listening ? Color.red : Color.primary)
@@ -421,10 +477,24 @@ struct DialogueView: View {
 
     // MARK: actions
 
+    /// The last instruction sent, from this window or the log, for ↑ to bring back.
+    private var lastInstruction: String? {
+        // Spoken commands carry 수혁's note for the agent (WakeWord.voiceNote); bring back only what was said.
+        (sentHere ?? items.last { $0.role == .me && !$0.text.hasPrefix("/") }?.text)?
+            .components(separatedBy: "\n\n(수혁 음성 지시").first
+    }
+
+    /// Esc stops the agent's current turn, as pressing it in the agent's own terminal does.
+    private func interrupt(_ s: AgentSession) {
+        notice = "중단함 — ↑로 마지막 지시를 불러와 고쳐 보낼 수 있음"
+        Task.detached { _ = SessionInput.press(s, .escape) }
+    }
+
     private func submit(_ s: AgentSession) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
+        sentHere = text
         let p = Pending(text: text)
         pending.append(p)
         let blockedByMenu = menu != nil
@@ -443,8 +513,16 @@ struct DialogueView: View {
         Task.detached { _ = SessionInput.press(s, key) }
     }
 
-    private func poll(_ s: AgentSession) async {
+    private func poll(_ start: AgentSession) async {
+        var lastPath = start.transcriptPath
         while !Task.isCancelled {
+            // Re-read the session every round: /clear starts a new conversation in the same process,
+            // so the transcript path changes while the agent (pid) stays the same.
+            let s = store.sessions.first { $0.id == sessionId } ?? start
+            if s.transcriptPath != lastPath {
+                lastPath = s.transcriptPath
+                loaded = []; pending = []; live = nil; menu = nil
+            }
             // Show the log at once on open; reading the terminal (0.1–0.2 s through cmux) follows.
             if loaded == nil, let path = s.transcriptPath {
                 loaded = await Task.detached { TranscriptRenderer.items(path: path, agent: s.agent) }.value
@@ -564,4 +642,38 @@ struct MobileSettings: View {
         img.addRepresentation(rep)
         return img
     }
+}
+
+
+/// Reports whether the end of the conversation is on screen. macOS 15+ reads the scroll position directly
+/// (geometry preferences inside a ScrollView are not re-sent while scrolling there); macOS 14 falls back to
+/// the end marker's position, measured as at the bottom until both values exist so nothing flashes on open.
+private struct AtBottomTracker: ViewModifier {
+    let changed: (Bool) -> Void
+    @State private var endY: CGFloat = 0
+    @State private var viewport: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.onScrollGeometryChange(for: Bool.self) { g in
+                g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40
+            } action: { _, bottom in changed(bottom) }
+        } else {
+            content
+                .onPreferenceChange(EndOffset.self) { endY = $0; report() }
+                .onPreferenceChange(ViewportHeight.self) { viewport = $0; report() }
+        }
+    }
+
+    private func report() { changed(viewport <= 0 || endY <= viewport + 40) }
+}
+
+private struct EndOffset: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private struct ViewportHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

@@ -492,6 +492,8 @@ struct AgentMenu: View {
         Button("클론으로 새 에이전트 만들기") { store.clone(session) }
             .disabled(session.conversationId == nil)
         Button("진행 요약 수정…") { store.editingSummary = session }
+        Button("대화 새로 시작 (/clear)") { Task.detached { _ = SessionInput.send(session, text: "/clear") } }
+            .disabled(!SessionInput.canSend(session) || session.agent != .claude)
         if session.hostedName == nil, session.conversationId != nil {
             Button("수혁으로 옮기기…") { migrating = session }
         }
