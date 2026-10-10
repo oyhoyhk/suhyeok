@@ -213,8 +213,14 @@ final class WakeWord: ObservableObject {
         let named = store.sessions.map { (store.agentName(for: $0), $0) }
         // No name in a conversation: the agent spoken to last, else the one open in the window.
         let fallback = target ?? (talkMode ? store.selectedSession.map { store.agentName(for: $0) } : nil)
-        let routed = Self.route(command, names: named.map(\.0))
-            ?? (inConversation ? fallback.map { ($0, command) } : nil)
+        let direct = Self.route(command, names: named.map(\.0))
+        // Without a name, a fragment of one or two letters ("구", "노래") is noise the microphone caught, not an
+        // instruction: drop it silently rather than sending it to the agent.
+        if direct == nil, command.filter({ $0.isLetter || $0.isNumber }).count < 3 {
+            NSLog("[wake] ignored short fragment: %@", command)
+            return
+        }
+        let routed = direct ?? (inConversation ? fallback.map { ($0, command) } : nil)
         guard let (name, text) = routed, let session = named.first(where: { $0.0 == name })?.1 else {
             Speaker.shared.say("누구에게 시킬지 못 들었어요. 에이전트 이름을 먼저 말해 주세요.")
             return
