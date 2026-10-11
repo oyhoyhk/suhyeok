@@ -79,3 +79,23 @@ CREATE TABLE IF NOT EXISTS genesis (
   amount       INTEGER NOT NULL,
   approved_seq INTEGER
 );
+
+-- OpenTimestamps anchors of the ledger head (R25-R27). Rows are never deleted and the anchored seq/hash/time
+-- never change; only the proof grows (pending -> confirmed) when a calendar returns the Bitcoin attestation.
+-- proof = base64 of the complete .ots file whose file digest is `hash`.
+CREATE TABLE IF NOT EXISTS anchors (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  seq          INTEGER NOT NULL,
+  hash         TEXT    NOT NULL,
+  submitted_at INTEGER NOT NULL,
+  calendars    INTEGER NOT NULL,   -- calendars that accepted the digest
+  status       TEXT    NOT NULL CHECK (status IN ('pending', 'confirmed')),
+  height       INTEGER,            -- lowest Bitcoin block height attested, once confirmed
+  upgraded_at  INTEGER,
+  proof        TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS anchors_pending ON anchors(id) WHERE status = 'pending';
+CREATE TRIGGER IF NOT EXISTS anchors_no_delete BEFORE DELETE ON anchors BEGIN SELECT RAISE(ABORT, 'anchors are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS anchors_fixed BEFORE UPDATE OF seq, hash, submitted_at ON anchors BEGIN SELECT RAISE(ABORT, 'anchored values are fixed'); END;
+CREATE TRIGGER IF NOT EXISTS anchors_no_unconfirm BEFORE UPDATE ON anchors WHEN OLD.status = 'confirmed' AND NEW.status <> 'confirmed'
+BEGIN SELECT RAISE(ABORT, 'confirmed anchors stay confirmed'); END;

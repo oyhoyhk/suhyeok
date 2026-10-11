@@ -19,6 +19,7 @@ database_id = "TBD"
 [observability]
 enabled = true
 
-# U7 (OpenTimestamps anchoring) will add a scheduled() handler and:
-# [triggers]
-# crons = ["0 3 * * *", "0 */6 * * *"]
+# OpenTimestamps anchoring (anchor.js): daily submit of the ledger head, 6-hourly proof upgrade.
+# worker.js CRON_SUBMIT / CRON_UPGRADE must match these strings.
+[triggers]
+crons = ["0 3 * * *", "0 */6 * * *"]

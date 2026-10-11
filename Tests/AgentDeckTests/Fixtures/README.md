@@ -1,0 +1,3 @@
+- `*.ots`: official OpenTimestamps example proofs, copied unmodified from https://github.com/opentimestamps/opentimestamps-client/blob/master/examples/ (hello-world.txt.ots, gdp2q25-2nd.pdf.ots, incomplete.txt.ots, two-calendars.txt.ots, known-and-unknown-notary.txt.ots), fetched 2026-10-11.
+- `esplora-recorded.json`: Esplora responses for blocks 358391 and 912095, recorded 2026-10-11 from https://blockstream.info/api/block-height/<h> and https://blockstream.info/api/block/<hash>.
+- `claude-session.jsonl`, `codex-rollout.jsonl`: transcript samples for HuntTests.

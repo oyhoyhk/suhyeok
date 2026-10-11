@@ -1,0 +1,9 @@
+{
+ "recorded": "2026-10-11 from https://blockstream.info/api (block-height text, block JSON verbatim)",
+ "responses": {
+  "https://blockstream.info/api/block-height/358391": "000000000000000003e892881a8cdcdc117c06d444057c98b6f04a9ee75a2319",
+  "https://blockstream.info/api/block/000000000000000003e892881a8cdcdc117c06d444057c98b6f04a9ee75a2319": "{\"id\":\"000000000000000003e892881a8cdcdc117c06d444057c98b6f04a9ee75a2319\",\"height\":358391,\"version\":2,\"timestamp\":1432827678,\"tx_count\":1433,\"size\":980086,\"weight\":3920344,\"merkle_root\":\"8a1b66ecb7cbd07d8139a7e7d7f2c41aab1f5009b8364aaf61d03ad245e47e00\",\"previousblockhash\":\"0000000000000000040238cb61fda1452649edc9d18f435f7e1b285a589463b9\",\"mediantime\":1432824115,\"nonce\":4141773410,\"bits\":404129525,\"difficulty\":48807487244.68138}",
+  "https://blockstream.info/api/block-height/912095": "000000000000000000007f0753c6209263c7072e51b725e89e75a0c708b90345",
+  "https://blockstream.info/api/block/000000000000000000007f0753c6209263c7072e51b725e89e75a0c708b90345": "{\"id\":\"000000000000000000007f0753c6209263c7072e51b725e89e75a0c708b90345\",\"height\":912095,\"version\":537346048,\"timestamp\":1756386670,\"tx_count\":3148,\"size\":1559837,\"weight\":3993611,\"merkle_root\":\"936131994129988e1932d8c1c6a9780fd42ae4c87204cfb0ac852be1250039ae\",\"previousblockhash\":\"00000000000000000000315c8e77581f0b40e1787653adfc910d44d7e5ecd527\",\"mediantime\":1756383324,\"nonce\":3732283859,\"bits\":386018193,\"difficulty\":129699156960680.9}"
+ }
+}

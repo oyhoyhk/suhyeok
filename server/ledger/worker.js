@@ -1,7 +1,9 @@
 // Crystal ledger issuing server (suhyeok.pickuma.com/ledger/*). Plain ES module, no build step.
 // Env: DB (D1), LEDGER_SIGNING_KEY (secret, base64 PKCS#8 Ed25519), LEDGER_ADMIN_TOKEN (secret).
-// Logic lives in ledger.js; this file is HTTP routing plus the D1 implementation of the storage interface.
+// Logic lives in ledger.js and anchor.js; this file is HTTP routing, the cron entry point, and the D1
+// implementation of the storage interfaces.
 import { createLedger, createSigner, ConflictError, LedgerError } from './ledger.js';
+import { createAnchoring } from './anchor.js';
 
 const PREFIX = '/ledger/v1';
 const MAX_BODY = 1 << 20;
@@ -17,6 +19,10 @@ const reservationFrom = (r) => r && {
   serverSeq: r.server_seq, device: r.device, item: r.item, amount: r.amount, reqTime: r.req_time, consumedSeq: r.consumed_seq, body: r.body, sig: r.sig,
 };
 const genesisFrom = (r) => r && { serverSeq: r.server_seq, device: r.device, dseq: r.dseq, amount: r.amount, approvedSeq: r.approved_seq };
+const anchorFrom = (r) => r && {
+  id: r.id, seq: r.seq, hash: r.hash, submittedAt: r.submitted_at, calendars: r.calendars, status: r.status, height: r.height,
+  upgradedAt: r.upgraded_at, proof: r.proof,
+};
 
 export class D1Store {
   constructor(db) { this.db = db; }
@@ -45,6 +51,19 @@ export class D1Store {
   }
   async listLedger() { return (await this.q('SELECT * FROM ledger ORDER BY seq').all()).results; }
   async listDevices() { return (await this.q('SELECT * FROM devices').all()).results.map(deviceFrom); }
+
+  async getLatestAnchor() { return anchorFrom(await this.q('SELECT * FROM anchors ORDER BY id DESC LIMIT 1').first()); }
+  async getAnchor(id) { return anchorFrom(await this.q('SELECT * FROM anchors WHERE id = ?', id).first()); }
+  async listAnchors() { return (await this.q('SELECT * FROM anchors ORDER BY id DESC').all()).results.map(anchorFrom); }
+  async listPendingAnchors() { return (await this.q("SELECT * FROM anchors WHERE status = 'pending' ORDER BY id").all()).results.map(anchorFrom); }
+  async insertAnchor(a) {
+    const r = await this.q(`INSERT INTO anchors (seq, hash, submitted_at, calendars, status, height, upgraded_at, proof)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, a.seq, a.hash, a.submittedAt, a.calendars, a.status, a.height, a.upgradedAt, a.proof).first();
+    return r.id;
+  }
+  async updateAnchor(id, a) {
+    await this.q('UPDATE anchors SET status = ?, height = ?, upgraded_at = ?, proof = ? WHERE id = ?', a.status, a.height, a.upgradedAt, a.proof, id).run();
+  }
 
   async commit(tx) {
     // Ledger rows go first: a seq primary-key collision aborts the whole batch (optimistic lock).
@@ -128,11 +147,23 @@ async function signerFor(env) {
 
 async function route(request, env, path) {
   const method = request.method;
+  let m;
+  if (method === 'GET' && path === '/anchors') return json(await createAnchoring({ store: new D1Store(env.DB) }).list());
+  if (method === 'GET' && (m = path.match(/^\/anchors\/(\d{1,15})\.ots$/))) {
+    const file = await createAnchoring({ store: new D1Store(env.DB) }).proofFile(Number(m[1]));
+    if (!file) return notFound();
+    return new Response(file.bytes, {
+      headers: {
+        'content-type': 'application/octet-stream', 'cache-control': 'no-store',
+        'content-disposition': `attachment; filename="suhyeok-ledger-${file.seq}.ots"`,
+      },
+    });
+  }
+
   const signer = await signerFor(env);
   if (method === 'GET' && path === '/pubkey') return json({ alg: 'Ed25519', key: signer.publicKey });
 
   const ledger = createLedger({ store: new D1Store(env.DB), signer });
-  let m;
   if (method === 'POST' && path === '/register') return json(await ledger.register(await readJson(request)), 201);
   if (method === 'POST' && path === '/sync') return json(await ledger.sync(await readJson(request)));
   if (method === 'POST' && path === '/spend') return json(await ledger.requestSpend(await readJson(request)));
@@ -152,7 +183,25 @@ async function route(request, env, path) {
   return notFound();
 }
 
+// Must match [triggers] crons in wrangler.toml.
+export const CRON_SUBMIT = '0 3 * * *';
+export const CRON_UPGRADE = '0 */6 * * *';
+
 export default {
+  /** Anchoring cron: daily submit, 6-hourly upgrade. Failures are logged; the next run retries. */
+  async scheduled(controller, env, ctx) {
+    const anchoring = createAnchoring({ store: new D1Store(env.DB) });
+    const job = controller.cron === CRON_SUBMIT ? anchoring.submit()
+      : controller.cron === CRON_UPGRADE ? anchoring.upgrade()
+        : Promise.resolve({ ignored: controller.cron });
+    const done = job.then(
+      (r) => { console.log('anchor', controller.cron, JSON.stringify(r)); return r; },
+      (e) => { console.error('anchor error', e?.stack ?? e); return { error: String(e?.message ?? e) }; },
+    );
+    ctx.waitUntil(done);
+    return done;
+  },
+
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     // Only /ledger/* is routed to this Worker in production; anything else is not ours.
