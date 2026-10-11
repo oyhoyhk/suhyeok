@@ -23,3 +23,9 @@ enabled = true
 # worker.js CRON_SUBMIT / CRON_UPGRADE must match these strings.
 [triggers]
 crons = ["0 3 * * *", "0 */6 * * *"]
+
+# Character market pack files (market.js). Keys: assets/<listingId>/<sha256>. Create the bucket once before
+# deploying (wrangler r2 bucket create pickuma-suhyeok-assets); D1 needs migrations/0002_market.sql first.
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "pickuma-suhyeok-assets"

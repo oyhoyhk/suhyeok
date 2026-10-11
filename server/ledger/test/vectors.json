@@ -43,6 +43,20 @@
    },
    "canonical": "{\"amount\":-50,\"kind\":\"spend\",\"note\":\"quote \\\" back\\\\slash\\nnew\\ttab\\u0001ctl\",\"prev\":\"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"rule\":1,\"seq\":2,\"source\":\"knight\",\"time\":1760142000}",
    "hash": "d5a53aa574caf7b7603ba5858ab3db92a246bb3d9af45d1f8adac062479a708e"
+  },
+  {
+   "fields": {
+    "seq": 3,
+    "time": 1760142600,
+    "kind": "income",
+    "source": "market:0f8fad5b-d9cb-469f-a165-70867728950e",
+    "amount": 270,
+    "rule": 1,
+    "note": "판매 수익",
+    "prev": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+   },
+   "canonical": "{\"amount\":270,\"kind\":\"income\",\"note\":\"판매 수익\",\"prev\":\"efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef\",\"rule\":1,\"seq\":3,\"source\":\"market:0f8fad5b-d9cb-469f-a165-70867728950e\",\"time\":1760142600}",
+   "hash": "e4ce9e71e223b99aa6072c1c56357b0459350b4fe4f0d2c3a5c3a67071b8251d"
   }
  ]
 }

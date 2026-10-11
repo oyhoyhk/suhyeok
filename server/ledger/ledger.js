@@ -13,6 +13,8 @@
 //   commit({ledger, devices, codes, receipts, reservations, genesis}) -> atomically appends ledger rows and
 //     upserts the rest. Throws ConflictError when ledger rows do not start right after the current head.
 //
+//   market.js extends this interface with listings, listing files, owners and download tokens (see there).
+//
 // Concurrency: every operation that writes reads the head FIRST and appends at least one ledger row, so the
 // ledger's seq primary key serialises writers (optimistic lock). A losing writer gets ConflictError and is retried.
 
@@ -33,7 +35,8 @@ export const CONFIG = {
 };
 
 export const ZERO_HASH = '0'.repeat(64);
-const KINDS = new Set(['open', 'genesis', 'earn', 'spend', 'adjust']);
+// income: the device books market sale proceeds the server already credited (pendingIncome); never capped.
+const KINDS = new Set(['open', 'genesis', 'earn', 'spend', 'adjust', 'income']);
 const HEX64 = /^[0-9a-f]{64}$/;
 const ENTRY_FIELDS = new Set(['seq', 'time', 'kind', 'source', 'amount', 'rule', 'note', 'key', 'prev', 'hash', 'sig']);
 
@@ -48,7 +51,7 @@ export class LedgerError extends Error {
 }
 export class ConflictError extends Error {}
 
-const fail = (status, code, message, extra) => { throw new LedgerError(status, code, message, extra); };
+export const fail = (status, code, message, extra) => { throw new LedgerError(status, code, message, extra); };
 
 // --- encoding
 
@@ -96,7 +99,7 @@ export async function importDeviceKey(b64) {
   } catch { return null; }
 }
 
-async function verifyDeviceSig(key, text, sigB64) {
+export async function verifyDeviceSig(key, text, sigB64) {
   const sig = typeof sigB64 === 'string' ? b64decode(sigB64) : null;
   if (!sig || sig.length !== 64) return false;
   return crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, sig, utf8(text));
@@ -134,7 +137,7 @@ export function rowCanonical(r) {
   return stableStringify({ seq, time, device, kind, amount, dseq, dhash, dkind, reported, ref, note, prev });
 }
 
-async function chainRows(head, specs, time) {
+export async function chainRows(head, specs, time) {
   let prev = head ? head.hash : ZERO_HASH;
   let seq = head ? head.seq + 1 : 0;
   const rows = [];
@@ -147,27 +150,32 @@ async function chainRows(head, specs, time) {
   return rows;
 }
 
-/** Recomputes the server ledger hash chain. Also derives each device's balance (sum of row amounts). */
+/**
+ * Recomputes the server ledger hash chain. Also derives each device's balance (sum of row amounts; rows with
+ * device '' such as burns belong to no device) and the total burned by market purchases.
+ */
 export async function verifyServerLedger(rows) {
   const sorted = [...rows].sort((a, b) => a.seq - b.seq);
   const balances = {};
+  let burned = 0;
   let prev = ZERO_HASH;
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i];
-    const broken = (reason) => ({ ok: false, length: sorted.length, brokenAt: i, reason, balances });
+    const broken = (reason) => ({ ok: false, length: sorted.length, brokenAt: i, reason, balances, burned });
     if (r.seq !== i) return broken('seq gap');
     if (r.prev !== prev) return broken('prev mismatch');
     if (r.hash !== (await sha256hex(rowCanonical(r)))) return broken('hash mismatch');
     if (r.device) balances[r.device] = (balances[r.device] ?? 0) + r.amount;
+    if (r.kind === 'burn') burned += r.amount;
     prev = r.hash;
   }
-  return { ok: true, length: sorted.length, head: sorted.length ? prev : null, balances };
+  return { ok: true, length: sorted.length, head: sorted.length ? prev : null, balances, burned };
 }
 
 // --- validation
 
-const isInt = (v) => Number.isSafeInteger(v);
-const isStr = (v, max = CONFIG.MAX_STRING) => typeof v === 'string' && v.length <= max;
+export const isInt = (v) => Number.isSafeInteger(v);
+export const isStr = (v, max = CONFIG.MAX_STRING) => typeof v === 'string' && v.length <= max;
 
 function validateEntry(e, i) {
   const bad = (why) => fail(400, 'bad_entry', `entry ${i}: ${why}`, { index: i });
@@ -185,6 +193,26 @@ function validateEntry(e, i) {
   if (isOpen ? !(typeof e.key === 'string' && e.amount === 0) : e.key !== undefined) bad('key/open');
   if ((e.kind === 'earn' || e.kind === 'genesis') && e.amount < 0) bad('earn/genesis amount must be >= 0');
   if (e.kind === 'spend' && e.amount > 0) bad('spend amount must be <= 0');
+  if (e.kind === 'income' && e.amount <= 0) bad('income amount must be > 0');
+}
+
+/** Runs fn, retrying when another writer appended first (ConflictError). */
+export async function transactWith(fn, retries = CONFIG.COMMIT_RETRIES) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await fn(); } catch (e) {
+      if (!(e instanceof ConflictError) || attempt + 1 >= retries) {
+        if (e instanceof ConflictError) { console.error('ledger write conflict after retries:', e.message); fail(409, 'busy', 'concurrent write, retry'); }
+        throw e;
+      }
+    }
+  }
+}
+
+export async function liveDeviceIn(store, id) {
+  const dev = typeof id === 'string' ? await store.getDevice(id) : null;
+  if (!dev) fail(404, 'unknown_device');
+  if (dev.revokedAt != null) fail(403, 'revoked');
+  return dev;
 }
 
 // --- service
@@ -192,23 +220,8 @@ function validateEntry(e, i) {
 export function createLedger({ store, signer, now = () => Math.floor(Date.now() / 1000), config = CONFIG }) {
   const ratePerHour = config.EARN_PER_HOUR_PER_AGENT * config.MAX_PARALLEL_AGENTS + config.BONUS_PER_HOUR;
 
-  async function transact(fn) {
-    for (let attempt = 0; ; attempt++) {
-      try { return await fn(); } catch (e) {
-        if (!(e instanceof ConflictError) || attempt + 1 >= config.COMMIT_RETRIES) {
-          if (e instanceof ConflictError) { console.error('ledger write conflict after retries:', e.message); fail(409, 'busy', 'concurrent write, retry'); }
-          throw e;
-        }
-      }
-    }
-  }
-
-  async function liveDevice(id) {
-    const dev = typeof id === 'string' ? await store.getDevice(id) : null;
-    if (!dev) fail(404, 'unknown_device');
-    if (dev.revokedAt != null) fail(403, 'revoked');
-    return dev;
-  }
+  const transact = (fn) => transactWith(fn, config.COMMIT_RETRIES);
+  const liveDevice = (id) => liveDeviceIn(store, id);
 
   async function issueCode({ ttlSec } = {}) {
     const ttl = isInt(ttlSec) && ttlSec > 0 ? ttlSec : config.CODE_TTL_SEC;
@@ -243,7 +256,7 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
       await store.commit({
         ledger: rows,
         devices: [{ id, key, registeredAt: t, revokedAt: null, lastSeq: -1, lastHash: ZERO_HASH, lastTime: null,
-          balance: 0, pendingClamp: 0, pendingGenesis: 0, lastSpendReq: 0 }],
+          balance: 0, pendingClamp: 0, pendingGenesis: 0, lastSpendReq: 0, pendingIncome: 0, lastMarketReq: 0 }],
         codes: [{ ...c, usedAt: t, device: id }],
       });
       return { device: id, serverSeq: rows[0].seq };
@@ -312,6 +325,7 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
       const windowStart = Math.max(dev.lastTime ?? floor, floor);
       let remaining = Math.max(0, Math.floor(((fresh.at(-1).time - windowStart) * ratePerHour) / 3600));
       let { balance, pendingClamp, pendingGenesis } = dev;
+      let pendingIncome = dev.pendingIncome ?? 0;
       let reported = 0, accepted = 0, pending = 0;
       const open = await store.listOpenReservations(dev.id);
       const consumed = [];
@@ -321,6 +335,14 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
         let ref = '';
         if (e.kind === 'genesis') {
           pending += e.amount; // not counted until approved; outside the cap
+        } else if (e.kind === 'income') {
+          // Sale proceeds were credited when the sale happened; the entry only books them locally. Outside the cap.
+          if (e.amount > pendingIncome) {
+            fail(409, 'income_mismatch', `entry ${e.seq} books ${e.amount} but only ${pendingIncome} income is outstanding`,
+              { seq: e.seq, pendingIncome });
+          }
+          pendingIncome -= e.amount;
+          ref = 'income';
         } else if (e.amount > 0) { // earn, or a positive adjust: capped
           credited = Math.min(e.amount, remaining);
           remaining -= credited;
@@ -358,7 +380,7 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
       const top = rows.at(-1);
       const env = await signer.envelope({
         type: 'sync', device: dev.id, fromSeq: first.seq, deviceSeq: last.seq, deviceHash: last.hash,
-        reported, accepted, clamped, pending, balance, pendingClamp,
+        reported, accepted, clamped, pending, balance, pendingClamp, pendingIncome,
         serverSeq: top.seq, head: top.hash, time: t,
       });
       const genesis = rows.filter((r) => r.dkind === 'genesis')
@@ -366,7 +388,7 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
       const reservations = consumed.map((r) => ({ ...r, consumedSeq: rows.find((x) => x.ref === `reserve:${r.serverSeq}`).seq }));
       await store.commit({
         ledger: rows,
-        devices: [{ ...dev, lastSeq: last.seq, lastHash: last.hash, lastTime: last.time, balance, pendingClamp, pendingGenesis }],
+        devices: [{ ...dev, lastSeq: last.seq, lastHash: last.hash, lastTime: last.time, balance, pendingClamp, pendingGenesis, pendingIncome }],
         receipts: [{ device: dev.id, dseq: last.seq, ...env }],
         genesis,
         reservations,
@@ -384,6 +406,8 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
       if (!isStr(item, 200) || item === '' || !isInt(amount) || amount <= 0 || !isInt(time) || typeof sig !== 'string') {
         fail(400, 'bad_request', 'item (non-empty string), amount (positive int), time (unix seconds), sig required');
       }
+      // market:<listingId> reservations are made only by /market/buy, which also pays the seller.
+      if (item.startsWith('market:')) fail(400, 'bad_request', 'market items are bought through /market/buy');
       const canon = stableStringify({ action: 'spend', amount, device: dev.id, item, time });
       if (!(await verifyDeviceSig(await importDeviceKey(dev.key), canon, sig))) fail(422, 'bad_signature');
       const existing = (await store.listOpenReservations(dev.id)).find((r) => r.item === item);
@@ -415,6 +439,7 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
     const reservations = (await store.listOpenReservations(dev.id)).map((r) => ({ item: r.item, amount: r.amount, serverSeq: r.serverSeq }));
     return signer.envelope({
       type: 'balance', device: dev.id, balance: dev.balance, pendingClamp: dev.pendingClamp, pendingGenesis: dev.pendingGenesis,
+      pendingIncome: dev.pendingIncome ?? 0,
       reservations, deviceSeq: dev.lastSeq, deviceHash: dev.lastHash, revoked: dev.revokedAt != null,
       serverSeq: head ? head.seq : -1, head: head ? head.hash : ZERO_HASH, time: now(),
     });
@@ -503,11 +528,34 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
     });
   }
 
-  /** Recomputes the chain and checks the cached device balances against the ledger. */
+  /**
+   * Recomputes the chain and checks the cached state against the ledger rows: device balances, outstanding
+   * sale income (sale rows minus booked income entries), and market listing status and price (moderate rows).
+   */
   async function verify() {
-    const res = await verifyServerLedger(await store.listLedger());
+    const rows = await store.listLedger();
+    const res = await verifyServerLedger(rows);
     const devices = await store.listDevices();
     res.balancesMatch = devices.every((d) => (res.balances[d.id] ?? 0) === d.balance);
+    const income = {};
+    const listings = new Map();
+    for (const r of rows) {
+      if (r.kind === 'sale') income[r.device] = (income[r.device] ?? 0) + r.amount;
+      if (r.kind === 'entry' && r.dkind === 'income') income[r.device] = (income[r.device] ?? 0) - r.reported;
+      if (r.kind === 'moderate') {
+        const [id, status] = r.ref.split(':');
+        const l = listings.get(id) ?? { status: null, price: null };
+        l.status = status;
+        if (status === 'draft') l.price = r.reported;
+        listings.set(id, l);
+      }
+    }
+    res.pendingIncomeMatch = devices.every((d) => (income[d.id] ?? 0) === (d.pendingIncome ?? 0));
+    if (store.listListings) {
+      const stored = await store.listListings({});
+      res.listingsMatch = stored.length === listings.size
+        && stored.every((l) => listings.get(l.id)?.status === l.status && listings.get(l.id)?.price === l.price);
+    }
     return res;
   }
 

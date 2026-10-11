@@ -14,7 +14,22 @@ export class MemoryStore {
     this.receipts = [];
     this.reservations = new Map();
     this.genesis = new Map();
+    this.listings = new Map();
+    this.files = new Map(); // `${listingId}\n${path}` -> file
+    this.owners = new Map(); // `${listingId}\n${device}` -> owner
+    this.tokens = new Map();
   }
+  async getListing(id) { return clone(this.listings.get(id) ?? null); }
+  async listListings({ status, seller } = {}) {
+    return [...this.listings.values()].filter((l) => (!status || l.status === status) && (!seller || l.seller === seller))
+      .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1)).map(clone);
+  }
+  async listListingFiles(listingId) {
+    return [...this.files.values()].filter((f) => f.listingId === listingId).sort((a, b) => (a.path < b.path ? -1 : 1)).map(clone);
+  }
+  async getOwner(listingId, device) { return clone(this.owners.get(`${listingId}\n${device}`) ?? null); }
+  async countOwners(listingId) { return [...this.owners.values()].filter((o) => o.listingId === listingId).length; }
+  async getToken(token) { return clone(this.tokens.get(token) ?? null); }
   async getHead() {
     const r = this.ledger.at(-1);
     return r ? { seq: r.seq, hash: r.hash } : null;
@@ -46,6 +61,7 @@ export class MemoryStore {
     for (const r of tx.receipts ?? []) {
       if (this.receipts.some((x) => x.device === r.device && x.dseq === r.dseq)) throw new ConflictError('receipt exists');
     }
+    for (const o of tx.owners ?? []) if (this.owners.has(`${o.listingId}\n${o.device}`)) throw new ConflictError('owner exists');
     this.ledger.push(...(tx.ledger ?? []).map(clone));
     for (const d of tx.devices ?? []) this.devices.set(d.id, clone(d));
     for (const c of tx.codes ?? []) this.codes.set(c.code, clone(c));
@@ -57,9 +73,28 @@ export class MemoryStore {
       }
     }
     for (const g of tx.genesis ?? []) this.genesis.set(g.serverSeq, clone(g));
+    for (const l of tx.listings ?? []) this.listings.set(l.id, clone(l));
+    for (const f of tx.listingFiles ?? []) this.files.set(`${f.listingId}\n${f.path}`, clone(f));
+    for (const o of tx.owners ?? []) this.owners.set(`${o.listingId}\n${o.device}`, clone(o));
+    if (tx.pruneTokensBefore != null) for (const [k, t] of this.tokens) if (t.expiresAt < tx.pruneTokensBefore) this.tokens.delete(k);
+    for (const t of tx.tokens ?? []) this.tokens.set(t.token, clone(t));
   }
   /** Simulates an operator editing a ledger row in place. */
   tamper(seq, field, value) { this.ledger.find((r) => r.seq === seq)[field] = value; }
+}
+
+/** The subset of the R2 binding API that market.js uses. `puts` records every key written. */
+export class MemoryR2 {
+  constructor() { this.objects = new Map(); this.puts = []; }
+  async put(key, bytes, opts = {}) {
+    this.puts.push(key);
+    this.objects.set(key, { bytes: new Uint8Array(bytes), httpMetadata: opts.httpMetadata ?? {} });
+  }
+  async get(key) {
+    const o = this.objects.get(key);
+    if (!o) return null;
+    return { body: new Blob([o.bytes]).stream(), size: o.bytes.length, httpMetadata: o.httpMetadata, arrayBuffer: async () => o.bytes.slice().buffer };
+  }
 }
 
 /** The subset of the D1 binding API that worker.js uses, backed by node:sqlite. */
@@ -115,6 +150,11 @@ export async function makeDevice() {
     async spendRequest(device, item, amount, time) {
       const sig = await dev.sign(stableStringify({ action: 'spend', amount, device, item, time }));
       return { device, item, amount, time, sig };
+    },
+    /** A signed market request: sig over stableStringify({action, ...fields, device, time}). */
+    async marketRequest(action, fields, time) {
+      const sig = await dev.sign(stableStringify({ ...fields, action, device: dev.id, time }));
+      return { ...fields, device: dev.id, time, sig };
     },
   };
   return dev;
