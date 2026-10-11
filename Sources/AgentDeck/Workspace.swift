@@ -5,6 +5,7 @@ import SwiftUI
 /// What the main window shows.
 enum Pane: Hashable {
     case world, list
+    case guild             // crystals, hiring, ledger trust
     case hosted(String)    // tmux session on 수혁's server: full interactive terminal
     case external(String)  // AgentSession.id running in another terminal: read-only view
 }
@@ -92,6 +93,7 @@ struct WorkspaceView: View {
                 Section {
                     Label("월드", systemImage: "map").tag(Pane.world)
                     Label("목록", systemImage: "list.bullet.rectangle").tag(Pane.list)
+                    Label("길드 · 결정", systemImage: "diamond").tag(Pane.guild)
                 }
                 Section("수혁 세션") {
                     if store.hosted.isEmpty {
@@ -143,6 +145,7 @@ struct WorkspaceView: View {
             switch store.selection {
             case .world: WorldView(store: store)
             case .list: BoardView(store: store)
+            case .guild: GuildView()
             case .hosted(let name): HostedSessionView(store: store, name: name)
             case .external(let id): ExternalSessionView(store: store, id: id)
             }

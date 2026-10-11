@@ -16,6 +16,8 @@ final class LedgerSync {
         var serverKey: String?
         var ackSeq: Int?      // last ledger entry the server confirmed
         var ackHash: String?
+        /// Server ledger head hashes seen in signed receipts (server seq → hash), to cross-check public anchors.
+        var heads: [String: String] = [:]
     }
 
     struct Receipt: Decodable, Equatable {
@@ -28,6 +30,18 @@ final class LedgerSync {
         let pending: Int      // genesis awaiting the admin
         let balance: Int
         let pendingClamp: Int
+        let serverSeq: Int
+        let head: String
+    }
+
+    /// One public anchor of the server ledger head (GET /anchors).
+    struct AnchorInfo: Decodable, Identifiable, Equatable {
+        let id: Int
+        let seq: Int
+        let hash: String
+        let status: String   // pending | confirmed (the server's view; the app verifies for itself)
+        let height: Int?
+        let submittedAt: Int
     }
 
     enum Failure: Error, Equatable {
@@ -94,6 +108,10 @@ final class LedgerSync {
             else { throw Failure.unexpected }
             state.ackSeq = r.deviceSeq
             state.ackHash = r.deviceHash
+            state.heads[String(r.serverSeq)] = r.head
+            if state.heads.count > 200, let oldest = state.heads.keys.compactMap(Int.init).min() {
+                state.heads[String(oldest)] = nil
+            }
             save()
             if r.clamped > 0 {
                 _ = try? ledger.append(kind: .adjust, source: Self.clampSource, amount: -r.clamped, rule: Hunt.rule,
@@ -120,6 +138,19 @@ final class LedgerSync {
         let s: Spent = try verified(try await call("POST", "/spend", body: JSONSerialization.data(withJSONObject: body)))
         guard s.type == "spend", s.item == item, s.amount == amount else { throw Failure.unexpected }
     }
+
+    // MARK: anchors
+
+    func anchors() async throws -> [AnchorInfo] {
+        struct List: Decodable { let anchors: [AnchorInfo] }
+        let list: List = try decode(try await call("GET", "/anchors"))
+        return list.anchors
+    }
+
+    func proof(_ anchor: AnchorInfo) async throws -> Data { try await call("GET", "/anchors/\(anchor.id).ots") }
+
+    /// The head this device saw in a signed receipt for the anchor's seq, when it has one.
+    func knownHead(seq: Int) -> String? { state.heads[String(seq)] }
 
     // MARK: plumbing
 

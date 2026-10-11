@@ -60,6 +60,18 @@ final class RecruitTests: XCTestCase {
         XCTAssertEqual(asked?.1, Recruit.price(recruited: 0))
     }
 
+    func testAssignerOnlyUsesUnlockedCharacters() {
+        var assigner = CharacterAssigner()
+        let sessions = (0..<10).map {
+            AgentSession(id: "s\($0)", agent: .claude, name: "", cwd: "/", status: .busy, startedAt: Date(timeIntervalSince1970: Double($0)),
+                         updatedAt: nil, lastUser: nil, lastAssistant: nil, estimated: false)
+        }
+        let allowed = Set(0..<Recruit.freeCount)
+        let picks = assigner.update(sessions, allowed: allowed, rosterCount: 32)
+        XCTAssertEqual(picks.count, 10)
+        XCTAssertTrue(picks.values.allSatisfy(allowed.contains))
+    }
+
     private func assertThrows<T>(_ body: @autoclosure () async throws -> T, _ check: (Error) -> Void = { _ in },
                                  line: UInt = #line) async {
         do { _ = try await body(); XCTFail("expected an error", line: line) } catch { check(error) }

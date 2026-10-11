@@ -127,6 +127,9 @@ struct AgentDeckApp: App {
             sem.wait()
             exit(0)
         }
+        // `AgentDeck --ledger`: crystal ledger check (read only). `--snapshot-guild out.png`: the guild page offscreen.
+        if args.contains("--ledger") { CrystalBank.report(); exit(0) }
+        if let i = args.firstIndex(of: "--snapshot-guild"), i + 1 < args.count { CrystalBank.snapshot(path: args[i + 1]) }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
         // `AgentDeck --snapshot-sidebar out.png`: the workspace window (sidebar + world) offscreen.
@@ -308,6 +311,7 @@ final class SessionStore: ObservableObject {
         if UserDefaults.standard.bool(forKey: "mobileEnabled"), !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }) {
             Task { @MainActor in MobileServer.shared.start(store: self); MobileTunnel.shared.start() }
         }
+        if !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }) { CrystalBank.shared.start() }
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -334,12 +338,12 @@ final class SessionStore: ObservableObject {
         return (hunt[s.id] ?? Hunt.Progress()).tier() ?? .low
     }
 
-    /// "중급 사냥터 · 연속 6.2시간 · 결정 31" for cards.
+    /// "중급 사냥터 · 연속 6.2시간 · 결정 31 · 마나 1200" for cards (this log's earnings and output tokens).
     func huntLine(for s: AgentSession) -> String {
         let p = hunt[s.id] ?? Hunt.Progress()
         let place = ground(for: s).map { $0.label } ?? "대기소"
         let run = p.run().map { String(format: " · 연속 %.1f시간", $0 / 3600) } ?? ""
-        return "\(place)\(run) · 결정 \(p.crystals)"
+        return "\(place)\(run) · 결정 \(p.earned) · 마나 \(p.mana)"
     }
 
     /// Where every agent stands: its hunting ground's attack spots, or the camp. Shared by the map and the phone.
@@ -362,7 +366,8 @@ final class SessionStore: ObservableObject {
         [hunt[s.id]?.last, s.updatedAt].compactMap { $0 }.max()
     }
 
-    var totalCrystals: Int { sessions.reduce(0) { $0 + (hunt[$1.id]?.crystals ?? 0) } }
+    /// The crystal ledger balance (see CrystalBank), shown on the map and the phone.
+    var totalCrystals: Int { CrystalBank.shared.balance }
 
     func station(for s: AgentSession) -> AgentAction.Kind? { stations[s.id] }
 
@@ -400,7 +405,7 @@ final class SessionStore: ObservableObject {
         switch selection {
         case .hosted(let name): return session(hosted: name)
         case .external(let id): return sessions.first { $0.id == id }
-        case .world, .list: return nil
+        case .world, .list, .guild: return nil
         }
     }
 
@@ -623,7 +628,7 @@ final class SessionStore: ObservableObject {
                 if let recent { self.recent = recent; self.lastRecentLoad = Date() }
                 self.sessions = all
                 self.updateStations(all)
-                self.assignments = self.assigner.update(all)
+                self.assignments = self.assigner.update(all, allowed: CrystalBank.shared.unlocked)
                 self.names = AgentNames.assign(all)
                 self.lastRefresh = Date()
                 WakeWord.shared.observe(all)

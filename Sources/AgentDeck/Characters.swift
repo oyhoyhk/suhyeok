@@ -34,15 +34,18 @@ enum Art {
 struct CharacterAssigner {
     private var assigned: [String: Int] = [:]
 
-    mutating func update(_ sessions: [AgentSession]) -> [String: Int] {
-        let count = max(Art.roster.count, 1)
+    /// `allowed`: roster indices the crystal ledger has opened (nil: the whole roster).
+    mutating func update(_ sessions: [AgentSession], allowed: Set<Int>? = nil, rosterCount: Int = Art.roster.count) -> [String: Int] {
+        let count = max(rosterCount, 1)
+        let pool = allowed.map { $0.filter { $0 < count }.sorted() }.flatMap { $0.isEmpty ? nil : $0 } ?? Array(0..<count)
         let live = Set(sessions.map(\.id))
         assigned = assigned.filter { live.contains($0.key) }
         var used = Set(assigned.values)
         for s in sessions.sorted(by: { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) })
         where assigned[s.id] == nil {
-            let preferred = Int(UInt(bitPattern: stableHash(s.id)) % UInt(count))
-            let free = (0..<count).map { (preferred + $0) % count }.first { !used.contains($0) }
+            let start = Int(UInt(bitPattern: stableHash(s.id)) % UInt(pool.count))
+            let preferred = pool[start]
+            let free = (0..<pool.count).map { pool[(start + $0) % pool.count] }.first { !used.contains($0) }
             assigned[s.id] = free ?? preferred
             used.insert(assigned[s.id]!)
         }
