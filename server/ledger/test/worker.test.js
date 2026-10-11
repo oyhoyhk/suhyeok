@@ -45,9 +45,9 @@ test('end to end over HTTP: code, register, sync, signed balance', async () => {
   assert.equal((await openEnvelope(await s.json(), key)).balance, 3);
   const b = await openEnvelope(await (await call(e, 'GET', `/ledger/v1/balance/${device}`)).json(), key);
   assert.equal(b.balance, 3);
+  // A retried registration (lost response) gets the same device back.
   const again = await call(e, 'POST', '/ledger/v1/register', { code, key: dev.key });
-  assert.equal(again.status, 409);
-  assert.equal((await again.json()).error, 'code_used');
+  assert.equal((await again.json()).device, device);
   const v = await (await call(e, 'GET', '/ledger/v1/admin/verify', undefined, 'admin-secret')).json();
   assert.equal(v.ok, true);
   assert.equal(v.balancesMatch, true);

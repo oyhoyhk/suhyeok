@@ -51,6 +51,11 @@ export class MemoryStore {
     for (const c of tx.codes ?? []) this.codes.set(c.code, clone(c));
     for (const r of tx.receipts ?? []) this.receipts.push(clone(r));
     for (const r of tx.reservations ?? []) this.reservations.set(r.serverSeq, clone(r));
+    if (tx.approveGenesisOf) {
+      for (const g of this.genesis.values()) {
+        if (g.device === tx.approveGenesisOf.device && g.approvedSeq == null) g.approvedSeq = tx.approveGenesisOf.approvedSeq;
+      }
+    }
     for (const g of tx.genesis ?? []) this.genesis.set(g.serverSeq, clone(g));
   }
   /** Simulates an operator editing a ledger row in place. */

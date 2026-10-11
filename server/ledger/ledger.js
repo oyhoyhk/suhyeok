@@ -27,7 +27,7 @@ export const CONFIG = {
   FUTURE_SKEW_SEC: 300, // entries may be at most this far ahead of server time
   SPEND_REQUEST_SKEW_SEC: 300, // spend requests must be signed within this window of server time
   CODE_TTL_SEC: 7 * 24 * 3600,
-  MAX_BATCH: 500,
+  MAX_BATCH: 200, // ~2 D1 statements per entry (ledger row + genesis); stays well under the per-invocation query limit
   MAX_STRING: 4096,
   COMMIT_RETRIES: 3,
 };
@@ -196,7 +196,7 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
     for (let attempt = 0; ; attempt++) {
       try { return await fn(); } catch (e) {
         if (!(e instanceof ConflictError) || attempt + 1 >= config.COMMIT_RETRIES) {
-          if (e instanceof ConflictError) fail(409, 'busy', 'concurrent write, retry');
+          if (e instanceof ConflictError) { console.error('ledger write conflict after retries:', e.message); fail(409, 'busy', 'concurrent write, retry'); }
           throw e;
         }
       }
@@ -230,7 +230,12 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
       const t = now();
       const c = await store.getCode(code);
       if (!c) fail(403, 'invalid_code');
-      if (c.usedAt != null) fail(409, 'code_used');
+      if (c.usedAt != null) {
+        // A retry after a lost response: same code, same key -> the device it already registered.
+        const mine = await store.getDeviceByKey(key);
+        if (mine && mine.id === c.device) return { device: mine.id, serverSeq: null };
+        fail(409, 'code_used');
+      }
       if (t > c.expiresAt) fail(403, 'code_expired');
       if (await store.getDeviceByKey(key)) fail(409, 'key_registered');
       const id = crypto.randomUUID();
@@ -302,7 +307,9 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
       }
 
       // 5. rate cap and accounting
-      const windowStart = dev.lastSeq === -1 ? dev.registeredAt - config.FIRST_SYNC_LOOKBACK_SEC : dev.lastTime;
+      // Device times are the device's word: never let an old (or 1970) time widen the window past the lookback.
+      const floor = dev.registeredAt - config.FIRST_SYNC_LOOKBACK_SEC;
+      const windowStart = Math.max(dev.lastTime ?? floor, floor);
       let remaining = Math.max(0, Math.floor(((fresh.at(-1).time - windowStart) * ratePerHour) / 3600));
       let { balance, pendingClamp, pendingGenesis } = dev;
       let reported = 0, accepted = 0, pending = 0;
@@ -336,7 +343,10 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
           }
         }
         balance += credited;
-        if (balance < 0) fail(409, 'insufficient', `entry ${e.seq} overdraws the balance`, { seq: e.seq, balance: balance - credited });
+        // A hire made before the device registered may lean on genesis still awaiting approval.
+        if (balance + pendingGenesis + pending < 0) {
+          fail(409, 'insufficient', `entry ${e.seq} overdraws the balance`, { seq: e.seq, balance: balance - credited });
+        }
         specs.push({ kind: 'entry', device: dev.id, dseq: e.seq, dhash: e.hash, dkind: e.kind, reported: e.amount, amount: credited, ref });
       }
       const clamped = reported - accepted;
@@ -414,6 +424,38 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
     return (await store.listPendingGenesis()).map(({ serverSeq, device, dseq, amount }) => ({ serverSeq, device, dseq, amount }));
   }
 
+  /** Pending genesis per device: what an admin weighs before approving a device's history in one go. */
+  async function listPendingGenesisByDevice() {
+    const by = new Map();
+    for (const g of await store.listPendingGenesis()) {
+      const s = by.get(g.device) ?? { device: g.device, count: 0, total: 0, firstServerSeq: g.serverSeq };
+      s.count += 1;
+      s.total += g.amount;
+      by.set(g.device, s);
+    }
+    return [...by.values()];
+  }
+
+  /** Approves every pending genesis entry of one device with a single ledger row. */
+  async function approveDeviceGenesis(device) {
+    return transact(async () => {
+      const head = await store.getHead();
+      const dev = typeof device === 'string' ? await store.getDevice(device) : null;
+      if (!dev) fail(404, 'unknown_device');
+      const mine = (await store.listPendingGenesis()).filter((g) => g.device === dev.id);
+      if (!mine.length) fail(409, 'nothing_pending');
+      const total = mine.reduce((s, g) => s + g.amount, 0);
+      const rows = await chainRows(head, [{ kind: 'approve', device: dev.id, amount: total, reported: total, ref: `device:${mine.length}` }], now());
+      const balance = dev.balance + total;
+      await store.commit({
+        ledger: rows,
+        devices: [{ ...dev, balance, pendingGenesis: dev.pendingGenesis - total }],
+        approveGenesisOf: { device: dev.id, approvedSeq: rows[0].seq, count: mine.length },
+      });
+      return { serverSeq: rows[0].seq, device: dev.id, approved: mine.length, total, balance };
+    });
+  }
+
   async function approveGenesis(serverSeq) {
     return transact(async () => {
       const head = await store.getHead();
@@ -471,6 +513,7 @@ export function createLedger({ store, signer, now = () => Math.floor(Date.now() 
 
   return {
     publicKey: async () => ({ alg: 'Ed25519', key: signer.publicKey }),
-    issueCode, register, sync, requestSpend, balance, listPendingGenesis, approveGenesis, revoke, correct, verify,
+    issueCode, register, sync, requestSpend, balance, listPendingGenesis, listPendingGenesisByDevice, approveGenesis,
+    approveDeviceGenesis, revoke, correct, verify,
   };
 }

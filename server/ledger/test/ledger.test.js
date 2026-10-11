@@ -338,6 +338,71 @@ for (const [name, makeStore] of stores) {
       assert.deepEqual(kinds, ['register', 'entry', 'entry', 'correct']);
     });
 
+    // --- review fixes
+
+    const capFrom = (registeredAt, t) => Math.floor(((t - (registeredAt - CONFIG.FIRST_SYNC_LOOKBACK_SEC)) * RATE) / 3600);
+
+    test('a first sync dated 1970 does not widen the cap window (lookback floor)', async () => {
+      const dev = await registered();
+      await dev.append('earn', 's1', 0, 0); // open + a zero earn, both at time 0
+      await sync(dev, dev.since(-1));
+      await dev.append('earn', 's1', 1e12, T0);
+      const r = await open(await sync(dev, dev.since(1)));
+      assert.ok(r.accepted <= capFrom(T0, T0), `accepted ${r.accepted}`);
+    });
+
+    test('a first sync split into batches with old times keeps the lookback floor', async () => {
+      const dev = await registered();
+      const old = T0 - 30 * 86400;
+      for (let i = 0; i < 5; i++) await dev.append('genesis', `log${i}`, 10, old + i);
+      await sync(dev, dev.since(-1).slice(0, 3));
+      await dev.append('earn', 'live', 1e9, T0);
+      const r = await open(await sync(dev, dev.since(2)));
+      assert.ok(r.accepted <= capFrom(T0, T0), `accepted ${r.accepted}`);
+    });
+
+    test('registering again with the same code and key returns the same device', async () => {
+      const dev = await makeDevice();
+      const { code } = await ledger.issueCode({});
+      const a = await ledger.register({ code, key: dev.key });
+      const b = await ledger.register({ code, key: dev.key });
+      assert.equal(b.device, a.device);
+      const other = await makeDevice();
+      await rejects(ledger.register({ code, key: other.key }), 409, 'code_used');
+    });
+
+    test('a hire made before registration may use pending genesis; approval settles it', async () => {
+      const dev = await registered();
+      await dev.append('genesis', 'history', 5000, T0);
+      await dev.append('spend', 'knight', -100, T0, '영입');
+      const r = await open(await sync(dev, dev.since(-1)));
+      assert.equal(r.pending, 5000);
+      assert.equal(r.balance, -100);
+      await ledger.approveDeviceGenesis(dev.id);
+      assert.equal(await serverBalance(dev), 4900);
+    });
+
+    test('a spend beyond balance plus pending genesis still overdraws', async () => {
+      const dev = await registered();
+      await dev.append('genesis', 'history', 50, T0);
+      await dev.append('spend', 'knight', -100, T0);
+      await rejects(sync(dev, dev.since(-1)), 409, 'insufficient');
+    });
+
+    test('an admin approves all of a device\'s pending genesis at once', async () => {
+      const dev = await registered();
+      for (let i = 0; i < 3; i++) await dev.append('genesis', `log${i}`, 100 * (i + 1), T0);
+      await sync(dev, dev.since(-1));
+      const summary = await ledger.listPendingGenesisByDevice();
+      assert.deepEqual(summary.map(({ device, count, total }) => ({ device, count, total })), [{ device: dev.id, count: 3, total: 600 }]);
+      const ap = await ledger.approveDeviceGenesis(dev.id);
+      assert.equal(ap.approved, 3);
+      assert.equal(await serverBalance(dev), 600);
+      assert.equal((await ledger.listPendingGenesis()).length, 0);
+      await rejects(ledger.approveDeviceGenesis(dev.id), 409, 'nothing_pending');
+      assert.equal((await ledger.verify()).ok, true);
+    });
+
     test('editing a server ledger row in place is detected by verify', async () => {
       const dev = await registered();
       await dev.append('earn', 's1', 3, T0);

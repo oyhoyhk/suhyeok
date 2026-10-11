@@ -94,6 +94,10 @@ export class D1Store {
         ON CONFLICT(server_seq) DO UPDATE SET consumed_seq = excluded.consumed_seq`,
       r.serverSeq, r.device, r.item, r.amount, r.reqTime, r.consumedSeq, r.body, r.sig));
     }
+    if (tx.approveGenesisOf) {
+      const a = tx.approveGenesisOf;
+      s.push(this.q('UPDATE genesis SET approved_seq = ? WHERE device = ? AND approved_seq IS NULL', a.approvedSeq, a.device));
+    }
     for (const g of tx.genesis ?? []) {
       s.push(this.q(`INSERT INTO genesis (server_seq, device, dseq, amount, approved_seq) VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(server_seq) DO UPDATE SET approved_seq = excluded.approved_seq`,
@@ -103,7 +107,8 @@ export class D1Store {
     try {
       await this.db.batch(s);
     } catch (e) {
-      if (/UNIQUE|PRIMARY KEY|constraint/i.test(String(e?.message ?? e))) throw new ConflictError(String(e?.message ?? e));
+      // Only a key collision is a lost race worth retrying; other constraint failures are real errors.
+      if (/UNIQUE constraint failed|PRIMARY KEY/i.test(String(e?.message ?? e))) throw new ConflictError(String(e?.message ?? e));
       throw e;
     }
   }
@@ -172,7 +177,8 @@ async function route(request, env, path) {
   if (path.startsWith('/admin/')) {
     if (!(await isAdmin(request, env))) return json({ error: 'unauthorized' }, 401);
     if (method === 'POST' && path === '/admin/codes') return json(await ledger.issueCode(await readJson(request)), 201);
-    if (method === 'GET' && path === '/admin/genesis') return json({ pending: await ledger.listPendingGenesis() });
+    if (method === 'GET' && path === '/admin/genesis') return json({ pending: await ledger.listPendingGenesis(), byDevice: await ledger.listPendingGenesisByDevice() });
+    if (method === 'POST' && (m = path.match(/^\/admin\/devices\/([^/]+)\/genesis\/approve$/))) return json(await ledger.approveDeviceGenesis(decodeURIComponent(m[1])));
     if (method === 'POST' && (m = path.match(/^\/admin\/genesis\/(\d+)\/approve$/))) return json(await ledger.approveGenesis(Number(m[1])));
     if (method === 'POST' && (m = path.match(/^\/admin\/devices\/([0-9a-f-]{36})\/revoke$/))) {
       return json(await ledger.revoke(m[1], (await readJson(request)).note ?? ''));
