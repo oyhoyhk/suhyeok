@@ -138,3 +138,8 @@ export function createAnchoring({
 
   return { submit, upgrade, list, proofFile };
 }
+
+// Cron schedules; must match [triggers] crons in wrangler.toml. They live here, not in worker.js, because
+// workerd treats every named export of the entry module as a handler and refuses to start on a string.
+export const CRON_SUBMIT = '0 3 * * *';
+export const CRON_UPGRADE = '0 */6 * * *';

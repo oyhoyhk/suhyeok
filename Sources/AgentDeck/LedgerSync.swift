@@ -7,8 +7,9 @@ import Foundation
 /// Main-actor bound: its state is read by the UI while syncs run (network waits do not block the main thread).
 @MainActor
 final class LedgerSync {
-    /// Server key baked into the app at deploy time (base64 raw Ed25519). Empty: pinned on first registration.
-    static let pinnedServerKey = ""
+    /// The production ledger server's key (base64 raw Ed25519, deployed 2026-10-11). A server answering with any
+    /// other key is refused, so a look-alike server cannot hand out receipts.
+    static let pinnedServerKey = "QoECpfdKjZ5Dw6XUVfSHoxuBvmoGjvgcQ1C82GwYG2g="
     static let defaultBase = "https://suhyeok.pickuma.com/ledger/v1"
     static let clampSource = "#server-clamp"
     static let batchSize = 200  // matches the server's MAX_BATCH
@@ -58,12 +59,15 @@ final class LedgerSync {
     let ledger: Ledger
     private let stateURL: URL
     private let transport: Transport
+    private let pinnedKey: String  // empty: trust the key seen at first registration (tests, other servers)
     private(set) var state: State
 
-    init(ledger: Ledger, stateURL: URL, transport: @escaping Transport = LedgerSync.urlSession) {
+    init(ledger: Ledger, stateURL: URL, transport: @escaping Transport = LedgerSync.urlSession,
+         pinnedKey: String = LedgerSync.pinnedServerKey) {
         self.ledger = ledger
         self.stateURL = stateURL
         self.transport = transport
+        self.pinnedKey = pinnedKey
         state = (try? JSONDecoder().decode(State.self, from: Data(contentsOf: stateURL))) ?? State()
     }
 
@@ -81,7 +85,7 @@ final class LedgerSync {
         guard let signer = ledger.signer else { throw Failure.noKey }
         struct Pub: Decodable { let key: String }
         let pub: Pub = try decode(try await call("GET", "/pubkey"))
-        let pinned = Self.pinnedServerKey.isEmpty ? state.serverKey : Self.pinnedServerKey
+        let pinned = pinnedKey.isEmpty ? state.serverKey : pinnedKey
         if let pinned, pinned != pub.key { throw Failure.keyChanged }
 
         struct Registered: Decodable { let device: String }

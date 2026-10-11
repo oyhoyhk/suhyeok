@@ -3,7 +3,7 @@
 // Logic lives in ledger.js and anchor.js; this file is HTTP routing, the cron entry point, and the D1
 // implementation of the storage interfaces.
 import { createLedger, createSigner, ConflictError, LedgerError } from './ledger.js';
-import { createAnchoring } from './anchor.js';
+import { createAnchoring, CRON_SUBMIT, CRON_UPGRADE } from './anchor.js';
 
 const PREFIX = '/ledger/v1';
 const MAX_BODY = 1 << 20;
@@ -189,9 +189,6 @@ async function route(request, env, path) {
   return notFound();
 }
 
-// Must match [triggers] crons in wrangler.toml.
-export const CRON_SUBMIT = '0 3 * * *';
-export const CRON_UPGRADE = '0 */6 * * *';
 
 export default {
   /** Anchoring cron: daily submit, 6-hourly upgrade. Failures are logged; the next run retries. */

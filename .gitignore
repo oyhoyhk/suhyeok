@@ -10,3 +10,8 @@ art/__pycache__/
 README.preview.html
 art/raw_rejected/
 .DS_Store
+
+# Ledger Worker local secrets and state (never commit)
+server/ledger/.dev.vars
+server/ledger/.wrangler/
+server/ledger/node_modules/

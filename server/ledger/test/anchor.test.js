@@ -2,7 +2,8 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLedger, createSigner } from '../ledger.js';
 import { createAnchoring, CALENDARS, ANCHOR_CONFIG } from '../anchor.js';
-import worker, { D1Store, CRON_SUBMIT, CRON_UPGRADE } from '../worker.js';
+import worker, { D1Store } from '../worker.js';
+import { CRON_SUBMIT, CRON_UPGRADE } from '../anchor.js';
 import { attestations, hex, parseOts, serializeTimestamp, OP } from '../ots.js';
 import { makeSqliteD1, makeDevice, makeSigningKey } from './helpers.js';
 

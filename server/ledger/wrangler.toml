@@ -14,7 +14,7 @@ compatibility_date = "2026-05-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "pickuma-suhyeok-ledger"
-database_id = "TBD"
+database_id = "bbcdcff3-52bd-46dc-98de-2b148dc67156"
 
 [observability]
 enabled = true

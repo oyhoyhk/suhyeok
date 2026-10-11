@@ -72,7 +72,7 @@ final class LedgerSyncTests: XCTestCase {
 
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: dir) }
 
-    private func client() -> LedgerSync { LedgerSync(ledger: ledger, stateURL: stateURL, transport: server.transport) }
+    private func client() -> LedgerSync { LedgerSync(ledger: ledger, stateURL: stateURL, transport: server.transport, pinnedKey: "") }
 
     private func registered() async throws -> LedgerSync {
         let c = client()
@@ -94,7 +94,7 @@ final class LedgerSyncTests: XCTestCase {
     func testChangedServerKeyIsRefused() async throws {
         _ = try await registered()
         let impostor = FakeServer()
-        let c = LedgerSync(ledger: ledger, stateURL: stateURL, transport: impostor.transport)
+        let c = LedgerSync(ledger: ledger, stateURL: stateURL, transport: impostor.transport, pinnedKey: "")
         await assertThrows(try await c.register(code: "X")) { XCTAssertEqual($0 as? LedgerSync.Failure, .keyChanged) }
     }
 
@@ -141,7 +141,7 @@ final class LedgerSyncTests: XCTestCase {
         lines.removeLast()
         try (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
         ledger = Ledger(url: url, signer: ledger.signer)
-        let again = LedgerSync(ledger: ledger, stateURL: stateURL, transport: server.transport)
+        let again = LedgerSync(ledger: ledger, stateURL: stateURL, transport: server.transport, pinnedKey: "")
         XCTAssertEqual(ledger.balance, 50)
 
         server.clamp = 0
@@ -193,6 +193,12 @@ final class LedgerSyncTests: XCTestCase {
         let r = try await c.sync()
         XCTAssertEqual(r?.deviceSeq, 620)
         XCTAssertEqual(server.requests.filter { $0.path == "/sync" }.map { ($0.body["entries"] as! [Any]).count }, [200, 200, 200, 21])
+    }
+
+    func testServerWithAnotherKeyThanThePinnedOneIsRefused() async throws {
+        let c = LedgerSync(ledger: ledger, stateURL: stateURL, transport: server.transport, pinnedKey: LedgerSync.pinnedServerKey)
+        await assertThrows(try await c.register(code: "X")) { XCTAssertEqual($0 as? LedgerSync.Failure, .keyChanged) }
+        XCTAssertFalse(server.requests.contains { $0.path == "/register" })
     }
 
     func testUnregisteredClientDoesNotCall() async {
