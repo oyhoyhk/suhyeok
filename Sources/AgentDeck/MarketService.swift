@@ -25,7 +25,8 @@ final class MarketService {
         let sales: Int?
         let earned: Int?
     }
-    struct Mine: Decodable { let balance: Int; let pendingIncome: Int; let listings: [MyListing] }
+    struct Purchase: Decodable, Identifiable, Equatable { let id: String; let name: String; let price: Int; let status: String }
+    struct Mine: Decodable { let balance: Int; let pendingIncome: Int; let listings: [MyListing]; let purchases: [Purchase]? }
 
     enum Failure: Error, Equatable {
         case invalidPack([String])
@@ -120,23 +121,40 @@ final class MarketService {
         let body = try Self.json(["device": s.device, "manifest": manifest, "price": price, "alias": alias,
                                   "description": description, "time": t, "sig": s.sig])
         let draft: Draft = try sync.decode(try await sync.call("POST", "/market/drafts", body: body))
+        do {
+            try await finish(draft: draft.listingId, missing: draft.missing, folder: folder, progress: progress)
+        } catch {
+            // An abandoned draft counts against the seller's open listings: give it back.
+            try? await withdraw(draft.listingId)
+            throw error
+        }
+        return draft.listingId
+    }
 
-        for (i, path) in draft.missing.enumerated() where AssetPack.classify(path) != nil {
-            progress(i, draft.missing.count)
+    private func finish(draft listingId: String, missing: [String], folder: URL, progress: (Int, Int) -> Void) async throws {
+        for (i, path) in missing.enumerated() where AssetPack.classify(path) != nil {
+            progress(i, missing.count)
             let data = try Data(contentsOf: folder.appendingPathComponent(path))
             let ft = Int(Date().timeIntervalSince1970)
-            let fs = try sync.signed("market.file", [("listingId", draft.listingId), ("path", path), ("sha256", Self.sha(data))], time: ft)
-            _ = try await sync.call("PUT", "/market/drafts/\(draft.listingId)/files/\(path)", body: data,
+            let fs = try sync.signed("market.file", [("listingId", listingId), ("path", path), ("sha256", Self.sha(data))], time: ft)
+            _ = try await sync.call("PUT", "/market/drafts/\(listingId)/files/\(path)", body: data,
                                     contentType: "application/octet-stream",
                                     headers: ["x-ledger-device": fs.device, "x-ledger-time": String(ft), "x-ledger-sig": fs.sig])
         }
-        progress(draft.missing.count, draft.missing.count)
+        progress(missing.count, missing.count)
 
         let st = nextTime()
-        let ss = try sync.signed("market.submit", [("listingId", draft.listingId)], time: st)
-        _ = try await sync.call("POST", "/market/drafts/\(draft.listingId)/submit",
+        let ss = try sync.signed("market.submit", [("listingId", listingId)], time: st)
+        _ = try await sync.call("POST", "/market/drafts/\(listingId)/submit",
                                 body: try Self.json(["device": ss.device, "time": st, "sig": ss.sig]))
-        return draft.listingId
+    }
+
+    /// Takes back a draft that was never submitted.
+    func withdraw(_ listingId: String) async throws {
+        let t = nextTime()
+        let s = try sync.signed("market.withdraw", [("listingId", listingId)], time: t)
+        _ = try await sync.call("POST", "/market/drafts/\(listingId)/withdraw",
+                                body: try Self.json(["device": s.device, "time": t, "sig": s.sig]))
     }
 
     func mine() async throws -> Mine {

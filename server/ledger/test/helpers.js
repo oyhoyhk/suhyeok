@@ -28,7 +28,14 @@ export class MemoryStore {
     return [...this.files.values()].filter((f) => f.listingId === listingId).sort((a, b) => (a.path < b.path ? -1 : 1)).map(clone);
   }
   async getOwner(listingId, device) { return clone(this.owners.get(`${listingId}\n${device}`) ?? null); }
-  async countOwners(listingId) { return [...this.owners.values()].filter((o) => o.listingId === listingId).length; }
+  async salesCounts() {
+    const m = new Map();
+    for (const o of this.owners.values()) m.set(o.listingId, (m.get(o.listingId) ?? 0) + 1);
+    return m;
+  }
+  async listOwned(device) {
+    return [...this.owners.values()].filter((o) => o.device === device).sort((a, b) => a.serverSeq - b.serverSeq).map(clone);
+  }
   async getToken(token) { return clone(this.tokens.get(token) ?? null); }
   async getHead() {
     const r = this.ledger.at(-1);

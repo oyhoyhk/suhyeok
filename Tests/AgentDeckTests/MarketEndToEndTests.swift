@@ -75,6 +75,10 @@ final class MarketEndToEndTests: XCTestCase {
         let serverBuyer = try await buyerSync.balance()
         XCTAssertEqual(serverBuyer.balance, 700)
         XCTAssertEqual(buyerLedger.balance, 700)
+        let purchases = try await buyer.mine().purchases
+        XCTAssertEqual(purchases?.map(\.id), [id])
+        let catalogue = try await buyer.listings()
+        XCTAssertEqual(catalogue.first { $0.id == id }?.sales, 1)
 
         // The seller's next sync books 90% as income; local and server balances agree.
         try await sellerSync.sync()

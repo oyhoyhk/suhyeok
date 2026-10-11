@@ -54,10 +54,11 @@ struct MarketView: View {
                 for l in listings where previews[l.id] == nil {
                     if let p = l.previews?.portrait ?? l.previews?.sprite, let data = await market.image(p) { previews[l.id] = NSImage(data: data) }
                 }
-            } else {
-                mine = try await market.mine()
             }
+            mine = try await market.mine()
             message = nil
+        } catch is CancellationError {
+        } catch URLError.cancelled {  // switching tabs cancels the previous load: not an error
         } catch {
             message = "마켓을 불러오지 못함: \(CrystalBank.describe(error))"
         }
@@ -66,10 +67,29 @@ struct MarketView: View {
     // MARK: browse
 
     private var browse: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 14)], spacing: 14) {
-            ForEach(listings) { l in card(l) }
+        VStack(alignment: .leading, spacing: 16) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 14)], spacing: 14) {
+                ForEach(listings) { l in card(l) }
+            }
+            .overlay { if listings.isEmpty && bank.canTrade { Text("아직 승인된 캐릭터가 없음").foregroundStyle(.secondary).padding(40) } }
+            // Bought characters that left the catalogue (delisted) stay downloadable.
+            let gone = (mine?.purchases ?? []).filter { p in !listings.contains { $0.id == p.id } }
+            if !gone.isEmpty {
+                Text("판매가 끝난 내 구매").font(.headline)
+                ForEach(gone) { p in
+                    HStack {
+                        Text(p.name).font(.callout)
+                        Spacer()
+                        if AssetLibrary.shared.isInstalled(p.id) {
+                            Text("보유").font(.caption.bold()).foregroundStyle(.green)
+                        } else {
+                            Button(busy == p.id ? "…" : "다시 받기") { Task { await act(p.id) { try await $0.install(p.id) } } }
+                                .controlSize(.small).disabled(busy != nil || !bank.canTrade)
+                        }
+                    }
+                }
+            }
         }
-        .overlay { if listings.isEmpty && bank.canTrade { Text("아직 승인된 캐릭터가 없음").foregroundStyle(.secondary).padding(40) } }
     }
 
     private func card(_ l: MarketService.Listing) -> some View {
@@ -165,6 +185,12 @@ struct MarketView: View {
                         Spacer()
                         if let s = m.sales, s > 0 { Text("\(s)건 · \(m.earned ?? 0) 결정").font(.caption) }
                         Text(Self.status[m.status] ?? m.status).font(.caption.bold()).foregroundStyle(m.status == "rejected" ? .red : .secondary)
+                        if m.status == "draft" {
+                            Button(busy == m.id ? "…" : "취소") {
+                                Task { await act(m.id) { try await $0.withdraw(m.id) }; await reload() }
+                            }
+                            .controlSize(.small).disabled(busy != nil || !bank.canTrade)
+                        }
                     }
                     if let r = m.reason, !r.isEmpty { Text("사유: \(r)").font(.caption).foregroundStyle(.secondary) }
                 }
@@ -190,7 +216,7 @@ struct MarketView: View {
         defer { progress = nil }
         do {
             try await market.upload(folder: folder, price: price, alias: alias, description: note) { done, total in
-                Task { @MainActor in progress = (done, total) }
+                progress = (done, total)
             }
             message = "심사 요청을 보냄"
             self.folder = nil

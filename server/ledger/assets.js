@@ -22,7 +22,7 @@ export function classifyPath(path) {
   if (!m) return null;
   if (m[1]) return { role: 'portrait', format: m[2] === 'jpg' ? 'jpeg' : 'png' };
   if (m[3]) return { role: 'sprite', format: 'png' };
-  if (!(m[4] in SPEC.MOTIONS) || (m[5].length > 1 && m[5][0] === '0')) return null;
+  if (!Object.hasOwn(SPEC.MOTIONS, m[4]) || (m[5].length > 1 && m[5][0] === '0')) return null;
   return { role: 'frame', format: 'png', motion: m[4], index: Number(m[5]) };
 }
 
@@ -45,7 +45,7 @@ export function validateManifest(text) {
   if (!name || [...name].length > SPEC.NAME_MAX || /[\u0000-\u001f\u007f]/.test(name)) errors.push(err('bad_name'));
 
   let total = 0;
-  const frames = {};
+  const frames = Object.create(null);
   const portraits = [];
   let sprite = false;
   for (const [path, f] of Object.entries(m.files)) {
@@ -69,7 +69,7 @@ export function validateManifest(text) {
   // Every motion: the listed files are exactly 0..n-1, n is the spec count, and `frames` says the same.
   const motions = new Set([...Object.keys(frames), ...Object.keys(m.frames), ...SPEC.REQUIRED]);
   for (const motion of motions) {
-    const want = SPEC.MOTIONS[motion];
+    const want = Object.hasOwn(SPEC.MOTIONS, motion) ? SPEC.MOTIONS[motion] : 0;
     const have = (frames[motion] ?? []).sort((a, b) => a - b);
     const declared = m.frames[motion];
     const contiguous = have.every((v, i) => v === i);

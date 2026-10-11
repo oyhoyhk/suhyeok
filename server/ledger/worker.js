@@ -81,7 +81,13 @@ export class D1Store {
   async getOwner(listingId, device) {
     return ownerFrom(await this.q('SELECT * FROM owners WHERE listing_id = ? AND device = ?', listingId, device).first());
   }
-  async countOwners(listingId) { return (await this.q('SELECT COUNT(*) AS n FROM owners WHERE listing_id = ?', listingId).first()).n; }
+  async salesCounts() {
+    const { results } = await this.q('SELECT listing_id, COUNT(*) AS n FROM owners GROUP BY listing_id').all();
+    return new Map(results.map((r) => [r.listing_id, r.n]));
+  }
+  async listOwned(device) {
+    return (await this.q('SELECT * FROM owners WHERE device = ? ORDER BY server_seq', device).all()).results.map(ownerFrom);
+  }
   async getToken(token) { return tokenFrom(await this.q('SELECT * FROM download_tokens WHERE token = ?', token).first()); }
 
   async getLatestAnchor() { return anchorFrom(await this.q('SELECT * FROM anchors ORDER BY id DESC LIMIT 1').first()); }

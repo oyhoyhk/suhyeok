@@ -18,6 +18,8 @@ private final class FakeMarket {
     var corruptPath: String?
     var uploaded: [String: Data] = [:]
     var submitted = false
+    var withdrawn = false
+    var failPath: String?
     var times: [Int] = []
 
     init(packDir: URL) { self.packDir = packDir }
@@ -77,9 +79,14 @@ private final class FakeMarket {
             try check("market.submit", ["listingId": "D1"], device: body["device"] as! String, time: body["time"] as! Int, sig: body["sig"] as! String)
             submitted = true
             return try ok(["listingId": "D1", "status": "pending", "reason": "", "serverSeq": 9])
+        case ("POST", "/market/drafts/D1/withdraw"):
+            try check("market.withdraw", ["listingId": "D1"], device: body["device"] as! String, time: body["time"] as! Int, sig: body["sig"] as! String)
+            withdrawn = true
+            return try ok(["listingId": "D1", "status": "withdrawn", "reason": "", "serverSeq": 10])
         case ("POST", "/market/mine"):
             return try ok(["device": "dev-1", "balance": 10, "pendingIncome": 0,
-                           "listings": [["id": "D1", "name": "Tester", "price": 300, "status": "rejected", "reason": "복제", "sales": 0, "earned": 0]]])
+                           "listings": [["id": "D1", "name": "Tester", "price": 300, "status": "rejected", "reason": "복제", "sales": 0, "earned": 0]],
+                           "purchases": [["id": "L1", "name": "Tester", "price": 300, "status": "delisted"]]])
         default:
             if path.hasPrefix("/market/files/tok/") {
                 let file = String(path.dropFirst("/market/files/tok/".count))
@@ -89,6 +96,7 @@ private final class FakeMarket {
             }
             if req.httpMethod == "PUT", path.hasPrefix("/market/drafts/D1/files/") {
                 let file = String(path.dropFirst("/market/drafts/D1/files/".count))
+                if file == failPath { return try ok(["error": "internal"], 500) }
                 let data = req.httpBody ?? Data()
                 let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
                 try check("market.file", ["listingId": "D1", "path": file, "sha256": sha], device: req.value(forHTTPHeaderField: "x-ledger-device")!,
@@ -192,6 +200,14 @@ final class MarketServiceTests: XCTestCase {
         XCTAssertGreaterThan(submit, draft)  // the server refuses a submit in the same second as its draft
     }
 
+    func testFailedUploadWithdrawsItsDraft() async throws {
+        let m = try await service()
+        server.failPath = "sprite.png"
+        do { try await m.upload(folder: pack, price: 300, alias: "", description: ""); XCTFail("expected an error") } catch {}
+        XCTAssertTrue(server.withdrawn)  // the draft does not stay open against the seller's limit
+        XCTAssertFalse(server.submitted)
+    }
+
     func testInvalidFolderNeverReachesTheServer() async throws {
         let m = try await service()
         let bad = pack.deletingLastPathComponent().appendingPathComponent("svg_sprite")
@@ -206,5 +222,6 @@ final class MarketServiceTests: XCTestCase {
         let mine = try await m.mine()
         XCTAssertEqual(mine.listings.first?.status, "rejected")
         XCTAssertEqual(mine.listings.first?.reason, "복제")
+        XCTAssertEqual(mine.purchases?.map(\.id), ["L1"])  // delisted purchases can still be downloaded again
     }
 }

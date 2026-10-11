@@ -66,10 +66,13 @@ final class AssetLibrary {
             try? fm.removeItem(at: staging)
             throw Failure.io
         }
-        lock.withLock {
-            _installed.removeAll { $0.listingId == listingId }
-            _installed.append(Installed(listingId: listingId, name: name.trimmingCharacters(in: .whitespacesAndNewlines), installedAt: Date()))
-            try? Self.encoder.encode(_installed).write(to: indexURL, options: .atomic)
+        try lock.withLock {
+            // A reinstall keeps its place: roster indices of the characters after it must not move.
+            var next = _installed
+            let entry = Installed(listingId: listingId, name: name.trimmingCharacters(in: .whitespacesAndNewlines), installedAt: Date())
+            if let i = next.firstIndex(where: { $0.listingId == listingId }) { next[i] = entry } else { next.append(entry) }
+            do { try Self.encoder.encode(next).write(to: indexURL, options: .atomic) } catch { throw Failure.io }
+            _installed = next
         }
     }
 

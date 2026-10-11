@@ -5,7 +5,8 @@
 //   getListing(id) -> listing | null
 //   listListings({status?, seller?}) -> listing[] (oldest first)
 //   listListingFiles(listingId) -> [{listingId, path, sha256, bytes}]
-//   getOwner(listingId, device) -> owner | null          countOwners(listingId) -> number
+//   getOwner(listingId, device) -> owner | null          listOwned(device) -> owner[] (oldest first)
+//   salesCounts() -> Map(listingId -> number of owners)
 //   getToken(token) -> {token, device, listingId, expiresAt} | null
 //   commit({..., listings, listingFiles, owners, tokens, pruneTokensBefore})
 // listing = {id, seller, kind, name, description, alias, price, status, reason, manifest, createdAt, updatedAt}
@@ -188,16 +189,22 @@ export function createMarket({
     const dev = await liveDeviceIn(store, device);
     await checkSig(dev, 'market.mine', {}, time, sig);
     checkFresh(dev, time, { monotonic: false });
-    const listings = [];
+    const listings = [], counts = await store.salesCounts();
     for (const l of await store.listListings({ seller: dev.id })) {
-      const sales = await store.countOwners(l.id);
+      const sales = counts.get(l.id) ?? 0;
       listings.push({
         id: l.id, kind: l.kind, name: l.name, description: l.description, alias: l.alias, price: l.price, status: l.status,
         reason: l.reason, createdAt: l.createdAt, updatedAt: l.updatedAt, sales, earned: sales * sellerShare(l.price),
         missing: l.status === 'draft' ? await missingFiles(l) : [],
       });
     }
-    return { device: dev.id, balance: dev.balance, pendingIncome: dev.pendingIncome ?? 0, listings: listings.reverse() };
+    // Purchases stay listed after a delisting so the buyer can always download again (R17).
+    const purchases = [];
+    for (const o of await store.listOwned(dev.id)) {
+      const l = await store.getListing(o.listingId);
+      if (l) purchases.push({ id: l.id, name: l.name, price: o.price, status: l.status });
+    }
+    return { device: dev.id, balance: dev.balance, pendingIncome: dev.pendingIncome ?? 0, listings: listings.reverse(), purchases };
   }
 
   // --- public catalogue
@@ -208,11 +215,14 @@ export function createMarket({
   };
 
   async function listings() {
-    const out = [];
+    const out = [], counts = await store.salesCounts(), revoked = new Map();
     for (const l of (await store.listListings({ status: 'approved' })).reverse()) {
+      // A revoked seller's listings cannot be bought (buy refuses them), so they are not shown either.
+      if (!revoked.has(l.seller)) revoked.set(l.seller, (await store.getDevice(l.seller))?.revokedAt != null);
+      if (revoked.get(l.seller)) continue;
       out.push({
         id: l.id, kind: l.kind, name: l.name, description: l.description, price: l.price,
-        seller: { tag: sellerTag(l.seller), alias: l.alias }, sales: await store.countOwners(l.id), approvedAt: l.updatedAt,
+        seller: { tag: sellerTag(l.seller), alias: l.alias }, sales: counts.get(l.id) ?? 0, approvedAt: l.updatedAt,
         previews: { portrait: previewPath(l, 'portrait'), sprite: previewPath(l, 'sprite') },
       });
     }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { validatePack, codes, classifyPath, parsePng, parseJpeg } from '../assets.js';
+import { validatePack, validateManifest, codes, classifyPath, parsePng, parseJpeg } from '../assets.js';
 
 const DIR = new URL('./asset-vectors/', import.meta.url);
 
@@ -24,7 +24,8 @@ for (const name of readdirSync(DIR).filter((n) => existsSync(new URL(`${n}/expec
 
 test('paths outside the layout are refused', () => {
   for (const p of ['../x.png', 'frames/../sprite.png', 'frames/sub/walk_down_0.png', '.hidden.png', 'sprite.svg',
-    'frames/walk_down_01.png', 'frames/dance_0.png', 'portrait.jpeg', '/sprite.png']) {
+    'frames/walk_down_01.png', 'frames/dance_0.png', 'portrait.jpeg', '/sprite.png',
+    'frames/constructor_0.png', 'frames/__proto___0.png', 'frames/toString_0.png']) {
     assert.equal(classifyPath(p), null, p);
   }
   assert.deepEqual(classifyPath('frames/walk_down_5.png'), { role: 'frame', format: 'png', motion: 'walk_down', index: 5 });
@@ -39,4 +40,13 @@ test('truncated or tampered images are not sound', () => {
   const jpg = new Uint8Array(readFileSync(new URL('ok_minimal/portrait.jpg', DIR)));
   assert.deepEqual(parseJpeg(jpg), { width: 128, height: 160 });
   assert.equal(parseJpeg(jpg.slice(0, jpg.length - 10)), null);
+});
+
+test('object-prototype names are not motions: a refusal, not a crash', () => {
+  const m = JSON.parse(readFileSync(new URL('ok_minimal/manifest.json', DIR), 'utf8'));
+  m.files['frames/__proto___0.png'] = { sha256: '0'.repeat(64), bytes: 10 };
+  m.frames.constructor = 1;
+  const { errors } = validateManifest(JSON.stringify(m));
+  assert.ok(errors.some((e) => e.code === 'bad_path'));
+  assert.ok(errors.some((e) => e.code === 'frame_count' && e.path === 'constructor'), JSON.stringify(errors));
 });

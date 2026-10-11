@@ -345,6 +345,26 @@ for (const [name, makeStore] of stores) {
       assert.equal((await serverBalance(b)).balance, 299);
     });
 
+    test('mine lists the device\'s purchases, delisted ones included, so they can be downloaded again', async () => {
+      const a = await registered();
+      const b = await registered();
+      await earn(b, 1000);
+      const id = await published(a);
+      await market.buy(await buyReq(b, id, 300));
+      await market.moderate(id, 'delist', { reason: 'copyright report' });
+      assert.deepEqual((await mine(b)).purchases, [{ id, name: 'Tester', price: 300, status: 'delisted' }]);
+      assert.deepEqual((await mine(a)).purchases, []);
+    });
+
+    test('a revoked seller\'s listings leave the catalogue', async () => {
+      const a = await registered();
+      const c = await registered();
+      const id = await published(a);
+      const other = await published(c);
+      await ledger.revoke(a.id, 'test');
+      assert.deepEqual((await market.listings()).listings.map((l) => l.id), [other]);
+    });
+
     test('pending, rejected and delisted listings cannot be bought', async () => {
       const a = await registered();
       const b = await registered();

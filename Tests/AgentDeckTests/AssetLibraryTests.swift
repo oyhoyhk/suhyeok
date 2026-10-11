@@ -80,8 +80,9 @@ final class AssetLibraryTests: XCTestCase {
         let lib = AssetLibrary(root: root)
         let (m, files) = try pack("ok_minimal")
         try lib.install(listingId: "same", manifest: m, files: files)
+        try lib.install(listingId: "next", manifest: m, files: files)
         try lib.install(listingId: "same", manifest: m, files: files)
-        XCTAssertEqual(lib.characters.count, 1)
+        XCTAssertEqual(lib.characters.map(\.id), ["market.same", "market.next"])  // roster indices stay put
     }
 
     func testMarketCharactersAreAlwaysOpenForAssignment() throws {
