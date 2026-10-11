@@ -130,6 +130,7 @@ struct AgentDeckApp: App {
         // `AgentDeck --ledger`: crystal ledger check (read only). `--snapshot-guild out.png`: the guild page offscreen.
         if args.contains("--ledger") { CrystalBank.report(); exit(0) }
         if let i = args.firstIndex(of: "--snapshot-guild"), i + 1 < args.count { CrystalBank.snapshot(path: args[i + 1]) }
+        if let i = args.firstIndex(of: "--snapshot-market"), i + 1 < args.count { CrystalBank.snapshot(path: args[i + 1], market: true) }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
         // `AgentDeck --snapshot-sidebar out.png`: the workspace window (sidebar + world) offscreen.
@@ -405,7 +406,7 @@ final class SessionStore: ObservableObject {
         switch selection {
         case .hosted(let name): return session(hosted: name)
         case .external(let id): return sessions.first { $0.id == id }
-        case .world, .list, .guild: return nil
+        case .world, .list, .guild, .market: return nil
         }
     }
 

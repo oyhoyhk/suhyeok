@@ -13,6 +13,8 @@ final class LedgerSync {
     nonisolated static let defaultBase = "https://suhyeok.pickuma.com/ledger/v1"
     nonisolated static let clampSource = "#server-clamp"
     nonisolated static let incomeSource = "#market-income"
+    nonisolated static let marketItemPrefix = "market:"
+    nonisolated static let marketNote = "마켓 구매"
     nonisolated static let batchSize = 200  // matches the server's MAX_BATCH
 
     struct State: Codable, Equatable {
@@ -74,6 +76,22 @@ final class LedgerSync {
     }
 
     var isRegistered: Bool { state.device != nil }
+
+    /// GETs a path on the server host (the market hands out absolute paths such as /ledger/v1/market/...).
+    func fetch(hostPath: String) async throws -> Data {
+        guard let base = URL(string: state.base), let url = URL(string: hostPath, relativeTo: base) else { throw Failure.unexpected }
+        let (data, status) = try await transport(URLRequest(url: url.absoluteURL, timeoutInterval: 30))
+        guard (200..<300).contains(status) else { throw Failure.server(status: status, code: "") }
+        return data
+    }
+
+    /// `{"action":…,…,"device":…,"time":…}` signed with the device key: the form every market request uses.
+    func signed(_ action: String, _ fields: [(String, Any)], time: Int) throws -> (device: String, sig: String) {
+        guard let device = state.device else { throw Failure.notRegistered }
+        guard let signer = ledger.signer else { throw Failure.noKey }
+        let message = LedgerEntry.canonicalJSON([("action", action), ("device", device), ("time", time)] + fields)
+        return (device, try signer.sign(Data(message.utf8)).base64EncodedString())
+    }
 
     nonisolated static let urlSession: Transport = { req in
         let (data, resp) = try await URLSession.shared.data(for: req)
@@ -186,7 +204,9 @@ final class LedgerSync {
         for r in try await balance().reservations {
             let recorded = ledger.entries.contains { $0.kind == LedgerEntry.Kind.spend.rawValue && $0.source == r.item }
             guard !recorded else { continue }
-            if (try? ledger.append(kind: .spend, source: r.item, amount: -r.amount, rule: Hunt.rule, note: note)) != nil { booked += 1 }
+            // Market purchases keep their own note: only hires count toward the next hire's price.
+            let label = r.item.hasPrefix(Self.marketItemPrefix) ? Self.marketNote : note
+            if (try? ledger.append(kind: .spend, source: r.item, amount: -r.amount, rule: Hunt.rule, note: label)) != nil { booked += 1 }
         }
         return booked
     }
@@ -222,15 +242,17 @@ final class LedgerSync {
 
     // MARK: plumbing
 
-    private func call(_ method: String, _ path: String, json: [String: String]) async throws -> Data {
+    func call(_ method: String, _ path: String, json: [String: String]) async throws -> Data {
         try await call(method, path, body: JSONEncoder().encode(json))
     }
 
-    private func call(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
+    func call(_ method: String, _ path: String, body: Data? = nil, contentType: String = "application/json",
+              headers: [String: String] = [:]) async throws -> Data {
         guard let url = URL(string: state.base + path) else { throw Failure.unexpected }
-        var req = URLRequest(url: url, timeoutInterval: 20)
+        var req = URLRequest(url: url, timeoutInterval: 30)
         req.httpMethod = method
-        if let body { req.httpBody = body; req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        if let body { req.httpBody = body; req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         let (data, status) = try await transport(req)
         guard (200..<300).contains(status) else {
             struct E: Decodable { let error: String }
@@ -242,7 +264,7 @@ final class LedgerSync {
     /// Checks the server signature over `body` exactly as received, then decodes it.
     private struct Signed: Decodable { let body: String; let sig: String }
 
-    private func verified<T: Decodable>(_ data: Data) throws -> T {
+    func verified<T: Decodable>(_ data: Data) throws -> T {
         let signed: Signed = try decode(data)
         guard let k = state.serverKey.flatMap({ Data(base64Encoded: $0) }),
               let key = try? Curve25519.Signing.PublicKey(rawRepresentation: k),
@@ -252,7 +274,7 @@ final class LedgerSync {
         return try decode(Data(signed.body.utf8))
     }
 
-    private func decode<T: Decodable>(_ data: Data) throws -> T {
+    func decode<T: Decodable>(_ data: Data) throws -> T {
         do { return try JSONDecoder().decode(T.self, from: data) } catch { throw Failure.unexpected }
     }
 

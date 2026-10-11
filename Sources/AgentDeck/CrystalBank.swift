@@ -32,6 +32,7 @@ final class CrystalBank: ObservableObject {
     private(set) var ledger: Ledger
     private(set) var wallet: Wallet
     private(set) var sync: LedgerSync
+    private(set) var market: MarketService?
     private(set) var strength: SignerStrength?
     private let queue = DispatchQueue(label: "com.pickuma.agentdeck.crystals", qos: .utility)
     private var timer: Timer?
@@ -49,8 +50,12 @@ final class CrystalBank: ObservableObject {
         ledger = Ledger(url: Self.dir.appendingPathComponent("ledger.jsonl"), signer: signer)
         wallet = Wallet(ledger: ledger)
         sync = LedgerSync(ledger: ledger, stateURL: Self.dir.appendingPathComponent("ledger-sync.json"))
+        market = MarketService(sync: sync, ledger: ledger, library: AssetLibrary.shared)
         publish()
     }
+
+    /// The market needs the server: sync on and this Mac registered.
+    var canTrade: Bool { syncEnabled && registered && status == .ok }
 
     var roster: [String] { Art.roster.map(\.id) }
 
@@ -201,6 +206,7 @@ final class CrystalBank: ObservableObject {
         wallet = Wallet(ledger: ledger)
         sync.forget()
         sync = LedgerSync(ledger: ledger, stateURL: Self.dir.appendingPathComponent("ledger-sync.json"))
+        market = MarketService(sync: sync, ledger: ledger, library: AssetLibrary.shared)
         publish()
         migrateIfNeeded()
     }
@@ -215,7 +221,13 @@ final class CrystalBank: ObservableObject {
         case LedgerSync.Failure.badSignature: return "서버 서명이 맞지 않음"
         case LedgerSync.Failure.server(_, let code):
             return ["invalid_code": "등록 코드가 틀림", "code_used": "이미 쓴 등록 코드", "code_expired": "만료된 등록 코드",
-                    "insufficient": "서버 잔액 부족", "revoked": "해지된 기기", "key_registered": "이미 등록된 기기"][code] ?? "서버 오류 \(code)"
+                    "insufficient": "서버 잔액 부족", "revoked": "해지된 기기", "key_registered": "이미 등록된 기기",
+                    "already_owned": "이미 산 캐릭터", "own_listing": "내 캐릭터는 살 수 없음", "not_for_sale": "판매 중이 아님",
+                    "price_mismatch": "가격이 바뀜 — 새로고침 필요", "too_many_open": "심사 대기·작성 중인 등록이 너무 많음",
+                    "bad_price": "가격은 50~5,000 결정", "invalid_pack": "캐릭터 팩 규격 오류"][code] ?? "서버 오류 \(code)"
+        case MarketService.Failure.invalidPack(let codes): return "캐릭터 팩 규격 오류: " + codes.joined(separator: ", ")
+        case AssetLibrary.Failure.invalid(let codes): return "받은 파일 검증 실패 (\(codes.joined(separator: ", "))) — 다시 받기"
+        case AssetLibrary.Failure.io: return "설치 중 파일 오류 — 다시 받기"
         case is URLError: return "서버에 연결할 수 없음"
         default: return "\(error)"
         }
@@ -245,10 +257,11 @@ extension CrystalBank {
         print("server \(state?.device.map { "device \($0), confirmed through #\(state?.ackSeq ?? -1)" } ?? "not registered")")
     }
 
-    /// Renders the guild page offscreen into a PNG (does not start paying).
-    static func snapshot(path: String) -> Never {
+    /// Renders the guild (or market) page offscreen into a PNG (does not start paying or touch the keychain).
+    static func snapshot(path: String, market: Bool = false) -> Never {
         preview = true
-        let host = NSHostingView(rootView: GuildView().frame(width: 860, height: 1100).background(Color(nsColor: .windowBackgroundColor)))
+        let page = market ? AnyView(MarketView()) : AnyView(GuildView())
+        let host = NSHostingView(rootView: page.frame(width: 860, height: 1100).background(Color(nsColor: .windowBackgroundColor)))
         host.frame = NSRect(x: 0, y: 0, width: 860, height: 1100)
         let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 860, height: 1100), styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
