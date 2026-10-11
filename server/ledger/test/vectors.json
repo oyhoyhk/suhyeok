@@ -1,0 +1,48 @@
+{
+ "note": "Canonical ledger entry serialization shared by the Swift app and the ledger Worker. Keys sorted, no spaces, non-ASCII raw, JSON.stringify escaping; hash = sha256(canonical) hex.",
+ "cases": [
+  {
+   "fields": {
+    "seq": 0,
+    "time": 1760140800,
+    "kind": "open",
+    "source": "",
+    "amount": 0,
+    "rule": 1,
+    "note": "",
+    "key": "BKEY",
+    "prev": "0000000000000000000000000000000000000000000000000000000000000000"
+   },
+   "canonical": "{\"amount\":0,\"key\":\"BKEY\",\"kind\":\"open\",\"note\":\"\",\"prev\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"rule\":1,\"seq\":0,\"source\":\"\",\"time\":1760140800}",
+   "hash": "8eb39dd325aa7a2df572494a23abe5ae23282203dbe5aeab74ee81beab402565"
+  },
+  {
+   "fields": {
+    "seq": 1,
+    "time": 1760141400,
+    "kind": "earn",
+    "source": "/Users/a/.claude/projects/x/s.jsonl",
+    "amount": 3,
+    "rule": 1,
+    "note": "활동 10분 · 턴 1 💎",
+    "prev": "abababababababababababababababababababababababababababababababab"
+   },
+   "canonical": "{\"amount\":3,\"kind\":\"earn\",\"note\":\"활동 10분 · 턴 1 💎\",\"prev\":\"abababababababababababababababababababababababababababababababab\",\"rule\":1,\"seq\":1,\"source\":\"/Users/a/.claude/projects/x/s.jsonl\",\"time\":1760141400}",
+   "hash": "d7dfc0eed8c87acea94c94196523ab679aeaa49250299a2b1f555d8a19f7d8de"
+  },
+  {
+   "fields": {
+    "seq": 2,
+    "time": 1760142000,
+    "kind": "spend",
+    "source": "knight",
+    "amount": -50,
+    "rule": 1,
+    "note": "quote \" back\\slash\nnew\ttab\u0001ctl",
+    "prev": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+   },
+   "canonical": "{\"amount\":-50,\"kind\":\"spend\",\"note\":\"quote \\\" back\\\\slash\\nnew\\ttab\\u0001ctl\",\"prev\":\"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"rule\":1,\"seq\":2,\"source\":\"knight\",\"time\":1760142000}",
+   "hash": "d5a53aa574caf7b7603ba5858ab3db92a246bb3d9af45d1f8adac062479a708e"
+  }
+ ]
+}

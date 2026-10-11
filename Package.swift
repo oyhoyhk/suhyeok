@@ -21,6 +21,11 @@ let package = Package(
             name: "Supertonic",
             dependencies: [.product(name: "onnxruntime", package: "onnxruntime-swift-package-manager")],
             path: "Sources/Supertonic"
+        ),
+        .testTarget(
+            name: "AgentDeckTests",
+            dependencies: ["AgentDeck"],
+            path: "Tests/AgentDeckTests"
         )
     ]
 )
