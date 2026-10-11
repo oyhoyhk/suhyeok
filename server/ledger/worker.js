@@ -6,8 +6,10 @@ import { createLedger, createSigner, ConflictError, LedgerError } from './ledger
 import { createAnchoring, CRON_SUBMIT, CRON_UPGRADE } from './anchor.js';
 import { createMarket } from './market.js';
 import { SPEC } from './assets.js';
+import { ADMIN_HTML } from './admin-page.js';
 
 const PREFIX = '/ledger/v1';
+const ADMIN_PAGE = '/ledger/admin/';
 const MAX_BODY = 1 << 20;
 
 // --- D1 storage
@@ -215,6 +217,28 @@ async function isAdmin(request, env) {
   return diff === 0;
 }
 
+/**
+ * The operator review page (admin-page.js). Static and token-free: the page asks for the admin token and calls
+ * the /ledger/v1/admin API itself. The CSP allows only this response's inline script (nonce), same-origin fetches
+ * and blob: images.
+ */
+function adminPage(request) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return new Response('Method Not Allowed', { status: 405, headers: { allow: 'GET, HEAD' } });
+  }
+  const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
+  const csp = [
+    "default-src 'none'", `script-src 'nonce-${nonce}'`, "style-src 'unsafe-inline'", 'img-src blob:', "connect-src 'self'",
+    "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'",
+  ].join('; ');
+  return new Response(request.method === 'HEAD' ? null : ADMIN_HTML.replace('__CSP_NONCE__', nonce), {
+    headers: {
+      'content-type': 'text/html; charset=utf-8', 'content-security-policy': csp, 'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer', 'cache-control': 'no-store', 'x-frame-options': 'DENY',
+    },
+  });
+}
+
 let signerCache = { key: null, signer: null };
 async function signerFor(env) {
   if (signerCache.key !== env.LEDGER_SIGNING_KEY) {
@@ -331,6 +355,8 @@ export default {
     const { pathname } = new URL(request.url);
     // Only /ledger/* is routed to this Worker in production; anything else is not ours.
     if (pathname !== '/ledger' && !pathname.startsWith('/ledger/')) return new Response('Not Found', { status: 404 });
+    if (pathname === ADMIN_PAGE) return adminPage(request);
+    if (pathname === '/ledger/admin') return new Response(null, { status: 308, headers: { location: ADMIN_PAGE } });
     if (!pathname.startsWith(PREFIX + '/')) return notFound();
     try {
       return await route(request, env, pathname.slice(PREFIX.length));
