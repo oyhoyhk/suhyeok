@@ -14,6 +14,8 @@ enum Recruit {
     static func unlocked(roster: [String], ledger: Ledger) -> Set<Int> {
         var open = Set(0..<min(freeCount, roster.count))
         for id in hired(ledger) { if let i = roster.firstIndex(of: id) { open.insert(i) } }
+        // Characters bought on the market are installed only once owned: they are always open.
+        for (i, id) in roster.enumerated() where id.hasPrefix(AssetLibrary.idPrefix) { open.insert(i) }
         return open
     }
 

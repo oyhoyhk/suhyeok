@@ -10,7 +10,10 @@ struct Character: Decodable {
 enum Art {
     static let dir = Bundle.main.resourceURL?.appendingPathComponent("art")
 
-    static let roster: [Character] = {
+    /// Bundled characters first (their indices never move), then characters installed from the market.
+    static var roster: [Character] { bundled + AssetLibrary.shared.characters }
+
+    static let bundled: [Character] = {
         guard let url = dir?.appendingPathComponent("roster.json"),
               let data = try? Data(contentsOf: url),
               let list = try? JSONDecoder().decode([Character].self, from: data)
@@ -22,7 +25,8 @@ enum Art {
 
     static func image(_ name: String) -> NSImage? {
         if let img = cache[name] { return img }
-        guard let img = ["png", "jpg"].lazy
+        let market = AssetLibrary.shared.file(forArtName: name).flatMap(NSImage.init(contentsOf:))
+        guard let img = market ?? ["png", "jpg"].lazy
             .compactMap({ ext in dir.flatMap { NSImage(contentsOf: $0.appendingPathComponent(name + "." + ext)) } }).first
         else { return nil }
         cache[name] = img

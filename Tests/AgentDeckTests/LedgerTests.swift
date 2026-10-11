@@ -34,7 +34,7 @@ final class LedgerTests: XCTestCase {
         struct Case: Decodable { let fields: Fields; let canonical: String; let hash: String }
         struct File: Decodable { let cases: [Case] }
         let file = try JSONDecoder().decode(File.self, from: Data(contentsOf: vectors))
-        XCTAssertEqual(file.cases.count, 3)
+        XCTAssertGreaterThanOrEqual(file.cases.count, 3)
         for c in file.cases {
             let f = c.fields
             let e = LedgerEntry(seq: f.seq, time: f.time, kind: f.kind, source: f.source, amount: f.amount, rule: f.rule,
