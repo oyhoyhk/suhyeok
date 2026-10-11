@@ -60,6 +60,16 @@ final class RecruitTests: XCTestCase {
         XCTAssertEqual(asked?.1, Recruit.price(recruited: 0))
     }
 
+    func testHireThatCompletedMeanwhileIsNotChargedTwice() async throws {
+        try fund(10_000)
+        let ledger = ledger!
+        // Another click finished the same hire while this one waited on the server.
+        await assertThrows(try await Recruit.hire("hero8", roster: roster, ledger: ledger, confirm: { id, cost in
+            try ledger.append(kind: .spend, source: id, amount: -cost, rule: 1, note: "영입")
+        })) { XCTAssertEqual($0 as? Recruit.Failure, .alreadyHired) }
+        XCTAssertEqual(ledger.entries.filter { $0.kind == "spend" }.count, 1)
+    }
+
     func testAssignerOnlyUsesUnlockedCharacters() {
         var assigner = CharacterAssigner()
         let sessions = (0..<10).map {

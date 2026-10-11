@@ -11,6 +11,8 @@ private final class FakeServer {
     var forgeSignature = false
     var error: (Int, String)?
     var receiptSeqOffset = 0
+    var outstandingClamp = 0      // the server's running pendingClamp, absorbed by adjust entries
+    var reservations: [[String: Any]] = []
 
     var transport: LedgerSync.Transport {
         { [unowned self] req in try self.handle(req) }
@@ -37,10 +39,16 @@ private final class FakeServer {
             let entries = body["entries"] as! [[String: Any]]
             let last = entries.last!
             let reported = entries.compactMap { $0["amount"] as? Int }.filter { $0 > 0 }.reduce(0, +)
+            let absorbed = entries.filter { $0["kind"] as? String == "adjust" }.compactMap { $0["amount"] as? Int }.reduce(0) { $0 - $1 }
+            outstandingClamp = max(0, outstandingClamp - absorbed) + clamp
             return (try signed(["type": "sync", "device": "dev-1", "fromSeq": entries[0]["seq"]!,
                                 "deviceSeq": (last["seq"] as! Int) + receiptSeqOffset, "deviceHash": last["hash"]!,
                                 "reported": reported, "accepted": reported - clamp, "clamped": clamp, "pending": 0,
-                                "balance": reported - clamp, "pendingClamp": clamp, "serverSeq": 9, "head": "h", "time": 1]), 200)
+                                "balance": reported - clamp, "pendingClamp": outstandingClamp, "serverSeq": 9, "head": "h", "time": 1]), 200)
+        case "/balance/dev-1":
+            return (try signed(["type": "balance", "device": "dev-1", "balance": 0, "pendingClamp": outstandingClamp,
+                                "pendingGenesis": 0, "reservations": reservations, "deviceSeq": 0, "deviceHash": "h",
+                                "revoked": false, "serverSeq": 1, "head": "h", "time": 1]), 200)
         case "/spend":
             return (try signed(["type": "spend", "device": "dev-1", "item": body["item"]!, "amount": body["amount"]!,
                                 "balance": 0, "serverSeq": 10, "head": "h", "time": 1]), 200)
@@ -50,6 +58,7 @@ private final class FakeServer {
     }
 }
 
+@MainActor
 final class LedgerSyncTests: XCTestCase {
     private var dir: URL!
     private var ledger: Ledger!
@@ -121,6 +130,40 @@ final class LedgerSyncTests: XCTestCase {
         XCTAssertEqual(sent.map { $0["kind"] as! String }, ["adjust"])
     }
 
+    func testClampMissedLocallyIsBookedFromTheNextReceipt() async throws {
+        let c = try await registered()
+        try ledger.append(kind: .earn, source: "a", amount: 50)
+        server.clamp = 20
+        try await c.sync()
+        // Simulate the adjust having been lost (crash after the ack was saved): drop it from the ledger file.
+        let url = ledger.url
+        var lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n").map(String.init)
+        lines.removeLast()
+        try (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
+        ledger = Ledger(url: url, signer: ledger.signer)
+        let again = LedgerSync(ledger: ledger, stateURL: stateURL, transport: server.transport)
+        XCTAssertEqual(ledger.balance, 50)
+
+        server.clamp = 0
+        try ledger.append(kind: .earn, source: "a", amount: 1)
+        try await again.sync()
+        XCTAssertEqual(ledger.entries.last?.kind, "adjust")
+        XCTAssertEqual(ledger.entries.last?.amount, -20)  // the server still owes nothing for the lost 20
+        XCTAssertEqual(ledger.balance, 31)
+    }
+
+    func testOrphanedReservationIsBookedBeforeTheNextHire() async throws {
+        let c = try await registered()
+        try ledger.append(kind: .earn, source: "a", amount: 500)
+        server.reservations = [["item": "hero8", "amount": 100, "serverSeq": 4]]
+        let booked = try await c.bookOpenReservations(note: "영입")
+        XCTAssertEqual(booked, 1)
+        XCTAssertEqual(ledger.entries.last?.source, "hero8")
+        XCTAssertEqual(ledger.entries.last?.amount, -100)
+        let second = try await c.bookOpenReservations(note: "영입")
+        XCTAssertEqual(second, 0)  // already in the ledger
+    }
+
     func testForgedReceiptIsRejectedAndNotAcknowledged() async throws {
         let c = try await registered()
         try ledger.append(kind: .earn, source: "a", amount: 5)
@@ -149,7 +192,7 @@ final class LedgerSyncTests: XCTestCase {
         for i in 0..<620 { try ledger.append(kind: .genesis, source: "log\(i)", amount: 1) }
         let r = try await c.sync()
         XCTAssertEqual(r?.deviceSeq, 620)
-        XCTAssertEqual(server.requests.filter { $0.path == "/sync" }.map { ($0.body["entries"] as! [Any]).count }, [500, 121])
+        XCTAssertEqual(server.requests.filter { $0.path == "/sync" }.map { ($0.body["entries"] as! [Any]).count }, [200, 200, 200, 21])
     }
 
     func testUnregisteredClientDoesNotCall() async {

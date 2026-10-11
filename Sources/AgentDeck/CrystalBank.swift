@@ -23,6 +23,8 @@ final class CrystalBank: ObservableObject {
     @Published private(set) var lastReceipt: LedgerSync.Receipt?
     @Published private(set) var anchors: [LedgerSync.AnchorInfo] = []
     @Published var anchorResults: [Int: String] = [:]
+    @Published private(set) var anchorError: String?
+    @Published private(set) var hiring = false
     @Published var syncEnabled = UserDefaults.standard.bool(forKey: CrystalBank.syncKey) {
         didSet { UserDefaults.standard.set(syncEnabled, forKey: Self.syncKey); syncIfDue(force: true) }
     }
@@ -30,11 +32,12 @@ final class CrystalBank: ObservableObject {
     private(set) var ledger: Ledger
     private(set) var wallet: Wallet
     private(set) var sync: LedgerSync
-    let strength: SignerStrength?
+    private(set) var strength: SignerStrength?
     private let queue = DispatchQueue(label: "com.pickuma.agentdeck.crystals", qos: .utility)
     private var timer: Timer?
     private var started = false
     private var syncing = false
+    private var settling = false
     private var lastSync = Date.distantPast
 
     /// Offscreen snapshots and CLI checks: never create a keychain key or write the ledger.
@@ -80,7 +83,8 @@ final class CrystalBank: ObservableObject {
 
     /// Pays logs touched in the last 7 days (live sessions included), then settles with the server when due.
     func tick() {
-        guard wallet.isMigrated else { return }
+        guard wallet.isMigrated, !settling else { return }
+        settling = true
         let wallet = wallet
         queue.async {
             let week = Date().addingTimeInterval(-7 * 86400)
@@ -89,6 +93,7 @@ final class CrystalBank: ObservableObject {
             }
             wallet.settle(paths: recent)
             Task { @MainActor in
+                CrystalBank.shared.settling = false
                 CrystalBank.shared.publish()
                 CrystalBank.shared.syncIfDue()
             }
@@ -134,7 +139,12 @@ final class CrystalBank: ObservableObject {
     }
 
     func loadAnchors() async {
-        anchors = (try? await sync.anchors()) ?? []
+        do {
+            anchors = try await sync.anchors()
+            anchorError = nil
+        } catch {
+            anchorError = "공증 목록을 받지 못함: \(Self.describe(error))"
+        }
     }
 
     /// Checks one anchor against Bitcoin, and against the head hash this Mac saw in a signed receipt.
@@ -159,23 +169,38 @@ final class CrystalBank: ObservableObject {
 
     // MARK: spending
 
+    /// With server sync on, a hire needs the server (R13): first any reservation the ledger missed is booked,
+    /// then the server confirms the new spend before the ledger records it.
     func hire(_ id: String) async -> String? {
-        let viaServer = syncEnabled && registered
+        guard !hiring else { return nil }
+        hiring = true
+        defer { hiring = false; publish() }
         let sync = sync
         do {
+            if syncEnabled {
+                guard registered else { throw LedgerSync.Failure.notRegistered }
+                try await sync.bookOpenReservations(note: Recruit.note)
+                publish()
+                if unlocked.contains(roster.firstIndex(of: id) ?? -1) { return nil }  // that was the hire that got lost
+            }
             try await Recruit.hire(id, roster: roster, ledger: ledger,
-                                   confirm: viaServer ? { try await sync.confirmSpend(item: $0, amount: $1) } : nil)
-            publish()
+                                   confirm: syncEnabled ? { try await sync.confirmSpend(item: $0, amount: $1) } : nil)
             return nil
         } catch {
             return Self.describe(error)
         }
     }
 
-    /// Sets a broken ledger aside (kept as ledger.broken-*.jsonl) and starts a new one.
+    /// Sets the ledger aside (kept as ledger.broken-*.jsonl) and starts a new one under a new device key. The server
+    /// knows the old chain and key, so a registered device drops its registration and needs a new code.
     func startOver() {
-        _ = try? ledger.startOver()
+        guard (try? ledger.startOver()) != nil || !FileManager.default.fileExists(atPath: ledger.url.path) else { return }
+        let signer = DeviceKey.rotate()
+        strength = signer?.strength
+        ledger = Ledger(url: ledger.url, signer: signer)
         wallet = Wallet(ledger: ledger)
+        sync.forget()
+        sync = LedgerSync(ledger: ledger, stateURL: Self.dir.appendingPathComponent("ledger-sync.json"))
         publish()
         migrateIfNeeded()
     }
@@ -184,8 +209,8 @@ final class CrystalBank: ObservableObject {
         switch error {
         case Ledger.Failure.insufficient: return "결정이 부족함"
         case Ledger.Failure.notWritable: return "장부에 쓸 수 없음"
+        case LedgerSync.Failure.notRegistered: return "서버 정산을 켰지만 아직 등록하지 않음"
         case Recruit.Failure.alreadyHired: return "이미 영입함"
-        case LedgerSync.Failure.notRegistered: return "서버에 등록되지 않음"
         case LedgerSync.Failure.keyChanged: return "서버 키가 바뀜 — 연결을 멈춤"
         case LedgerSync.Failure.badSignature: return "서버 서명이 맞지 않음"
         case LedgerSync.Failure.server(_, let code):
@@ -215,8 +240,9 @@ extension CrystalBank {
         print("entries \(entries.count) · balance \(ledger.balance) · \(verdict)")
         for (k, v) in kinds.sorted(by: { $0.key < $1.key }) { print("  \(k): \(v.n) entries, \(v.sum)") }
         print("migrated \(entries.contains { $0.source == Wallet.migrationDone })")
-        let sync = LedgerSync(ledger: ledger, stateURL: dir.appendingPathComponent("ledger-sync.json"))
-        print("server \(sync.state.device.map { "device \($0), confirmed through #\(sync.state.ackSeq ?? -1)" } ?? "not registered")")
+        let state = (try? Data(contentsOf: dir.appendingPathComponent("ledger-sync.json")))
+            .flatMap { try? JSONDecoder().decode(LedgerSync.State.self, from: $0) }
+        print("server \(state?.device.map { "device \($0), confirmed through #\(state?.ackSeq ?? -1)" } ?? "not registered")")
     }
 
     /// Renders the guild page offscreen into a PNG (does not start paying).
@@ -250,7 +276,8 @@ struct GuildView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
-                if case .broken(let seq) = bank.status { brokenBanner(seq) }
+                if case .broken(let seq) = bank.status { brokenBanner("장부 훼손 (항목 #\(seq))", "장부 파일이 바뀌어 사슬이나 서명이 맞지 않음. 지급과 영입을 멈춤.") }
+                if bank.status == .readOnly(.keyMismatch) { brokenBanner("다른 키로 쓴 장부", "이 맥의 서명 키로는 이 장부에 이어 쓸 수 없음. 지급과 영입을 멈춤.") }
                 recruits
                 server
                 guarantees
@@ -280,18 +307,20 @@ struct GuildView: View {
         switch (bank.status, bank.strength) {
         case (.broken, _): return "장부 훼손"
         case (.readOnly(.noKey), _), (_, nil): return "서명 키 없음 · 읽기 전용"
-        case (.readOnly(.keyMismatch), _): return "다른 기기의 장부 · 읽기 전용"
+        case (.readOnly(.keyMismatch), _): return "다른 키의 장부 · 읽기 전용"
+        case (.readOnly(.unreadable), _): return "장부 파일을 읽을 수 없음 · 읽기 전용"
         case (_, .secureEnclave?): return "🔒 보안칩 서명"
         case (_, .software?): return "약한 보호 (보안칩 없음)"
         }
     }
 
-    private func brokenBanner(_ seq: Int) -> some View {
+    private func brokenBanner(_ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("장부 훼손 (항목 #\(seq))").font(.headline).foregroundStyle(.red)
-            Text("장부 파일이 바뀌어 사슬이나 서명이 맞지 않음. 지급과 영입을 멈춤.").font(.callout)
+            Text(title).font(.headline).foregroundStyle(.red)
+            Text(detail).font(.callout)
             Button("새 장부 시작…") { confirmReset = true }
-                .confirmationDialog("기존 장부는 ledger.broken-*.jsonl 로 보관하고 0부터 새로 시작함", isPresented: $confirmReset) {
+                .confirmationDialog("기존 장부는 ledger.broken-*.jsonl 로 보관하고 새 서명 키로 0부터 시작함. 서버에 등록했다면 새 등록 코드가 필요함",
+                                    isPresented: $confirmReset) {
                     Button("새 장부 시작", role: .destructive) { bank.startOver() }
                 }
         }
@@ -317,7 +346,7 @@ struct GuildView: View {
 
     private func card(_ i: Int, _ c: Character) -> some View {
         let open = bank.unlocked.contains(i)
-        let affordable = bank.balance >= bank.nextPrice && bank.status == .ok
+        let affordable = bank.balance >= bank.nextPrice && bank.status == .ok && !bank.hiring
         return VStack(spacing: 6) {
             Group {
                 if open, let img = Art.image("portraits/\(c.id)") ?? Art.image("sprites/\(c.id)") {
@@ -373,7 +402,8 @@ struct GuildView: View {
                 Spacer()
                 Button("새로고침") { Task { await bank.loadAnchors() } }.controlSize(.small)
             }
-            if bank.anchors.isEmpty {
+            if let e = bank.anchorError { Text(e).font(.caption).foregroundStyle(.orange) }
+            if bank.anchors.isEmpty && bank.anchorError == nil {
                 Text("아직 공증 기록 없음 (서버가 하루 1회 서버 장부 해시를 비트코인에 기록)").font(.caption).foregroundStyle(.secondary)
             }
             ForEach(bank.anchors.prefix(10)) { a in

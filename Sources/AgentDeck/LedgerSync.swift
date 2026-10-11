@@ -4,11 +4,14 @@ import Foundation
 /// Talks to the pickuma ledger server (suhyeok.pickuma.com/ledger/v1): registers this Mac's ledger key,
 /// sends new ledger entries, and books the server's cuts back into the local ledger so both balances agree.
 /// Every server answer is an Ed25519-signed `{body, sig}`; nothing is trusted without the pinned server key.
+/// Main-actor bound: its state is read by the UI while syncs run (network waits do not block the main thread).
+@MainActor
 final class LedgerSync {
     /// Server key baked into the app at deploy time (base64 raw Ed25519). Empty: pinned on first registration.
     static let pinnedServerKey = ""
     static let defaultBase = "https://suhyeok.pickuma.com/ledger/v1"
     static let clampSource = "#server-clamp"
+    static let batchSize = 200  // matches the server's MAX_BATCH
 
     struct State: Codable, Equatable {
         var base = LedgerSync.defaultBase
@@ -90,8 +93,9 @@ final class LedgerSync {
 
     // MARK: settlement
 
-    /// Sends every entry the server has not confirmed (in batches of 500). For each receipt, writes an `adjust`
-    /// entry for what the server cut. Returns the last receipt, or nil when there was nothing to send.
+    /// Sends every entry the server has not confirmed (in batches). After each receipt, books an `adjust` entry for
+    /// whatever the server cut that the ledger has not answered yet. Returns the last receipt, or nil when there was
+    /// nothing to send.
     @discardableResult
     func sync() async throws -> Receipt? {
         guard let device = state.device else { throw Failure.notRegistered }
@@ -101,7 +105,7 @@ final class LedgerSync {
         while true {
             let unsent = ledger.entries.filter { $0.seq > (state.ackSeq ?? -1) && $0.seq <= end }
             guard !unsent.isEmpty else { return last }
-            let batch = Array(unsent.prefix(500))
+            let batch = Array(unsent.prefix(Self.batchSize))
             let payload = try JSONEncoder().encode(SyncBody(device: device, entries: batch))
             let r: Receipt = try verified(try await call("POST", "/sync", body: payload))
             guard r.type == "sync", r.device == device, r.deviceSeq == batch.last!.seq, r.deviceHash == batch.last!.hash
@@ -113,9 +117,13 @@ final class LedgerSync {
                 state.heads[String(oldest)] = nil
             }
             save()
-            if r.clamped > 0 {
-                _ = try? ledger.append(kind: .adjust, source: Self.clampSource, amount: -r.clamped, rule: Hunt.rule,
-                                       note: "서버 상한 초과분")
+            // The server's running total of cuts not yet answered, minus answers already written but not yet sent.
+            // Working from the total (not this receipt's cut) heals an adjust lost to a crash or a failed write.
+            let unsentAnswers = ledger.entries.filter { $0.seq > r.deviceSeq && $0.kind == LedgerEntry.Kind.adjust.rawValue
+                && $0.source == Self.clampSource }.reduce(0) { $0 - $1.amount }
+            let owed = r.pendingClamp - unsentAnswers
+            if owed > 0 {
+                _ = try? ledger.append(kind: .adjust, source: Self.clampSource, amount: -owed, rule: Hunt.rule, note: "서버 상한 초과분")
             }
             last = r
         }
@@ -137,6 +145,42 @@ final class LedgerSync {
         struct Spent: Decodable { let type: String; let item: String; let amount: Int }
         let s: Spent = try verified(try await call("POST", "/spend", body: JSONSerialization.data(withJSONObject: body)))
         guard s.type == "spend", s.item == item, s.amount == amount else { throw Failure.unexpected }
+    }
+
+    /// The server's signed view of this device: balance and spend reservations still open.
+    struct BalanceInfo: Decodable {
+        struct Reservation: Decodable { let item: String; let amount: Int }
+        let type: String
+        let device: String
+        let balance: Int
+        let pendingGenesis: Int
+        let reservations: [Reservation]
+    }
+
+    func balance() async throws -> BalanceInfo {
+        guard let device = state.device else { throw Failure.notRegistered }
+        let b: BalanceInfo = try verified(try await call("GET", "/balance/\(device)"))
+        guard b.type == "balance", b.device == device else { throw Failure.unexpected }
+        return b
+    }
+
+    /// Writes the local spend for any reservation the server holds but the ledger never recorded (the app died
+    /// between the server's confirmation and the local write). Returns how many were booked.
+    @discardableResult
+    func bookOpenReservations(note: String) async throws -> Int {
+        var booked = 0
+        for r in try await balance().reservations {
+            let recorded = ledger.entries.contains { $0.kind == LedgerEntry.Kind.spend.rawValue && $0.source == r.item }
+            guard !recorded else { continue }
+            if (try? ledger.append(kind: .spend, source: r.item, amount: -r.amount, rule: Hunt.rule, note: note)) != nil { booked += 1 }
+        }
+        return booked
+    }
+
+    /// Drops the registration (the ledger was started over with a new key): the next one needs a new code.
+    func forget() {
+        state = State(base: state.base, serverKey: state.serverKey)
+        save()
     }
 
     // MARK: anchors

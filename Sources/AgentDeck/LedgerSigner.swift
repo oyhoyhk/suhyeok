@@ -58,6 +58,12 @@ enum DeviceKey {
         return write(Data([2]) + s.key.rawRepresentation) ? s : nil
     }
 
+    /// Deletes the stored key and makes a new one (starting a fresh ledger after the old one broke).
+    static func rotate() -> LedgerSigning? {
+        SecItemDelete(query as CFDictionary)
+        return loadOrCreate()
+    }
+
     private static var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
     }

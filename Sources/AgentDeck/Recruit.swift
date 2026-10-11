@@ -4,6 +4,7 @@ import Foundation
 /// `spend` entry whose source is the character id, so the ledger alone says who is open.
 enum Recruit {
     static let freeCount = 8
+    static let note = "영입"
     enum Failure: Error, Equatable { case unknown, alreadyHired }
 
     /// Each hire costs more than the last: 100, 200, 300, … (24 hires ≈ 30,000 crystals).
@@ -28,10 +29,12 @@ enum Recruit {
         let cost = nextPrice(roster: roster, ledger: ledger)
         guard ledger.balance >= cost else { throw Ledger.Failure.insufficient }
         try await confirm?(id, cost)
-        return try ledger.append(kind: .spend, source: id, amount: -cost, rule: Hunt.rule, note: "영입")
+        // Another click may have finished the same hire while this one waited on the server.
+        guard !unlocked(roster: roster, ledger: ledger).contains(i) else { throw Failure.alreadyHired }
+        return try ledger.append(kind: .spend, source: id, amount: -cost, rule: Hunt.rule, note: note)
     }
 
     private static func hired(_ ledger: Ledger) -> [String] {
-        ledger.entries.filter { $0.kind == LedgerEntry.Kind.spend.rawValue && $0.note == "영입" }.map(\.source)
+        ledger.entries.filter { $0.kind == LedgerEntry.Kind.spend.rawValue && $0.note == note }.map(\.source)
     }
 }

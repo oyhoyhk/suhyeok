@@ -60,7 +60,7 @@ struct LedgerEntry: Codable, Equatable {
 /// Append-only, hash-chained, signed crystal ledger (`ledger.jsonl`). The balance is the sum of its entries.
 /// Any edit, reorder or re-hashed rewrite shows up as `.broken(seq:)` on load, and the ledger then stops writing.
 final class Ledger {
-    enum ReadOnlyReason: Equatable { case noKey, keyMismatch }
+    enum ReadOnlyReason: Equatable { case noKey, keyMismatch, unreadable }
     enum Status: Equatable {
         case ok
         case broken(seq: Int)          // first entry that fails the chain or its signature
@@ -93,7 +93,12 @@ final class Ledger {
 
     private func load() {
         _entries = []; _balance = 0; validLength = 0
-        let data = (try? Data(contentsOf: url)) ?? Data()
+        let data: Data
+        do { data = try Data(contentsOf: url) } catch {
+            // Missing means empty; present but unreadable must never be treated as empty (the next write would wipe it).
+            if FileManager.default.fileExists(atPath: url.path) { _status = .readOnly(.unreadable); return }
+            data = Data()
+        }
         // A last line without its newline was cut off mid-write: ignore it rather than calling the ledger broken.
         let end = data.lastIndex(of: UInt8(ascii: "\n")).map { $0 + 1 } ?? data.startIndex
         validLength = UInt64(end - data.startIndex)
@@ -128,7 +133,8 @@ final class Ledger {
         lock.lock(); defer { lock.unlock() }
         guard _status == .ok, let signer else { throw Failure.notWritable }
         if amount < 0, _balance + amount < 0 { throw Failure.insufficient }
-        let t = Int(time.timeIntervalSince1970)
+        // Never earlier than the entry before: a clock stepping back must not break the server's time order.
+        let t = max(Int(time.timeIntervalSince1970), _entries.last?.time ?? 0)
         if _entries.isEmpty {
             try write(kind: .open, source: "", amount: 0, rule: rule, note: "",
                       key: signer.publicKey.x963Representation.base64EncodedString(), time: t, signer: signer)

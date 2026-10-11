@@ -173,6 +173,26 @@ final class LedgerTests: XCTestCase {
         XCTAssertEqual(Ledger(url: url, signer: nil).balance, 1)
     }
 
+    func testClockGoingBackwardsNeverMovesEntryTimeBack() throws {
+        let ledger = Ledger(url: url, signer: SoftwareSigner())
+        try ledger.append(kind: .earn, source: "a", amount: 1, time: Date(timeIntervalSince1970: 2_000))
+        try ledger.append(kind: .earn, source: "a", amount: 1, time: Date(timeIntervalSince1970: 1_000))
+        XCTAssertEqual(ledger.entries.map(\.time), [2_000, 2_000, 2_000])
+    }
+
+    func testUnreadableLedgerIsLeftAloneAndNotWritable() throws {
+        let ledger = Ledger(url: url, signer: SoftwareSigner())
+        try ledger.append(kind: .earn, source: "a", amount: 5)
+        let before = try Data(contentsOf: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path) }
+        let blocked = Ledger(url: url, signer: ledger.signer)
+        XCTAssertEqual(blocked.status, .readOnly(.unreadable))
+        XCTAssertThrowsError(try blocked.append(kind: .earn, source: "b", amount: 1))
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+        XCTAssertEqual(try Data(contentsOf: url), before)
+    }
+
     // MARK: Secure Enclave
 
     func testSecureEnclaveSignerRoundTrip() throws {
