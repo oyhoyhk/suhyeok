@@ -1,0 +1,12 @@
+{
+  "name": "pickuma-suhyeok-ledger",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "genkey": "node scripts/genkey.mjs"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

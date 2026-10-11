@@ -1,0 +1,24 @@
+name = "pickuma-suhyeok-ledger"
+main = "worker.js"
+compatibility_date = "2026-05-01"
+
+# No `routes` here on purpose: the CF API token lacks Workers Routes permission, so a routes entry makes
+# `wrangler deploy` fail after upload (seen with pickuma-gomoku). Add the route once in the dashboard:
+#   Workers & Pages > pickuma-suhyeok-ledger > Settings > Domains & Routes > Add route
+#   suhyeok.pickuma.com/ledger/*   (zone pickuma.com)
+# Never attach suhyeok.pickuma.com as a Custom Domain: it would take the whole host from the phone tunnel.
+
+# Secrets (wrangler secret put): LEDGER_SIGNING_KEY (base64 PKCS#8 Ed25519, see scripts/genkey.mjs),
+# LEDGER_ADMIN_TOKEN.
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pickuma-suhyeok-ledger"
+database_id = "TBD"
+
+[observability]
+enabled = true
+
+# U7 (OpenTimestamps anchoring) will add a scheduled() handler and:
+# [triggers]
+# crons = ["0 3 * * *", "0 */6 * * *"]
