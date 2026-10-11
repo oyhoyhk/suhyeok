@@ -11,7 +11,7 @@ import XCTest
 final class MarketEndToEndTests: XCTestCase {
     private var base = ""
     private var admin = ""
-    private var dir: URL!
+    private var dir: URL?
 
     override func setUpWithError() throws {
         let env = ProcessInfo.processInfo.environment
@@ -20,7 +20,7 @@ final class MarketEndToEndTests: XCTestCase {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("e2e-\(UUID().uuidString)")
     }
 
-    override func tearDown() async throws { try? FileManager.default.removeItem(at: dir) }
+    override func tearDown() async throws { if let dir { try? FileManager.default.removeItem(at: dir) } }
 
     private func adminCall(_ method: String, _ path: String, _ body: [String: Any] = [:]) async throws -> [String: Any] {
         var req = URLRequest(url: URL(string: base + path)!)
@@ -35,7 +35,7 @@ final class MarketEndToEndTests: XCTestCase {
 
     /// A device with its own ledger, registered with a fresh admin code.
     private func device(_ name: String) async throws -> (Ledger, LedgerSync, AssetLibrary) {
-        let d = dir.appendingPathComponent(name)
+        let d = dir!.appendingPathComponent(name)
         let ledger = Ledger(url: d.appendingPathComponent("ledger.jsonl"), signer: SoftwareSigner())
         var state = LedgerSync.State()
         state.base = base
