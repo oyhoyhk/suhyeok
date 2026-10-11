@@ -22,12 +22,12 @@ enum Recruit {
     /// so the server never has to take back a hire the app already recorded.
     @discardableResult
     static func hire(_ id: String, roster: [String], ledger: Ledger,
-                     confirm: ((String, Int) throws -> Void)? = nil) throws -> LedgerEntry {
+                     confirm: ((String, Int) async throws -> Void)? = nil) async throws -> LedgerEntry {
         guard let i = roster.firstIndex(of: id) else { throw Failure.unknown }
         guard !unlocked(roster: roster, ledger: ledger).contains(i) else { throw Failure.alreadyHired }
         let cost = nextPrice(roster: roster, ledger: ledger)
         guard ledger.balance >= cost else { throw Ledger.Failure.insufficient }
-        try confirm?(id, cost)
+        try await confirm?(id, cost)
         return try ledger.append(kind: .spend, source: id, amount: -cost, rule: Hunt.rule, note: "영입")
     }
 

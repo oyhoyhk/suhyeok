@@ -19,21 +19,22 @@ struct LedgerEntry: Codable, Equatable {
     var sig: String      // base64 raw ECDSA P-256 signature over `canonical`
 
     /// Keys sorted, no whitespace, integers only, strings escaped the way JSON.stringify escapes them.
-    var canonical: String { Self.object(fields(withProof: false)) }
+    var canonical: String { Self.canonicalJSON(fields(withProof: false)) }
     var computedHash: String { SHA256.hash(data: Data(canonical.utf8)).map { String(format: "%02x", $0) }.joined() }
     /// The stored line: the canonical fields plus hash and sig.
-    var line: String { Self.object(fields(withProof: true)) }
+    var line: String { Self.canonicalJSON(fields(withProof: true)) }
 
     private func fields(withProof: Bool) -> [(String, Any)] {
         var f: [(String, Any)] = [("amount", amount), ("kind", kind), ("note", note), ("prev", prev),
                                   ("rule", rule), ("seq", seq), ("source", source), ("time", time)]
         if let key { f.append(("key", key)) }
         if withProof { f.append(("hash", hash)); f.append(("sig", sig)) }
-        return f.sorted { $0.0 < $1.0 }
+        return f
     }
 
-    private static func object(_ fields: [(String, Any)]) -> String {
-        "{" + fields.map { k, v in quote(k) + ":" + ((v as? Int).map(String.init) ?? quote(v as! String)) }
+    /// `{"k":v,…}` with keys sorted, Int or String values only. Also used for the ledger server's signed requests.
+    static func canonicalJSON(_ fields: [(String, Any)]) -> String {
+        "{" + fields.sorted { $0.0 < $1.0 }.map { k, v in quote(k) + ":" + ((v as? Int).map(String.init) ?? quote(v as! String)) }
             .joined(separator: ",") + "}"
     }
 
