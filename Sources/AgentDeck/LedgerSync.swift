@@ -9,10 +9,10 @@ import Foundation
 final class LedgerSync {
     /// The production ledger server's key (base64 raw Ed25519, deployed 2026-10-11). A server answering with any
     /// other key is refused, so a look-alike server cannot hand out receipts.
-    static let pinnedServerKey = "QoECpfdKjZ5Dw6XUVfSHoxuBvmoGjvgcQ1C82GwYG2g="
-    static let defaultBase = "https://suhyeok.pickuma.com/ledger/v1"
-    static let clampSource = "#server-clamp"
-    static let batchSize = 200  // matches the server's MAX_BATCH
+    nonisolated static let pinnedServerKey = "QoECpfdKjZ5Dw6XUVfSHoxuBvmoGjvgcQ1C82GwYG2g="
+    nonisolated static let defaultBase = "https://suhyeok.pickuma.com/ledger/v1"
+    nonisolated static let clampSource = "#server-clamp"
+    nonisolated static let batchSize = 200  // matches the server's MAX_BATCH
 
     struct State: Codable, Equatable {
         var base = LedgerSync.defaultBase
@@ -73,7 +73,7 @@ final class LedgerSync {
 
     var isRegistered: Bool { state.device != nil }
 
-    static let urlSession: Transport = { req in
+    nonisolated static let urlSession: Transport = { req in
         let (data, resp) = try await URLSession.shared.data(for: req)
         return (data, (resp as? HTTPURLResponse)?.statusCode ?? 0)
     }
