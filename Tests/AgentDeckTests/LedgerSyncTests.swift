@@ -12,6 +12,7 @@ private final class FakeServer {
     var error: (Int, String)?
     var receiptSeqOffset = 0
     var outstandingClamp = 0      // the server's running pendingClamp, absorbed by adjust entries
+    var outstandingIncome = 0     // sales credited to this device but not yet in its ledger
     var reservations: [[String: Any]] = []
 
     var transport: LedgerSync.Transport {
@@ -38,16 +39,19 @@ private final class FakeServer {
         case "/sync":
             let entries = body["entries"] as! [[String: Any]]
             let last = entries.last!
-            let reported = entries.compactMap { $0["amount"] as? Int }.filter { $0 > 0 }.reduce(0, +)
+            let reported = entries.filter { $0["kind"] as? String != "income" }.compactMap { $0["amount"] as? Int }.filter { $0 > 0 }.reduce(0, +)
             let absorbed = entries.filter { $0["kind"] as? String == "adjust" }.compactMap { $0["amount"] as? Int }.reduce(0) { $0 - $1 }
+            outstandingIncome -= entries.filter { $0["kind"] as? String == "income" }.compactMap { $0["amount"] as? Int }.reduce(0, +)
             outstandingClamp = max(0, outstandingClamp - absorbed) + clamp
             return (try signed(["type": "sync", "device": "dev-1", "fromSeq": entries[0]["seq"]!,
                                 "deviceSeq": (last["seq"] as! Int) + receiptSeqOffset, "deviceHash": last["hash"]!,
                                 "reported": reported, "accepted": reported - clamp, "clamped": clamp, "pending": 0,
-                                "balance": reported - clamp, "pendingClamp": outstandingClamp, "serverSeq": 9, "head": "h", "time": 1]), 200)
+                                "balance": reported - clamp, "pendingClamp": outstandingClamp, "pendingIncome": outstandingIncome,
+                                "serverSeq": 9, "head": "h", "time": 1]), 200)
         case "/balance/dev-1":
             return (try signed(["type": "balance", "device": "dev-1", "balance": 0, "pendingClamp": outstandingClamp,
-                                "pendingGenesis": 0, "reservations": reservations, "deviceSeq": 0, "deviceHash": "h",
+                                "pendingGenesis": 0, "reservations": reservations, "pendingIncome": outstandingIncome,
+                                "deviceSeq": 0, "deviceHash": "h",
                                 "revoked": false, "serverSeq": 1, "head": "h", "time": 1]), 200)
         case "/spend":
             return (try signed(["type": "spend", "device": "dev-1", "item": body["item"]!, "amount": body["amount"]!,
@@ -109,10 +113,10 @@ final class LedgerSyncTests: XCTestCase {
         XCTAssertNotNil(sent[0]["key"])
         XCTAssertNil(sent[1]["key"])  // key appears on the opening entry only; the server rejects it elsewhere
 
-        let before = server.requests.count
+        let before = server.requests.filter { $0.path == "/sync" }.count
         let again = try await c.sync()
         XCTAssertNil(again)
-        XCTAssertEqual(server.requests.count, before)
+        XCTAssertEqual(server.requests.filter { $0.path == "/sync" }.count, before)  // only a balance check, no resend
     }
 
     func testClampIsBookedAsAdjustAndSentNextTime() async throws {
@@ -162,6 +166,24 @@ final class LedgerSyncTests: XCTestCase {
         XCTAssertEqual(ledger.entries.last?.amount, -100)
         let second = try await c.bookOpenReservations(note: "영입")
         XCTAssertEqual(second, 0)  // already in the ledger
+    }
+
+    func testMarketSaleIsBookedAsIncomeEvenWithNothingToSend() async throws {
+        let c = try await registered()
+        try ledger.append(kind: .earn, source: "a", amount: 5)
+        try await c.sync()
+        server.outstandingIncome = 270  // someone bought this device's character
+        let r = try await c.sync()     // nothing new locally: the client asks for the signed balance
+        XCTAssertNil(r)
+        XCTAssertEqual(ledger.entries.last?.kind, "income")
+        XCTAssertEqual(ledger.entries.last?.amount, 270)
+        XCTAssertEqual(ledger.balance, 275)
+
+        try await c.sync()  // sends the income entry; the server's outstanding income drops to 0
+        XCTAssertEqual(server.outstandingIncome, 0)
+        let again = try await c.sync()
+        XCTAssertNil(again)
+        XCTAssertEqual(ledger.balance, 275)  // never booked twice
     }
 
     func testForgedReceiptIsRejectedAndNotAcknowledged() async throws {

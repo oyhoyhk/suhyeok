@@ -12,6 +12,7 @@ final class LedgerSync {
     nonisolated static let pinnedServerKey = "QoECpfdKjZ5Dw6XUVfSHoxuBvmoGjvgcQ1C82GwYG2g="
     nonisolated static let defaultBase = "https://suhyeok.pickuma.com/ledger/v1"
     nonisolated static let clampSource = "#server-clamp"
+    nonisolated static let incomeSource = "#market-income"
     nonisolated static let batchSize = 200  // matches the server's MAX_BATCH
 
     struct State: Codable, Equatable {
@@ -34,6 +35,7 @@ final class LedgerSync {
         let pending: Int      // genesis awaiting the admin
         let balance: Int
         let pendingClamp: Int
+        let pendingIncome: Int?  // market sales the ledger has not recorded yet
         let serverSeq: Int
         let head: String
     }
@@ -106,6 +108,12 @@ final class LedgerSync {
         var last: Receipt?
         // Only what existed when this sync began: the adjust entries it writes go out next time.
         let end = ledger.entries.last?.seq ?? -1
+        if end <= (state.ackSeq ?? -1) {
+            // Nothing to send, but a sale may have happened: the signed balance says what income is owed.
+            let b = try await balance()
+            bookIncome(owed: b.pendingIncome ?? 0, after: state.ackSeq ?? -1)
+            return nil
+        }
         while true {
             let unsent = ledger.entries.filter { $0.seq > (state.ackSeq ?? -1) && $0.seq <= end }
             guard !unsent.isEmpty else { return last }
@@ -129,6 +137,7 @@ final class LedgerSync {
             if owed > 0 {
                 _ = try? ledger.append(kind: .adjust, source: Self.clampSource, amount: -owed, rule: Hunt.rule, note: "서버 상한 초과분")
             }
+            bookIncome(owed: r.pendingIncome ?? 0, after: r.deviceSeq)
             last = r
         }
     }
@@ -159,6 +168,7 @@ final class LedgerSync {
         let balance: Int
         let pendingGenesis: Int
         let reservations: [Reservation]
+        let pendingIncome: Int?
     }
 
     func balance() async throws -> BalanceInfo {
@@ -179,6 +189,16 @@ final class LedgerSync {
             if (try? ledger.append(kind: .spend, source: r.item, amount: -r.amount, rule: Hunt.rule, note: note)) != nil { booked += 1 }
         }
         return booked
+    }
+
+    /// Records market sales the server has credited but the ledger has not: the server's outstanding income
+    /// minus income entries already written and not yet sent (same self-healing rule as the clamp).
+    private func bookIncome(owed total: Int, after seq: Int) {
+        let unsent = ledger.entries.filter { $0.seq > seq && $0.kind == LedgerEntry.Kind.income.rawValue }.reduce(0) { $0 + $1.amount }
+        let owed = total - unsent
+        if owed > 0 {
+            _ = try? ledger.append(kind: .income, source: Self.incomeSource, amount: owed, rule: Hunt.rule, note: "마켓 판매 수익")
+        }
     }
 
     /// Drops the registration (the ledger was started over with a new key): the next one needs a new code.

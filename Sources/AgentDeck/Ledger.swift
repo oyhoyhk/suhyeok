@@ -4,7 +4,7 @@ import Foundation
 /// One line of the crystal ledger. The hash covers every field but `hash` and `sig`, in the canonical form
 /// below; the ledger Worker recomputes it byte for byte (shared vectors: server/ledger/test/vectors.json).
 struct LedgerEntry: Codable, Equatable {
-    enum Kind: String { case open, genesis, earn, spend, adjust }
+    enum Kind: String { case open, genesis, earn, spend, adjust, income }
 
     var seq: Int
     var time: Int        // unix seconds
