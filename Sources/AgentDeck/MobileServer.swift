@@ -265,6 +265,12 @@ final class MobileServer: ObservableObject {
             return (200, r.path.hasSuffix(".png") ? "image/png" : "image/jpeg", data, ["Cache-Control": "max-age=86400"])
         }
         guard authorized(r) else { return json(["error": "pair"], 401) }
+        // Characters bought on the market are not public art: paired phones only.
+        if r.method == "GET", r.path.hasPrefix("/art/"),
+           let file = AssetLibrary.shared.file(forArtName: (String(r.path.dropFirst(5)) as NSString).deletingPathExtension),
+           let data = try? Data(contentsOf: file) {
+            return (200, file.pathExtension == "png" ? "image/png" : "image/jpeg", data, ["Cache-Control": "max-age=86400"])
+        }
         guard let store else { return json(["error": "starting"], 503) }
         let body = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
         func session(_ id: String?) -> AgentSession? { store.sessions.first { $0.id == id } }
