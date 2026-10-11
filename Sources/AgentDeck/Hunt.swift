@@ -26,6 +26,12 @@ enum Hunt {
         static func of(run: TimeInterval) -> Tier { run < 5 * 3600 ? .low : run < 24 * 3600 ? .mid : .high }
     }
 
+    /// Earning-formula version, written on every ledger entry so later formula changes stay distinguishable.
+    static let rule = 1
+    /// Crystals for each finished turn and each successful `git commit`, on top of active time.
+    static let turnBonus = 1
+    static let commitBonus = 3
+
     /// A pause this long ends the run: the agent goes back to camp and the clock starts over.
     static let resetAfter: TimeInterval = 3600
     /// Gaps shorter than this between log entries count as active time.
@@ -35,8 +41,14 @@ enum Hunt {
         var runStart: Date?      // start of the current run (nil when resting)
         var last: Date?          // newest activity
         var activeSeconds: Double = 0
-        var crystals: Int = 0
+        var crystals: Int = 0    // from active time
         var crystalRemainder: Double = 0
+        var turns = 0
+        var commits = 0
+        var mana = 0             // output tokens: shown as cost, never paid out
+
+        /// Everything this log has earned so far under the current rule.
+        var earned: Int { crystals + turns * Hunt.turnBonus + commits * Hunt.commitBonus }
 
         func run(at now: Date = Date()) -> TimeInterval? {
             guard let runStart, let last, now.timeIntervalSince(last) < Hunt.resetAfter else { return nil }
@@ -46,10 +58,15 @@ enum Hunt {
     }
 }
 
-/// Scans conversation logs for entry timestamps (incrementally, from where it stopped) to measure runs and crystals.
-/// Works for time the app was not running, since the log keeps every timestamp.
+/// Scans conversation logs (incrementally, from where it stopped) for entry timestamps, finished turns,
+/// successful commits and output tokens. Works for time the app was not running, since the log keeps it all.
 enum HuntClock {
-    private struct State { var offset: UInt64 = 0; var p = Hunt.Progress() }
+    private struct State {
+        var offset: UInt64 = 0
+        var p = Hunt.Progress()
+        var pendingCommits: Set<String> = []  // Bash `git commit` tool_use ids awaiting their result
+        var lastUsageMessage = ""             // Claude repeats a message's usage on each of its records
+    }
     private static var states: [String: State] = [:]
     private static let lock = NSLock()
     private static let iso: ISO8601DateFormatter = {
@@ -73,7 +90,9 @@ enum HuntClock {
             let chunk = data[data.startIndex...lastNL]
             var lineStart = chunk.startIndex
             for i in chunk.indices where chunk[i] == UInt8(ascii: "\n") {
-                if let t = timestamp(chunk[lineStart..<i]) { add(t, to: &st.p) }
+                let line = chunk[lineStart..<i]
+                if let t = timestamp(line) { add(t, to: &st.p) }
+                scanWork(line, into: &st)
                 lineStart = chunk.index(after: i)
             }
             st.offset += UInt64(chunk.count)
@@ -83,11 +102,88 @@ enum HuntClock {
     }
 
     private static let key = Array("\"timestamp\":\"".utf8)
+    private static let claudeTurn = Array("\"subtype\":\"turn_duration\"".utf8)
+    private static let codexTurn = Array("\"type\":\"task_complete\"".utf8)
+    private static let toolUse = Array("\"type\":\"tool_use\"".utf8)
+    private static let toolResult = Array("\"tool_result\"".utf8)
+    private static let bash = Array("\"name\":\"Bash\"".utf8)
+    private static let gitCommit = Array("commit".utf8)
+    private static let messageID = Array("\"id\":\"msg_".utf8)
+    private static let claudeUsage = Array("\"output_tokens\":".utf8)
+    private static let codexUsage = Array("\"total_token_usage\"".utf8)
+
+    /// Turns, commits and tokens. Lines are only decoded when a cheap byte search says they matter.
+    private static func scanWork(_ line: Data.SubSequence, into st: inout State) {
+        if find(claudeTurn, in: line) != nil || find(codexTurn, in: line) != nil { st.p.turns += 1 }
+        if find(toolUse, in: line) != nil, find(bash, in: line) != nil, find(gitCommit, in: line) != nil,
+           let blocks = contentBlocks(line) {
+            for b in blocks where b["type"] as? String == "tool_use" && b["name"] as? String == "Bash" {
+                if let id = b["id"] as? String, let cmd = (b["input"] as? [String: Any])?["command"] as? String, isCommit(cmd) {
+                    st.pendingCommits.insert(id)
+                }
+            }
+        }
+        if !st.pendingCommits.isEmpty, find(toolResult, in: line) != nil, let blocks = contentBlocks(line) {
+            for b in blocks where b["type"] as? String == "tool_result" {
+                guard let id = b["tool_use_id"] as? String, st.pendingCommits.remove(id) != nil else { continue }
+                if b["is_error"] as? Bool != true { st.p.commits += 1 }
+            }
+        }
+        if find(codexUsage, in: line) == nil, let u = find(claudeUsage, in: line), let out = integer(at: u, in: line),
+           let m = find(messageID, in: line) {
+            // Read the id and the count straight from the bytes: assistant lines can be megabytes long.
+            let start = m - 4  // back to the "msg_" prefix
+            let id = line[start...].firstIndex(of: UInt8(ascii: "\"")).map { String(decoding: line[start..<$0], as: UTF8.self) } ?? ""
+            if id != st.lastUsageMessage {
+                st.lastUsageMessage = id
+                st.p.mana += out
+            }
+        }
+        if find(codexUsage, in: line) != nil,
+           let info = (json(line)?["payload"] as? [String: Any])?["info"] as? [String: Any],
+           let out = (info["total_token_usage"] as? [String: Any])?["output_tokens"] as? Int {
+            st.p.mana = max(st.p.mana, out)  // a running total
+        }
+    }
+
+    /// Index just past the first occurrence of `pattern` (memmem: far faster than a generic subsequence search).
+    private static func find(_ pattern: [UInt8], in line: Data.SubSequence) -> Data.Index? {
+        line.withUnsafeBytes { buf -> Int? in
+            guard let base = buf.baseAddress, buf.count >= pattern.count else { return nil }
+            return pattern.withUnsafeBytes { p in
+                memmem(base, buf.count, p.baseAddress!, p.count).map { base.distance(to: UnsafeRawPointer($0)) + p.count }
+            }
+        }.map { line.startIndex + $0 }
+    }
+
+    private static func integer(at i: Data.Index, in line: Data.SubSequence) -> Int? {
+        var n = 0, j = i, any = false
+        while j < line.endIndex, line[j] >= UInt8(ascii: "0"), line[j] <= UInt8(ascii: "9") {
+            n = n * 10 + Int(line[j] - UInt8(ascii: "0")); j += 1; any = true
+        }
+        return any ? n : nil
+    }
+
+    private static func json(_ line: Data.SubSequence) -> [String: Any]? {
+        try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any]
+    }
+
+    private static func contentBlocks(_ line: Data.SubSequence) -> [[String: Any]]? {
+        (json(line)?["message"] as? [String: Any])?["content"] as? [[String: Any]]
+    }
+
+    private static let commitPattern = try! NSRegularExpression(
+        pattern: #"(^|[\s;&|(])git(\s+-[Cc]\s+\S+)*\s+commit(\s|$)"#)
+
+    /// True for a shell command that runs `git commit` (not `--dry-run`, not `commit-tree`, not inside quotes).
+    static func isCommit(_ command: String) -> Bool {
+        guard !command.contains("--dry-run") else { return false }
+        return commitPattern.firstMatch(in: command, range: NSRange(command.startIndex..., in: command)) != nil
+    }
 
     private static func timestamp(_ line: Data.SubSequence) -> Date? {
         // Find the first "timestamp":"…" without decoding the whole JSON line.
-        guard let r = line.firstRange(of: key) else { return nil }
-        let start = r.upperBound
+        guard let start = find(key, in: line) else { return nil }
         guard let end = line[start...].firstIndex(of: UInt8(ascii: "\"")),
               let s = String(data: Data(line[start..<end]), encoding: .utf8) else { return nil }
         return iso.date(from: s)

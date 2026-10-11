@@ -25,7 +25,8 @@ let package = Package(
         .testTarget(
             name: "AgentDeckTests",
             dependencies: ["AgentDeck"],
-            path: "Tests/AgentDeckTests"
+            path: "Tests/AgentDeckTests",
+            exclude: ["Fixtures"]  // transcript samples read by path
         )
     ]
 )

@@ -1,0 +1,10 @@
+{"type":"user","message":{"role":"user","content":"please git commit -m 'x' for me"},"timestamp":"2026-10-01T09:00:00.000Z"}
+{"type":"assistant","message":{"id":"msg_a","role":"assistant","content":[{"type":"tool_use","id":"toolu_ok","name":"Bash","input":{"command":"git add a && git commit -m \"feat: a\""}}],"usage":{"output_tokens":120}},"timestamp":"2026-10-01T09:04:00.000Z"}
+{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_ok","type":"tool_result","content":"[main 1234567] feat: a","is_error":false}]},"timestamp":"2026-10-01T09:08:00.000Z"}
+{"type":"assistant","message":{"id":"msg_a","role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"output_tokens":120},"stop_reason":"end_turn"},"timestamp":"2026-10-01T09:08:00.000Z"}
+{"type":"system","subtype":"turn_duration","durationMs":480000,"timestamp":"2026-10-01T09:08:00.000Z"}
+{"type":"assistant","message":{"id":"msg_b","role":"assistant","content":[{"type":"tool_use","id":"toolu_bad","name":"Bash","input":{"command":"git -C repo commit -m wip"}}],"usage":{"output_tokens":30}},"timestamp":"2026-10-01T09:12:00.000Z"}
+{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_bad","type":"tool_result","content":"nothing to commit","is_error":true}]},"timestamp":"2026-10-01T09:16:00.000Z"}
+{"type":"assistant","message":{"id":"msg_c","role":"assistant","content":[{"type":"tool_use","id":"toolu_log","name":"Bash","input":{"command":"git log --grep='git commit'"}}],"usage":{"output_tokens":10}},"timestamp":"2026-10-01T09:18:00.000Z"}
+{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_log","type":"tool_result","content":"","is_error":false}]},"timestamp":"2026-10-01T09:19:00.000Z"}
+{"type":"system","subtype":"turn_duration","durationMs":1000,"timestamp":"2026-10-01T09:20:00.000Z"}

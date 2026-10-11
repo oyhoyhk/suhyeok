@@ -1,0 +1,5 @@
+{"timestamp":"2026-10-01T09:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-10-01T09:04:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":900,"output_tokens":40}}}}
+{"timestamp":"2026-10-01T09:08:00.000Z","type":"event_msg","payload":{"type":"task_complete"}}
+{"timestamp":"2026-10-01T09:12:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1900,"output_tokens":90}}}}
+{"timestamp":"2026-10-01T09:16:00.000Z","type":"event_msg","payload":{"type":"task_complete"}}
