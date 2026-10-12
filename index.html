@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>수혁 — 에이전트 길드홀</title>
-<meta name="description" content="터미널마다 흩어진 Claude Code·Codex 세션을 픽셀 RPG 길드홀 한 화면에 모아 지휘하는 맥 앱">
-<meta property="og:title" content="수혁 — 에이전트 길드홀">
-<meta property="og:description" content="Claude Code·Codex 세션을 픽셀 RPG 길드홀 한 화면에서 지휘하는 맥 앱">
+<title>수혁</title>
+<meta name="description" content="Claude Code와 Codex 세션을 픽셀 RPG 길드홀 한 화면에 모아 보고 지시하는 맥 앱">
+<meta property="og:title" content="수혁">
+<meta property="og:description" content="Claude Code와 Codex 세션을 픽셀 RPG 길드홀 한 화면에 모아 보고 지시하는 맥 앱">
 <meta property="og:image" content="https://oyhoyhk.github.io/suhyeok/img/og.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
@@ -16,286 +16,232 @@
 :root {
   color-scheme: dark;
   --bg: #17110d;
-  --bg2: #21180f;
-  --card: #2a1f15;
-  --line: #4a3622;
-  --fg: #f3e7d3;
-  --muted: #bfa98a;
+  --panel: #211810;
+  --line: #3d2d1d;
+  --fg: #f1e6d4;
+  --muted: #b3a088;
   --gold: #e8b44c;
-  --gold2: #f6d58a;
-  --red: #b5452f;
-  --code: #120d09;
+  --link: #f2cf7e;
+  --code: #100b07;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
   font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
-  line-height: 1.65; -webkit-font-smoothing: antialiased; word-break: keep-all;
+  font-size: 16px; line-height: 1.7; -webkit-font-smoothing: antialiased; word-break: keep-all;
 }
-a { color: var(--gold2); }
+a { color: var(--link); }
 img { max-width: 100%; display: block; }
-.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+.wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
+.pixel { image-rendering: pixelated; }
 
-/* top bar */
-.bar { position: sticky; top: 0; z-index: 10; background: rgba(23,17,13,.88); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
-.bar .wrap { display: flex; align-items: center; gap: 18px; height: 56px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; color: var(--fg); text-decoration: none; font-size: 18px; }
-.brand img { width: 30px; height: 30px; border-radius: 7px; image-rendering: pixelated; }
-.bar nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
-.bar nav a { color: var(--muted); text-decoration: none; }
-.bar nav a:hover { color: var(--gold2); }
+header { border-bottom: 1px solid var(--line); }
+header .wrap { display: flex; align-items: center; gap: 20px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; color: var(--fg); text-decoration: none; }
+.brand img { width: 28px; height: 28px; border-radius: 6px; }
+header nav { margin-left: auto; display: flex; gap: 20px; font-size: 14px; }
+header nav a { color: var(--muted); text-decoration: none; }
+header nav a:hover { color: var(--fg); }
 
-/* hero */
-.hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
-.hero .art { width: 100%; aspect-ratio: 16/9; max-height: 640px; object-fit: cover; image-rendering: pixelated; filter: saturate(1.05); }
-.hero .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(23,17,13,0) 35%, rgba(23,17,13,.85) 78%, var(--bg) 100%); }
-.hero .copy { position: absolute; left: 0; right: 0; bottom: 36px; }
-.hero h1 { margin: 0; font-size: clamp(34px, 6vw, 64px); line-height: 1.1; letter-spacing: -0.02em; text-shadow: 0 3px 0 #000; }
-.hero h1 small { display: block; font-size: .38em; color: var(--gold2); font-weight: 600; letter-spacing: .02em; margin-bottom: 8px; }
-.hero p { margin: 14px 0 22px; font-size: clamp(15px, 2vw, 19px); color: var(--fg); max-width: 640px; text-shadow: 0 2px 0 #000; }
-.cta { display: flex; flex-wrap: wrap; gap: 10px; }
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 8px; font-weight: 700; text-decoration: none; font-size: 15px; border: 2px solid #000; box-shadow: 0 3px 0 #000; }
-.btn.gold { background: var(--gold); color: #24170a; }
-.btn.dark { background: var(--card); color: var(--fg); border-color: var(--line); box-shadow: 0 3px 0 #0008; }
-.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
-.ver { font-size: 13px; color: var(--muted); margin-top: 12px; }
+.hero-art { width: 100%; max-height: 560px; object-fit: cover; border-bottom: 1px solid var(--line); }
+.intro { padding: 40px 0 8px; }
+.intro h1 { margin: 0 0 12px; font-size: clamp(32px, 5vw, 48px); line-height: 1.2; letter-spacing: -0.02em; }
+.intro p { margin: 0; max-width: 620px; font-size: 18px; color: var(--muted); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-top: 24px; }
+.btn { display: inline-block; padding: 10px 18px; border-radius: 6px; background: var(--gold); color: #22160a; font-weight: 700; text-decoration: none; }
+.actions .sub { font-size: 14px; color: var(--muted); }
 
-/* sections */
-section { padding: 72px 0 24px; }
-h2 { font-size: clamp(24px, 3.4vw, 34px); margin: 0 0 8px; letter-spacing: -0.01em; }
-h2 + .lead { color: var(--muted); margin: 0 0 28px; }
-h3 { margin: 0 0 6px; font-size: 18px; }
+section { padding: 64px 0 0; }
+h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
+.section-note { margin: 0 0 28px; color: var(--muted); }
 
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
-.card, .state, .wide, .roster { min-width: 0; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; position: relative; }
-.card .ico { font-size: 22px; line-height: 1; margin-bottom: 10px; }
-.card ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 14.5px; }
-.card li { margin: 3px 0; }
-.card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 40px; }
+.feature { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 16px; align-items: start; }
+.feature img { width: 64px; height: 64px; }
+.feature h3 { margin: 4px 0 4px; font-size: 18px; }
+.feature p { margin: 0; color: var(--muted); font-size: 15px; }
 
-.states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
-.state { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
-.state b { color: var(--gold2); }
-.state span { display: block; color: var(--muted); font-size: 14px; margin-top: 4px; }
+.zones { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 15px; }
+.zones th, .zones td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.zones th { color: var(--muted); font-weight: 600; font-size: 13px; }
+.zones td:first-child { font-weight: 700; white-space: nowrap; }
 
-.wide { margin-top: 18px; border-radius: 10px; border: 1px solid var(--line); overflow: hidden; background: #000; }
-.wide img { width: 100%; }
-.caption { color: var(--muted); font-size: 14px; margin-top: 10px; }
+.shot { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.roster { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
+.roster img { border-radius: 6px; aspect-ratio: 3/4; object-fit: cover; width: 100%; }
 
-.roster { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin-top: 18px; }
-.roster img { border-radius: 8px; border: 2px solid var(--line); aspect-ratio: 3/4; object-fit: cover; width: 100%; }
-
-/* install */
-.install { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
-.step { counter-reset: s; list-style: none; padding: 0; margin: 12px 0 0; }
-.step li { counter-increment: s; position: relative; padding-left: 34px; margin: 10px 0; font-size: 15px; }
-.step li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 24px; height: 24px; border-radius: 6px; background: var(--gold); color: #24170a; font-weight: 800; font-size: 13px; display: grid; place-items: center; }
-pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-size: 13.5px; margin: 8px 0; }
+.install { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; }
+.install-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.install-head img { width: 48px; height: 48px; }
+.install-head h3 { margin: 0; font-size: 20px; }
+.install ol { margin: 0; padding-left: 22px; }
+.install li { margin: 0 0 12px; }
+.install p { color: var(--muted); font-size: 15px; margin: 14px 0 0; }
+pre { margin: 6px 0 0; background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 13.5px; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-:not(pre) > code { background: var(--code); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .9em; }
-.req { color: var(--muted); font-size: 14px; margin-top: 14px; }
-.req li { margin: 3px 0; }
-.note { border-left: 3px solid var(--gold); background: var(--bg2); padding: 10px 14px; border-radius: 0 8px 8px 0; color: var(--muted); font-size: 14px; margin-top: 14px; }
+:not(pre) > code { font-size: .9em; background: var(--code); border-radius: 4px; padding: 1px 5px; }
 
-footer { border-top: 1px solid var(--line); margin-top: 72px; padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; }
+footer { margin-top: 72px; border-top: 1px solid var(--line); padding: 24px 0 40px; font-size: 14px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
 @media (max-width: 760px) {
-  .bar nav { display: none; }
-  .hero .art { aspect-ratio: 4/5; max-height: none; object-position: 50% 30%; }
-  .hero .copy { bottom: 20px; }
-  .states, .install { grid-template-columns: minmax(0, 1fr); }
-  .roster { grid-template-columns: repeat(4, 1fr); }
-  .grid { grid-template-columns: minmax(0, 1fr); }
+  header nav { display: none; }
+  .hero-art { aspect-ratio: 4/3; object-position: 50% 25%; }
+  .features, .install { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   section { padding-top: 52px; }
 }
 </style>
 </head>
 <body>
 
-<header class="bar">
+<header>
   <div class="wrap">
     <a class="brand" href="#"><img src="img/icon.png" alt="">수혁</a>
     <nav>
-      <a href="#features">핵심 기능</a>
-      <a href="#mac">Mac 설치</a>
-      <a href="#phone">폰 앱</a>
+      <a href="#features">기능</a>
+      <a href="#install">설치</a>
       <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
     </nav>
   </div>
 </header>
 
-<div class="hero">
-  <img class="art" src="img/hero.jpg" alt="길드 마스터가 난간에서 모험가들을 지휘하는 픽셀 아트 길드홀">
-  <div class="shade"></div>
-  <div class="copy">
-    <div class="wrap">
-      <h1><small>帥赫 · 빛나는 장수</small>에이전트 길드홀, 수혁</h1>
-      <p>터미널마다 흩어진 Claude Code·Codex 세션을 픽셀 RPG 길드홀 한 화면에 모음. 누가 일하고, 누가 내 대답을 기다리는지 한눈에 보고 바로 지시함</p>
-      <div class="cta">
-        <a class="btn gold" href="#mac">Mac에 설치</a>
-        <a class="btn dark" href="https://github.com/oyhoyhk/suhyeok/releases/download/v0.2.0/suhyeok-android-0.2.0.apk">Android 앱 받기</a>
-        <a class="btn dark" href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
-      </div>
-      <div class="ver">최신 0.2.0 · Apple Silicon Mac · macOS 14 이상 · 무료</div>
-    </div>
-  </div>
-</div>
+<img class="hero-art pixel" src="img/hero.jpg" alt="길드 마스터가 난간에서 모험가들을 지휘하는 픽셀 아트 길드홀">
 
 <main class="wrap">
 
-<section id="features">
-  <h2>핵심 기능</h2>
-  <p class="lead">세션 1개 = 캐릭터 1명. 상태에 따라 길드홀의 다른 구역으로 걸어감</p>
-
-  <div class="grid">
-    <div class="card">
-      <div class="ico">🏰</div>
-      <h3>길드홀 월드</h3>
-      <ul>
-        <li>모든 로컬 Claude Code·Codex 세션을 맵 한 장에 표시</li>
-        <li>작업 중 캐릭터는 도구별 동작 — 편집=타이핑, Bash=망치질, 읽기=끄덕임</li>
-        <li>호버 → 세션 제목·프로젝트·마지막 지시</li>
-        <li>입력 기다리는 에이전트는 게시판에 모아 표시</li>
-      </ul>
-    </div>
-    <div class="card">
-      <div class="ico">⚔️</div>
-      <h3>수혁 안에서 세션 운영</h3>
-      <ul>
-        <li>⌘N → 에이전트·작업 폴더·첫 지시로 새 세션 시작</li>
-        <li>내장 터미널에서 키 입력·단축키 그대로 사용</li>
-        <li>전용 tmux 서버가 실행 → 앱을 꺼도 세션 유지</li>
-        <li>cmux·Orca·tmux 세션을 대화 기록째 옮겨 오기</li>
-        <li>최근 7일 대화를 "이어서" 한 번으로 복귀</li>
-      </ul>
-    </div>
-    <div class="card">
-      <div class="ico">💬</div>
-      <h3>NPC 대화창</h3>
-      <ul>
-        <li>캐릭터 일러스트와 함께 답변·지시를 대화처럼 표시</li>
-        <li>작성 중인 답변을 실시간으로 보여 줌</li>
-        <li>권한 확인·선택지 메뉴는 빠른 키(↑ ↓ ⏎ Esc 1 2 3)로 응답</li>
-        <li>Esc로 작업 중단, ↑로 마지막 지시 불러오기</li>
-        <li>모델·컨텍스트·5시간/주간 사용량 상태줄</li>
-      </ul>
-    </div>
-    <div class="card">
-      <div class="ico">🖥️</div>
-      <h3>어떤 터미널이든</h3>
-      <ul>
-        <li>tmux·Orca·cmux는 터미널 화면을 직접 읽음</li>
-        <li>Ghostty·Warp·VS Code 내장 등은 대화 기록으로 자동 전환</li>
-        <li>지시는 원래 터미널 세션으로 그대로 전달</li>
-      </ul>
-    </div>
-    <div class="card">
-      <div class="ico">🎙️</div>
-      <h3>음성 지휘</h3>
-      <ul>
-        <li>"안녕 수혁아, ○○아 …" 호출어로 에이전트 지정 후 지시</li>
-        <li>답변을 요약해 캐릭터 목소리로 읽어 줌</li>
-        <li>답변 요약(Apple 온디바이스 모델)·음성 합성은 Mac 안에서 처리</li>
-      </ul>
-    </div>
-    <div class="card">
-      <div class="ico">📱</div>
-      <h3>폰에서 지휘</h3>
-      <ul>
-        <li>Android 앱 또는 폰 브라우저로 지도·대화·지시 보내기</li>
-        <li>작업 끝·선택 대기 알림 (Mac 알림 센터 + 폰)</li>
-        <li>QR 한 번 + Mac에서 허용해야 연결</li>
-      </ul>
-    </div>
-    <div class="card">
-      <div class="ico">💎</div>
-      <h3>길드 · 결정</h3>
-      <ul>
-        <li>일한 시간·끝낸 턴·커밋만큼 결정이 쌓임</li>
-        <li>결정으로 용병 영입 (기본 8명 개방)</li>
-        <li>캐릭터 마켓: 다른 사용자가 만든 캐릭터 구매·내 캐릭터 판매 등록 (운영진 승인제)</li>
-        <li>게임 안 재화. 코인·현금화 없음</li>
-      </ul>
-    </div>
-    <div class="card">
-      <div class="ico">🛡️</div>
-      <h3>로컬 우선</h3>
-      <ul>
-        <li>세션 상태는 <code>~/.claude</code>·<code>~/.codex</code> 로컬 파일에서 읽음</li>
-        <li>외부 통신은 모바일 접속(켤 때만, Cloudflare 터널)·결정 정산·업데이트 확인뿐</li>
-      </ul>
-    </div>
+<div class="intro">
+  <h1>수혁</h1>
+  <p>여러 터미널에서 돌아가는 Claude Code와 Codex 세션을 길드홀 지도 한 장에 모아 보여 줍니다. 어느 에이전트가 일하는 중이고 어느 에이전트가 답을 기다리는지 바로 보이고, 그 자리에서 지시를 보낼 수 있습니다.</p>
+  <div class="actions">
+    <a class="btn" href="#install">설치하기</a>
+    <span class="sub">버전 0.2.0 · Apple Silicon Mac, macOS 14 이상</span>
   </div>
+</div>
 
-  <div class="states">
-    <div class="state"><b>작업 중</b> → 왼쪽 작업대<span>응답 생성·셸 실행 중. 도구별 동작 + 머리 위 아이콘</span></div>
-    <div class="state"><b>대기 중</b> → 가운데 선술집<span>응답 끝난 지 10분 미만. "…" 말풍선</span></div>
-    <div class="state"><b>휴식 중</b> → 오른쪽 라운지<span>10분 이상 조용함. zzz (시간 변경 가능)</span></div>
+<section id="features">
+  <h2>기능</h2>
+  <p class="section-note">세션 하나에 캐릭터 한 명이 배정됩니다.</p>
+
+  <div class="features">
+    <div class="feature">
+      <img class="pixel" src="img/i/world.png" alt="">
+      <div>
+        <h3>길드홀 지도</h3>
+        <p>이 Mac의 모든 세션이 캐릭터로 지도에 나옵니다. 작업 중인 캐릭터는 쓰는 도구에 따라 타자를 치거나 망치질을 합니다. 마우스를 올리면 세션 제목, 프로젝트, 마지막 지시가 보입니다.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <img class="pixel" src="img/i/session.png" alt="">
+      <div>
+        <h3>세션 만들기와 이어 하기</h3>
+        <p>⌘N으로 작업 폴더와 첫 지시를 정해 새 세션을 엽니다. 세션은 전용 tmux 서버에서 돌아서 수혁을 꺼도 끊기지 않습니다. cmux, Orca, tmux에서 쓰던 세션도 대화 기록을 그대로 가지고 옮길 수 있습니다.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <img class="pixel" src="img/i/dialogue.png" alt="">
+      <div>
+        <h3>대화창</h3>
+        <p>캐릭터 일러스트 옆에 답변과 지시가 대화처럼 쌓입니다. 답변이 작성되는 동안에도 내용이 보입니다. 권한 확인 메뉴는 화살표와 숫자 키로 답하고, Esc로 작업을 멈춥니다.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <img class="pixel" src="img/i/terminal.png" alt="">
+      <div>
+        <h3>쓰던 터미널 그대로</h3>
+        <p>tmux, Orca, cmux 세션은 터미널 화면을 직접 읽습니다. Ghostty, Warp, 에디터 내장 터미널처럼 화면을 읽을 수 없는 곳은 대화 기록 파일로 보여 줍니다.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <img class="pixel" src="img/i/voice.png" alt="">
+      <div>
+        <h3>음성 지시</h3>
+        <p>"안녕 수혁아" 다음에 에이전트 이름과 지시를 말하면 그 세션으로 전달됩니다. 끝난 답변은 짧게 요약해 읽어 줍니다. 요약과 음성 합성은 Mac 안에서 처리합니다.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <img class="pixel" src="img/i/phone.png" alt="">
+      <div>
+        <h3>휴대폰 연결</h3>
+        <p>Android 앱이나 휴대폰 브라우저로 지도와 대화를 보고 지시를 보냅니다. 작업이 끝나거나 선택을 기다리면 알림이 옵니다. 새 기기는 QR을 찍고 Mac에서 허용해야 연결됩니다.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <img class="pixel" src="img/i/crystal.png" alt="">
+      <div>
+        <h3>결정과 캐릭터 마켓</h3>
+        <p>에이전트가 일한 시간, 끝낸 턴, 커밋 수만큼 결정이 쌓입니다. 결정으로 새 용병을 영입하거나, 다른 사용자가 만들어 운영진 심사를 통과한 캐릭터를 삽니다. 결정은 앱 안에서만 쓰는 재화이고 현금으로 바꿀 수 없습니다.</p>
+      </div>
+    </div>
+    <div class="feature">
+      <img class="pixel" src="img/i/local.png" alt="">
+      <div>
+        <h3>데이터는 이 Mac에서</h3>
+        <p>세션 상태는 <code>~/.claude</code>와 <code>~/.codex</code>의 파일에서 읽습니다. 밖으로 나가는 통신은 휴대폰 연결을 켰을 때의 Cloudflare 터널, 결정 정산, 업데이트 확인입니다.</p>
+      </div>
+    </div>
   </div>
 </section>
 
+<section id="zones">
+  <h2>캐릭터가 서 있는 곳</h2>
+  <p class="section-note">상태에 따라 캐릭터가 지도의 다른 구역으로 걸어갑니다.</p>
+  <table class="zones">
+    <tr><th>상태</th><th>구역</th><th>조건</th></tr>
+    <tr><td>작업 중</td><td>왼쪽 작업대</td><td>답변을 쓰거나 명령을 실행하는 중</td></tr>
+    <tr><td>대기 중</td><td>가운데 선술집</td><td>답변이 끝난 지 10분이 안 됨</td></tr>
+    <tr><td>휴식 중</td><td>오른쪽 라운지</td><td>10분 넘게 조용함. 기준 시간은 바꿀 수 있음</td></tr>
+  </table>
+</section>
+
 <section id="hunt">
-  <h2>일한 시간만큼 보스 사냥</h2>
-  <p class="lead">에이전트가 쉬지 않고 일한 시간에 따라 사냥터가 바뀜 — 5시간 미만 숲의 슬라임 왕 · 24시간 미만 수정 동굴 골렘 · 그 이상 화염 용왕. 일한 시간만큼 결정 획득</p>
-  <div class="wide"><img src="img/bosses.jpg" alt="보스 3종의 공격·포효·특수기 동작 모음" loading="lazy"></div>
+  <h2>보스 사냥</h2>
+  <p class="section-note">쉬지 않고 일한 시간이 5시간 미만이면 숲의 슬라임 왕, 24시간 미만이면 수정 동굴 골렘, 그보다 길면 화염 용왕과 싸웁니다.</p>
+  <div class="shot"><img class="pixel" src="img/bosses.jpg" alt="보스 세 종류의 공격, 포효, 특수기 동작" loading="lazy"></div>
 </section>
 
 <section id="roster">
   <h2>캐릭터 32명</h2>
-  <p class="lead">세션마다 다른 모험가가 배정됨. 궁수·음유시인·대장장이·연금술사·천문학자·고양이·요리사·성직자 …</p>
+  <p class="section-note">궁수, 음유시인, 대장장이, 연금술사, 천문학자, 고양이 마법사, 요리사, 성직자 등</p>
   <div class="roster">
-    <img src="img/p/archer.jpg" alt="궁수" loading="lazy">
-    <img src="img/p/bard.jpg" alt="음유시인" loading="lazy">
-    <img src="img/p/blacksmith.jpg" alt="대장장이" loading="lazy">
-    <img src="img/p/alchemist.jpg" alt="연금술사" loading="lazy">
-    <img src="img/p/astronomer.jpg" alt="천문학자" loading="lazy">
-    <img src="img/p/cat.jpg" alt="고양이" loading="lazy">
-    <img src="img/p/chef.jpg" alt="요리사" loading="lazy">
-    <img src="img/p/cleric.jpg" alt="성직자" loading="lazy">
+    <img class="pixel" src="img/p/archer.jpg" alt="궁수" loading="lazy">
+    <img class="pixel" src="img/p/bard.jpg" alt="음유시인" loading="lazy">
+    <img class="pixel" src="img/p/blacksmith.jpg" alt="대장장이" loading="lazy">
+    <img class="pixel" src="img/p/alchemist.jpg" alt="연금술사" loading="lazy">
+    <img class="pixel" src="img/p/astronomer.jpg" alt="천문학자" loading="lazy">
+    <img class="pixel" src="img/p/cat.jpg" alt="고양이 마법사" loading="lazy">
+    <img class="pixel" src="img/p/chef.jpg" alt="요리사" loading="lazy">
+    <img class="pixel" src="img/p/cleric.jpg" alt="성직자" loading="lazy">
   </div>
 </section>
 
 <section id="install">
   <h2>설치</h2>
-  <p class="lead">Mac 앱이 본체. 폰은 Mac에 연결해 쓰는 리모컨</p>
+  <p class="section-note">Mac 앱을 먼저 설치합니다. 휴대폰 연결은 필요할 때 추가합니다.</p>
 
   <div class="install">
-    <div class="card" id="mac">
-      <div class="ico">🍎</div>
-      <h3>Mac — Homebrew</h3>
-      <ol class="step">
-        <li>터미널에서 설치 (tmux 함께 설치됨)
-<pre><code>brew install oyhoyhk/tap/suhyeok</code></pre></li>
-        <li>실행
-<pre><code>suhyeok</code></pre></li>
-        <li>Launchpad·Spotlight에 넣기 (선택)
-<pre><code>ln -sf "$(brew --prefix)/opt/suhyeok/수혁.app" ~/Applications/수혁.app</code></pre></li>
+    <div>
+      <div class="install-head"><img class="pixel" src="img/i/mac.png" alt=""><h3>Mac</h3></div>
+      <ol>
+        <li>Homebrew로 설치합니다. tmux도 함께 설치됩니다.
+          <pre><code>brew install oyhoyhk/tap/suhyeok</code></pre></li>
+        <li>실행합니다.
+          <pre><code>suhyeok</code></pre></li>
+        <li>Launchpad와 Spotlight에서 찾으려면 링크를 만듭니다. (선택)
+          <pre><code>ln -sf "$(brew --prefix)/opt/suhyeok/수혁.app" ~/Applications/수혁.app</code></pre></li>
       </ol>
-      <ul class="req">
-        <li>요구 사항: Apple Silicon Mac, macOS 14 이상, Claude Code 또는 Codex CLI</li>
-        <li>업데이트: 새 버전이 나오면 사이드바에 "업데이트 설치" 버튼이 뜸. 직접 하려면 <code>brew upgrade suhyeok</code></li>
-        <li>0.1.1 이하 사용자는 한 번만 <code>brew upgrade suhyeok</code> 직접 실행</li>
-      </ul>
-      <div class="note">Homebrew가 없으면 <a href="https://brew.sh">brew.sh</a>의 한 줄 명령으로 먼저 설치</div>
+      <p>Claude Code나 Codex CLI가 설치되어 있어야 합니다. Homebrew가 없다면 <a href="https://brew.sh">brew.sh</a>에서 먼저 설치하세요. 새 버전이 나오면 사이드바에 업데이트 버튼이 생깁니다.</p>
     </div>
 
-    <div class="card" id="phone">
-      <div class="ico">🤖</div>
-      <h3>Android 앱</h3>
-      <ol class="step">
-        <li><a href="https://github.com/oyhoyhk/suhyeok/releases/download/v0.2.0/suhyeok-android-0.2.0.apk">suhyeok-android-0.2.0.apk</a>를 폰에서 내려받음</li>
-        <li>파일을 열고, 처음이면 "출처를 알 수 없는 앱 설치"를 브라우저에 허용</li>
-        <li>Mac 수혁에서 설정(⌘,) → <b>모바일 접속 (외부 인터넷)</b> 켜기 → QR 표시</li>
-        <li>폰 앱의 QR 스캔으로 Mac 화면의 QR을 찍음</li>
-        <li>Mac에 뜬 허용 창에서 <b>허용</b> → 연결 완료</li>
+    <div>
+      <div class="install-head"><img class="pixel" src="img/i/android.png" alt=""><h3>휴대폰</h3></div>
+      <ol>
+        <li>Android 휴대폰에서 <a href="https://github.com/oyhoyhk/suhyeok/releases/download/v0.2.0/suhyeok-android-0.2.0.apk">APK 파일</a>을 받아 설치합니다. 처음이면 브라우저에 앱 설치 권한을 줘야 합니다.</li>
+        <li>Mac의 수혁에서 설정(⌘,)을 열고 <b>모바일 접속</b>을 켭니다. QR 코드가 나옵니다.</li>
+        <li>앱에서 QR을 찍습니다.</li>
+        <li>Mac에 뜬 창에서 <b>허용</b>을 누르면 연결됩니다.</li>
       </ol>
-      <div class="note">
-        iPhone 등 다른 폰: 3단계 QR을 폰 카메라로 찍으면 브라우저에서 같은 기능(지도·대화·지시)을 씀<br>
-        QR은 한 번만 쓸 수 있고, 연결된 기기는 같은 설정 화면에서 언제든 끊을 수 있음
-      </div>
+      <p>iPhone은 앱 없이 씁니다. 2단계의 QR을 카메라로 찍으면 브라우저에서 같은 화면이 열립니다. QR은 한 번만 쓸 수 있고, 연결된 기기는 같은 설정 화면에서 끊을 수 있습니다.</p>
     </div>
   </div>
 </section>
@@ -304,9 +250,9 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: cent
 
 <footer>
   <div class="wrap">
-    <span>수혁 — 오윤환 · Pickuma 개발 스튜디오</span>
+    <span>만든 사람: 오윤환 (Pickuma 개발 스튜디오)</span>
     <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
-    <a href="https://github.com/oyhoyhk/suhyeok/releases">릴리스 노트</a>
+    <a href="https://github.com/oyhoyhk/suhyeok/releases">릴리스</a>
     <a href="https://studio.pickuma.com">studio.pickuma.com</a>
   </div>
 </footer>
