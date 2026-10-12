@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수혁 — 에이전트 길드홀</title>
+<meta name="description" content="터미널마다 흩어진 Claude Code·Codex 세션을 픽셀 RPG 길드홀 한 화면에 모아 지휘하는 맥 앱">
+<meta property="og:title" content="수혁 — 에이전트 길드홀">
+<meta property="og:description" content="Claude Code·Codex 세션을 픽셀 RPG 길드홀 한 화면에서 지휘하는 맥 앱">
+<meta property="og:image" content="https://oyhoyhk.github.io/suhyeok/img/og.png">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="img/favicon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #17110d;
+  --bg2: #21180f;
+  --card: #2a1f15;
+  --line: #4a3622;
+  --fg: #f3e7d3;
+  --muted: #bfa98a;
+  --gold: #e8b44c;
+  --gold2: #f6d58a;
+  --red: #b5452f;
+  --code: #120d09;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+  line-height: 1.65; -webkit-font-smoothing: antialiased; word-break: keep-all;
+}
+a { color: var(--gold2); }
+img { max-width: 100%; display: block; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+/* top bar */
+.bar { position: sticky; top: 0; z-index: 10; background: rgba(23,17,13,.88); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; align-items: center; gap: 18px; height: 56px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; color: var(--fg); text-decoration: none; font-size: 18px; }
+.brand img { width: 30px; height: 30px; border-radius: 7px; image-rendering: pixelated; }
+.bar nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
+.bar nav a { color: var(--muted); text-decoration: none; }
+.bar nav a:hover { color: var(--gold2); }
+
+/* hero */
+.hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
+.hero .art { width: 100%; aspect-ratio: 16/9; max-height: 640px; object-fit: cover; image-rendering: pixelated; filter: saturate(1.05); }
+.hero .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(23,17,13,0) 35%, rgba(23,17,13,.85) 78%, var(--bg) 100%); }
+.hero .copy { position: absolute; left: 0; right: 0; bottom: 36px; }
+.hero h1 { margin: 0; font-size: clamp(34px, 6vw, 64px); line-height: 1.1; letter-spacing: -0.02em; text-shadow: 0 3px 0 #000; }
+.hero h1 small { display: block; font-size: .38em; color: var(--gold2); font-weight: 600; letter-spacing: .02em; margin-bottom: 8px; }
+.hero p { margin: 14px 0 22px; font-size: clamp(15px, 2vw, 19px); color: var(--fg); max-width: 640px; text-shadow: 0 2px 0 #000; }
+.cta { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 8px; font-weight: 700; text-decoration: none; font-size: 15px; border: 2px solid #000; box-shadow: 0 3px 0 #000; }
+.btn.gold { background: var(--gold); color: #24170a; }
+.btn.dark { background: var(--card); color: var(--fg); border-color: var(--line); box-shadow: 0 3px 0 #0008; }
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+.ver { font-size: 13px; color: var(--muted); margin-top: 12px; }
+
+/* sections */
+section { padding: 72px 0 24px; }
+h2 { font-size: clamp(24px, 3.4vw, 34px); margin: 0 0 8px; letter-spacing: -0.01em; }
+h2 + .lead { color: var(--muted); margin: 0 0 28px; }
+h3 { margin: 0 0 6px; font-size: 18px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.card, .state, .wide, .roster { min-width: 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 20px; position: relative; }
+.card .ico { font-size: 22px; line-height: 1; margin-bottom: 10px; }
+.card ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 14.5px; }
+.card li { margin: 3px 0; }
+.card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+.states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+.state { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.state b { color: var(--gold2); }
+.state span { display: block; color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+.wide { margin-top: 18px; border-radius: 10px; border: 1px solid var(--line); overflow: hidden; background: #000; }
+.wide img { width: 100%; }
+.caption { color: var(--muted); font-size: 14px; margin-top: 10px; }
+
+.roster { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; margin-top: 18px; }
+.roster img { border-radius: 8px; border: 2px solid var(--line); aspect-ratio: 3/4; object-fit: cover; width: 100%; }
+
+/* install */
+.install { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.step { counter-reset: s; list-style: none; padding: 0; margin: 12px 0 0; }
+.step li { counter-increment: s; position: relative; padding-left: 34px; margin: 10px 0; font-size: 15px; }
+.step li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 24px; height: 24px; border-radius: 6px; background: var(--gold); color: #24170a; font-weight: 800; font-size: 13px; display: grid; place-items: center; }
+pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-size: 13.5px; margin: 8px 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+:not(pre) > code { background: var(--code); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: .9em; }
+.req { color: var(--muted); font-size: 14px; margin-top: 14px; }
+.req li { margin: 3px 0; }
+.note { border-left: 3px solid var(--gold); background: var(--bg2); padding: 10px 14px; border-radius: 0 8px 8px 0; color: var(--muted); font-size: 14px; margin-top: 14px; }
+
+footer { border-top: 1px solid var(--line); margin-top: 72px; padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; }
+
+@media (max-width: 760px) {
+  .bar nav { display: none; }
+  .hero .art { aspect-ratio: 4/5; max-height: none; object-position: 50% 30%; }
+  .hero .copy { bottom: 20px; }
+  .states, .install { grid-template-columns: minmax(0, 1fr); }
+  .roster { grid-template-columns: repeat(4, 1fr); }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  section { padding-top: 52px; }
+}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="#"><img src="img/icon.png" alt="">수혁</a>
+    <nav>
+      <a href="#features">핵심 기능</a>
+      <a href="#mac">Mac 설치</a>
+      <a href="#phone">폰 앱</a>
+      <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="hero">
+  <img class="art" src="img/hero.jpg" alt="길드 마스터가 난간에서 모험가들을 지휘하는 픽셀 아트 길드홀">
+  <div class="shade"></div>
+  <div class="copy">
+    <div class="wrap">
+      <h1><small>帥赫 · 빛나는 장수</small>에이전트 길드홀, 수혁</h1>
+      <p>터미널마다 흩어진 Claude Code·Codex 세션을 픽셀 RPG 길드홀 한 화면에 모음. 누가 일하고, 누가 내 대답을 기다리는지 한눈에 보고 바로 지시함</p>
+      <div class="cta">
+        <a class="btn gold" href="#mac">Mac에 설치</a>
+        <a class="btn dark" href="https://github.com/oyhoyhk/suhyeok/releases/download/v0.2.0/suhyeok-android-0.2.0.apk">Android 앱 받기</a>
+        <a class="btn dark" href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
+      </div>
+      <div class="ver">최신 0.2.0 · Apple Silicon Mac · macOS 14 이상 · 무료</div>
+    </div>
+  </div>
+</div>
+
+<main class="wrap">
+
+<section id="features">
+  <h2>핵심 기능</h2>
+  <p class="lead">세션 1개 = 캐릭터 1명. 상태에 따라 길드홀의 다른 구역으로 걸어감</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="ico">🏰</div>
+      <h3>길드홀 월드</h3>
+      <ul>
+        <li>모든 로컬 Claude Code·Codex 세션을 맵 한 장에 표시</li>
+        <li>작업 중 캐릭터는 도구별 동작 — 편집=타이핑, Bash=망치질, 읽기=끄덕임</li>
+        <li>호버 → 세션 제목·프로젝트·마지막 지시</li>
+        <li>입력 기다리는 에이전트는 게시판에 모아 표시</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ico">⚔️</div>
+      <h3>수혁 안에서 세션 운영</h3>
+      <ul>
+        <li>⌘N → 에이전트·작업 폴더·첫 지시로 새 세션 시작</li>
+        <li>내장 터미널에서 키 입력·단축키 그대로 사용</li>
+        <li>전용 tmux 서버가 실행 → 앱을 꺼도 세션 유지</li>
+        <li>cmux·Orca·tmux 세션을 대화 기록째 옮겨 오기</li>
+        <li>최근 7일 대화를 "이어서" 한 번으로 복귀</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ico">💬</div>
+      <h3>NPC 대화창</h3>
+      <ul>
+        <li>캐릭터 일러스트와 함께 답변·지시를 대화처럼 표시</li>
+        <li>작성 중인 답변을 실시간으로 보여 줌</li>
+        <li>권한 확인·선택지 메뉴는 빠른 키(↑ ↓ ⏎ Esc 1 2 3)로 응답</li>
+        <li>Esc로 작업 중단, ↑로 마지막 지시 불러오기</li>
+        <li>모델·컨텍스트·5시간/주간 사용량 상태줄</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ico">🖥️</div>
+      <h3>어떤 터미널이든</h3>
+      <ul>
+        <li>tmux·Orca·cmux는 터미널 화면을 직접 읽음</li>
+        <li>Ghostty·Warp·VS Code 내장 등은 대화 기록으로 자동 전환</li>
+        <li>지시는 원래 터미널 세션으로 그대로 전달</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ico">🎙️</div>
+      <h3>음성 지휘</h3>
+      <ul>
+        <li>"안녕 수혁아, ○○아 …" 호출어로 에이전트 지정 후 지시</li>
+        <li>답변을 요약해 캐릭터 목소리로 읽어 줌</li>
+        <li>답변 요약(Apple 온디바이스 모델)·음성 합성은 Mac 안에서 처리</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ico">📱</div>
+      <h3>폰에서 지휘</h3>
+      <ul>
+        <li>Android 앱 또는 폰 브라우저로 지도·대화·지시 보내기</li>
+        <li>작업 끝·선택 대기 알림 (Mac 알림 센터 + 폰)</li>
+        <li>QR 한 번 + Mac에서 허용해야 연결</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ico">💎</div>
+      <h3>길드 · 결정</h3>
+      <ul>
+        <li>일한 시간·끝낸 턴·커밋만큼 결정이 쌓임</li>
+        <li>결정으로 용병 영입 (기본 8명 개방)</li>
+        <li>캐릭터 마켓: 다른 사용자가 만든 캐릭터 구매·내 캐릭터 판매 등록 (운영진 승인제)</li>
+        <li>게임 안 재화. 코인·현금화 없음</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ico">🛡️</div>
+      <h3>로컬 우선</h3>
+      <ul>
+        <li>세션 상태는 <code>~/.claude</code>·<code>~/.codex</code> 로컬 파일에서 읽음</li>
+        <li>외부 통신은 모바일 접속(켤 때만, Cloudflare 터널)·결정 정산·업데이트 확인뿐</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="states">
+    <div class="state"><b>작업 중</b> → 왼쪽 작업대<span>응답 생성·셸 실행 중. 도구별 동작 + 머리 위 아이콘</span></div>
+    <div class="state"><b>대기 중</b> → 가운데 선술집<span>응답 끝난 지 10분 미만. "…" 말풍선</span></div>
+    <div class="state"><b>휴식 중</b> → 오른쪽 라운지<span>10분 이상 조용함. zzz (시간 변경 가능)</span></div>
+  </div>
+</section>
+
+<section id="hunt">
+  <h2>일한 시간만큼 보스 사냥</h2>
+  <p class="lead">에이전트가 쉬지 않고 일한 시간에 따라 사냥터가 바뀜 — 5시간 미만 숲의 슬라임 왕 · 24시간 미만 수정 동굴 골렘 · 그 이상 화염 용왕. 일한 시간만큼 결정 획득</p>
+  <div class="wide"><img src="img/bosses.jpg" alt="보스 3종의 공격·포효·특수기 동작 모음" loading="lazy"></div>
+</section>
+
+<section id="roster">
+  <h2>캐릭터 32명</h2>
+  <p class="lead">세션마다 다른 모험가가 배정됨. 궁수·음유시인·대장장이·연금술사·천문학자·고양이·요리사·성직자 …</p>
+  <div class="roster">
+    <img src="img/p/archer.jpg" alt="궁수" loading="lazy">
+    <img src="img/p/bard.jpg" alt="음유시인" loading="lazy">
+    <img src="img/p/blacksmith.jpg" alt="대장장이" loading="lazy">
+    <img src="img/p/alchemist.jpg" alt="연금술사" loading="lazy">
+    <img src="img/p/astronomer.jpg" alt="천문학자" loading="lazy">
+    <img src="img/p/cat.jpg" alt="고양이" loading="lazy">
+    <img src="img/p/chef.jpg" alt="요리사" loading="lazy">
+    <img src="img/p/cleric.jpg" alt="성직자" loading="lazy">
+  </div>
+</section>
+
+<section id="install">
+  <h2>설치</h2>
+  <p class="lead">Mac 앱이 본체. 폰은 Mac에 연결해 쓰는 리모컨</p>
+
+  <div class="install">
+    <div class="card" id="mac">
+      <div class="ico">🍎</div>
+      <h3>Mac — Homebrew</h3>
+      <ol class="step">
+        <li>터미널에서 설치 (tmux 함께 설치됨)
+<pre><code>brew install oyhoyhk/tap/suhyeok</code></pre></li>
+        <li>실행
+<pre><code>suhyeok</code></pre></li>
+        <li>Launchpad·Spotlight에 넣기 (선택)
+<pre><code>ln -sf "$(brew --prefix)/opt/suhyeok/수혁.app" ~/Applications/수혁.app</code></pre></li>
+      </ol>
+      <ul class="req">
+        <li>요구 사항: Apple Silicon Mac, macOS 14 이상, Claude Code 또는 Codex CLI</li>
+        <li>업데이트: 새 버전이 나오면 사이드바에 "업데이트 설치" 버튼이 뜸. 직접 하려면 <code>brew upgrade suhyeok</code></li>
+        <li>0.1.1 이하 사용자는 한 번만 <code>brew upgrade suhyeok</code> 직접 실행</li>
+      </ul>
+      <div class="note">Homebrew가 없으면 <a href="https://brew.sh">brew.sh</a>의 한 줄 명령으로 먼저 설치</div>
+    </div>
+
+    <div class="card" id="phone">
+      <div class="ico">🤖</div>
+      <h3>Android 앱</h3>
+      <ol class="step">
+        <li><a href="https://github.com/oyhoyhk/suhyeok/releases/download/v0.2.0/suhyeok-android-0.2.0.apk">suhyeok-android-0.2.0.apk</a>를 폰에서 내려받음</li>
+        <li>파일을 열고, 처음이면 "출처를 알 수 없는 앱 설치"를 브라우저에 허용</li>
+        <li>Mac 수혁에서 설정(⌘,) → <b>모바일 접속 (외부 인터넷)</b> 켜기 → QR 표시</li>
+        <li>폰 앱의 QR 스캔으로 Mac 화면의 QR을 찍음</li>
+        <li>Mac에 뜬 허용 창에서 <b>허용</b> → 연결 완료</li>
+      </ol>
+      <div class="note">
+        iPhone 등 다른 폰: 3단계 QR을 폰 카메라로 찍으면 브라우저에서 같은 기능(지도·대화·지시)을 씀<br>
+        QR은 한 번만 쓸 수 있고, 연결된 기기는 같은 설정 화면에서 언제든 끊을 수 있음
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>수혁 — 오윤환 · Pickuma 개발 스튜디오</span>
+    <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
+    <a href="https://github.com/oyhoyhk/suhyeok/releases">릴리스 노트</a>
+    <a href="https://studio.pickuma.com">studio.pickuma.com</a>
+  </div>
+</footer>
+
+</body>
+</html>
