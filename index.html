@@ -43,7 +43,7 @@ header nav { margin-left: auto; display: flex; gap: 20px; font-size: 14px; }
 header nav a { color: var(--muted); text-decoration: none; }
 header nav a:hover { color: var(--fg); }
 
-.hero-art { width: 100%; max-height: 560px; object-fit: cover; border-bottom: 1px solid var(--line); }
+.hero-art { width: 100%; aspect-ratio: 7 / 3; border-bottom: 1px solid var(--line); background: #0d0907; }
 .intro { padding: 40px 0 8px; }
 .intro h1 { margin: 0 0 12px; font-size: clamp(32px, 5vw, 48px); line-height: 1.2; letter-spacing: -0.02em; }
 .intro p { margin: 0; max-width: 620px; font-size: 18px; color: var(--muted); }
@@ -60,6 +60,15 @@ h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
 .feature img { width: 64px; height: 64px; }
 .feature h3 { margin: 4px 0 4px; font-size: 18px; }
 .feature p { margin: 0; color: var(--muted); font-size: 15px; }
+
+.voice { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 40px; align-items: start; }
+.voice ol { margin: 0; padding-left: 22px; }
+.voice li { margin: 0 0 12px; }
+.voice .say { color: var(--fg); font-weight: 600; }
+.voice figure { margin: 0; }
+.voice figure img { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #1e1e1e; }
+.voice figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
+.voice p { color: var(--muted); font-size: 15px; margin: 16px 0 0; }
 
 .zones { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 15px; }
 .zones th, .zones td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -86,8 +95,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
 @media (max-width: 760px) {
   header nav { display: none; }
-  .hero-art { aspect-ratio: 4/3; object-position: 50% 25%; }
-  .features, .install { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .features, .install, .voice { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   section { padding-top: 52px; }
 }
@@ -106,7 +114,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   </div>
 </header>
 
-<img class="hero-art pixel" src="img/hero.jpg" alt="길드 마스터가 난간에서 모험가들을 지휘하는 픽셀 아트 길드홀">
+<img class="hero-art pixel" src="img/banner.jpg" alt="위에서 본 길드홀. 왼쪽 작업대에서 모험가들이 일하고, 가운데 선술집에서 기다리고, 오른쪽 라운지에서 잠을 잔다">
 
 <main class="wrap">
 
@@ -156,7 +164,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
       <img class="pixel" src="img/i/voice.png" alt="">
       <div>
         <h3>음성 지시</h3>
-        <p>"안녕 수혁아" 다음에 에이전트 이름과 지시를 말하면 그 세션으로 전달됩니다. 끝난 답변은 짧게 요약해 읽어 줍니다. 요약과 음성 합성은 Mac 안에서 처리합니다.</p>
+        <p>"수혁아" 다음에 에이전트 이름과 지시를 말하면 그 세션으로 전달됩니다. 끝난 답변은 짧게 요약해 읽어 줍니다. <a href="#voice">자세히</a></p>
       </div>
     </div>
     <div class="feature">
@@ -180,6 +188,27 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
         <p>세션 상태는 <code>~/.claude</code>와 <code>~/.codex</code>의 파일에서 읽습니다. 밖으로 나가는 통신은 휴대폰 연결을 켰을 때의 Cloudflare 터널, 결정 정산, 업데이트 확인입니다.</p>
       </div>
     </div>
+  </div>
+</section>
+
+<section id="voice">
+  <h2>말로 지시하기</h2>
+  <p class="section-note">설정(⌘,)에서 <b>"수혁아"로 음성 지시</b>를 켜면 수혁이 "수혁아"를 기다립니다. 키보드에 손을 대지 않고 에이전트에게 일을 시키고 답을 들을 수 있습니다.</p>
+  <div class="voice">
+    <div>
+      <ol>
+        <li><span class="say">"수혁아, 펠릭스 커밋해 줘"</span>처럼 호출어 뒤에 에이전트 이름과 지시를 말합니다. 지시는 펠릭스의 세션으로 전달됩니다.</li>
+        <li>대답이 오가고 1분 동안은 호출어 없이 바로 말해도 됩니다. 이름을 빼면 마지막으로 말을 건 에이전트에게 갑니다.</li>
+        <li>에이전트가 답을 마치면 수혁이 읽어 줍니다. 누가, 어떤 요청에, 무엇을 했는지 먼저 말하고 결론을 짧게 전합니다. 여러 에이전트가 동시에 끝나면 차례로 읽습니다.</li>
+        <li><span class="say">"그만"</span>이나 <span class="say">"고마워"</span>라고 하면 대화가 끝납니다.</li>
+      </ol>
+      <p>창 위쪽의 대화 모드를 켜면 호출어 없이 계속 듣습니다. 대화창 입력칸에서는 마이크 버튼으로 받아쓰기를 합니다. 이름은 발음이 조금 달라도 알아듣습니다. 예를 들어 "필릭스"라고 들려도 펠릭스로 처리합니다.</p>
+      <p>음성 인식은 가능하면 Mac 안에서 처리하고, 답변 요약은 Mac 안의 Apple 모델이 합니다. 읽어 주는 목소리는 Supertonic 모델(약 400MB)을 처음 쓸 때 내려받으며, 받는 동안에는 macOS 기본 음성으로 읽습니다. macOS 설정의 받아쓰기가 켜져 있어야 하고, 처음 쓸 때 마이크와 음성 인식 권한을 허용해야 합니다.</p>
+    </div>
+    <figure>
+      <img src="img/talk.png" alt="음성 상태 표시: 이름을 불러 주세요, 펠릭스에게 보냄, 듣고 있어요, 말하는 중">
+      <figcaption>창 위쪽 상태 표시. 지금 누구에게 말하는 중인지, 듣는 중인지 읽는 중인지 보여 줍니다.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -237,11 +266,12 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
       <div class="install-head"><img class="pixel" src="img/i/android.png" alt=""><h3>휴대폰</h3></div>
       <ol>
         <li>Android 휴대폰에서 <a href="https://github.com/oyhoyhk/suhyeok/releases/download/v0.2.0/suhyeok-android-0.2.0.apk">APK 파일</a>을 받아 설치합니다. 처음이면 브라우저에 앱 설치 권한을 줘야 합니다.</li>
-        <li>Mac의 수혁에서 설정(⌘,)을 열고 <b>모바일 접속</b>을 켭니다. QR 코드가 나옵니다.</li>
+        <li>Mac의 수혁에서 설정(⌘,)을 열고 <b>모바일 접속</b>을 켭니다. QR 코드가 나옵니다. 2026년 10월 12일 이전에 수혁을 설치했다면 먼저 터미널에서 <code>brew install cloudflared</code>를 실행합니다.</li>
         <li>앱에서 QR을 찍습니다.</li>
         <li>Mac에 뜬 창에서 <b>허용</b>을 누르면 연결됩니다.</li>
       </ol>
       <p>iPhone은 앱 없이 씁니다. 2단계의 QR을 카메라로 찍으면 브라우저에서 같은 화면이 열립니다. QR은 한 번만 쓸 수 있고, 연결된 기기는 같은 설정 화면에서 끊을 수 있습니다.</p>
+      <p>Mac에서 수혁을 다시 실행하면 접속 주소가 바뀝니다. 이때는 휴대폰에서 QR을 다시 찍어야 합니다. APK는 Play 스토어 앱이 아니어서 설치할 때 Play 프로텍트 경고가 뜰 수 있습니다.</p>
     </div>
   </div>
 </section>
