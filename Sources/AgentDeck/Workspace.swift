@@ -29,24 +29,36 @@ enum RecentSource {
             .prefix(limit).map { $0 }
     }
 
+    /// Title and cwd per log, kept while the file's modification time is unchanged.
+    private static var parsed: [String: (modified: Date, title: String?, cwd: String?)] = [:]
+    private static let lock = NSLock()
+
     private static func claude(since: Date) -> [RecentConversation] {
         let fm = FileManager.default
-        let root = ClaudeSource.projectsDir
+        let root = URL(fileURLWithPath: ClaudeSource.projectsDir)
         var files: [(String, Date)] = []
-        for dir in (try? fm.contentsOfDirectory(atPath: root)) ?? [] {
-            for f in (try? fm.contentsOfDirectory(atPath: "\(root)/\(dir)")) ?? [] where f.hasSuffix(".jsonl") {
-                let path = "\(root)/\(dir)/\(f)"
-                if let m = (try? fm.attributesOfItem(atPath: path))?[.modificationDate] as? Date, m > since {
-                    files.append((path, m))
+        // Listing with the modification date prefetched reads it in bulk (getattrlistbulk); a stat per file
+        // over thousands of logs cost about 0.3 s every 30 s.
+        for dir in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
+            let logs = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            for url in logs where url.pathExtension == "jsonl" {
+                if let m = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, m > since {
+                    files.append((url.path, m))
                 }
             }
         }
+        lock.lock(); defer { lock.unlock() }
         return files.sorted { $0.1 > $1.1 }.prefix(60).compactMap { path, modified in
             var title: String?, cwd: String?
-            for line in JSONLTail.lines(path: path, maxBytes: 256 * 1024).reversed() {
-                if title == nil, line["type"] as? String == "ai-title" { title = line["aiTitle"] as? String }
-                if cwd == nil { cwd = line["cwd"] as? String }
-                if title != nil, cwd != nil { break }
+            if let p = parsed[path], p.modified == modified {
+                (title, cwd) = (p.title, p.cwd)
+            } else {
+                for line in JSONLTail.lines(path: path, maxBytes: 256 * 1024).reversed() {
+                    if title == nil, line["type"] as? String == "ai-title" { title = line["aiTitle"] as? String }
+                    if cwd == nil { cwd = line["cwd"] as? String }
+                    if title != nil, cwd != nil { break }
+                }
+                parsed[path] = (modified, title, cwd)
             }
             // Headless runs (claude -p) have no title and are not worth resuming by hand.
             guard let title, let cwd else { return nil }

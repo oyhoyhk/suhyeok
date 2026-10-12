@@ -515,7 +515,9 @@ struct DialogueView: View {
 
     private func poll(_ start: AgentSession) async {
         var lastPath = start.transcriptPath
+        var round = 0
         while !Task.isCancelled {
+            round += 1
             // Re-read the session every round: /clear starts a new conversation in the same process,
             // so the transcript path changes while the agent (pid) stays the same.
             let s = store.sessions.first { $0.id == sessionId } ?? start
@@ -527,11 +529,17 @@ struct DialogueView: View {
             if loaded == nil, let path = s.transcriptPath {
                 loaded = await Task.detached { TranscriptRenderer.items(path: path, agent: s.agent) }.value
             }
-            let busy = store.sessions.first { $0.id == sessionId }?.status == .busy
+            let status = store.sessions.first { $0.id == sessionId }?.status
+            let busy = status == .busy
+            // A finished agent's screen only changes when someone types into it elsewhere; reading it
+            // spawns a terminal CLI (cmux/tmux/Orca), so an idle conversation reads it every third round.
+            let readScreen = status != .idle || menu != nil || round % 3 == 1
             let lastAgent = items.last { $0.role == .agent }?.text
+            let kept = (screen, menu, live)
             let (newItems, newScreen, newMenu, newLive) = await Task.detached {
                 () -> ([ChatItem], String?, TerminalMenu?, LiveReply?) in
                 let items = s.transcriptPath.map { TranscriptRenderer.items(path: $0, agent: s.agent) } ?? []
+                guard readScreen else { return (items, kept.0, kept.1, kept.2) }
                 guard let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 60) else {
                     return (items, nil, nil, nil)
                 }

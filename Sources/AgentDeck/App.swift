@@ -107,6 +107,19 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--snapshot-bosses"), i + 1 < args.count {
             Snapshot.bosses(path: args[i + 1])
         }
+        // `AgentDeck --bench-recent` times the recent-conversation scan (cold, then warm).
+        if args.contains("--bench-recent") {
+            for run in 1...3 {
+                let t = Date()
+                let n = RecentSource.load(excluding: []).count
+                print(String(format: "run %d: %d conversations in %.0f ms", run, n, Date().timeIntervalSince(t) * 1000))
+            }
+            exit(0)
+        }
+        // `AgentDeck --bench-effects <frames>` renders boss and farewell effects offscreen and prints the memory footprint.
+        if let i = args.firstIndex(of: "--bench-effects"), i + 1 < args.count, let n = Int(args[i + 1]) {
+            Snapshot.benchEffects(frames: n)
+        }
         // `AgentDeck --snapshot-poses <characterId> out.png` renders one character's walk/work frames.
         if let i = args.firstIndex(of: "--snapshot-poses"), i + 2 < args.count {
             Snapshot.poses(character: args[i + 1], path: args[i + 2])
@@ -840,6 +853,45 @@ enum Snapshot {
             host.cacheDisplay(in: host.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         }
+        exit(0)
+    }
+
+    /// Memory growth check for per-frame effects: SF Symbols drawn at a new point size every frame used to pile up in the glyph cache.
+    static func benchEffects(frames: Int) {
+        func footprintMB() -> Double {
+            var info = task_vm_info_data_t()
+            var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+            _ = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
+            }
+            return Double(info.phys_footprint) / 1_048_576
+        }
+        let cell = CGSize(width: 400, height: 300)
+        let host = NSHostingView(rootView: AnyView(EmptyView()))
+        host.frame.size = cell
+        let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -5000, y: -5000), size: cell),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+        let start = Date()
+        print(String(format: "start footprint=%.0fMB", footprintMB()))
+        for f in 0..<frames {
+            let t = Double(f) * 0.1
+            let zoom = 1 + Double(f % 37) / 50  // pinch zoom changes the drawn size too
+            host.rootView = AnyView(ZStack(alignment: .topLeading) {
+                ForEach(Hunt.Tier.allCases, id: \.self) { tier in
+                    BossView(tier: tier, time: t, size: CGSize(width: 80 * zoom, height: 90 * zoom), attackers: [],
+                             center: CGPoint(x: 70 + Double(tier.rawValue) * 130, y: 160))
+                }
+                DepartureView(departure: Departure(id: "bench", character: nil, point: .zero, start: 0),
+                              time: (t.truncatingRemainder(dividingBy: 1.5)), height: 60 * zoom)
+                    .position(x: 200, y: 250)
+            }.frame(width: cell.width, height: cell.height))
+            host.cacheDisplay(in: host.bounds, to: rep)
+            if (f + 1) % max(1, frames / 4) == 0 { print(String(format: "frame %d footprint=%.0fMB", f + 1, footprintMB())) }
+        }
+        print(String(format: "%d frames in %.1fs", frames, Date().timeIntervalSince(start)))
+        if let s = ProcessInfo.processInfo.environment["BENCH_HOLD"].flatMap(Double.init) { Thread.sleep(forTimeInterval: s) }
         exit(0)
     }
 

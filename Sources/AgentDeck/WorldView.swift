@@ -81,6 +81,8 @@ struct WorldView: View {
     /// Agents whose session just ended: they fade away where they stood.
     @State private var departures: [Departure] = []
     @State private var lastSeen: [String: (Character?, CGPoint)] = [:]
+    /// False while the window is covered, minimised or on another Space; the 10 fps scene then stops redrawing.
+    @State private var visible = true
 
     init(store: SessionStore, initialSelection: String? = nil, initialDialogue: String? = nil) {
         self.store = store
@@ -100,7 +102,7 @@ struct WorldView: View {
                     mapImage
                         .frame(width: World.size.width * cam.scale, height: World.size.height * cam.scale)
                         .position(x: tl.x + World.size.width * cam.scale / 2, y: tl.y + World.size.height * cam.scale / 2)
-                    TimelineView(.periodic(from: .now, by: 0.1)) { ctx in
+                    TimelineView(.periodic(from: .now, by: visible ? 0.1 : 3600)) { ctx in
                         let t = ctx.date.timeIntervalSinceReferenceDate
                         let positions = walker.step(targets: items.map { ($0.session.id, $0.point) }, now: t)
                         ZStack(alignment: .topLeading) {
@@ -182,6 +184,7 @@ struct WorldView: View {
                     }
                 }
                 .onAppear { input.size = size; input.install() }
+                .background(WindowVisibility(visible: $visible))
                 .onChange(of: store.sessions.map(\.id)) { _, ids in
                     let live = Set(ids)
                     let now = Date().timeIntervalSinceReferenceDate
@@ -874,6 +877,45 @@ struct StatusCounts: View {
 
 
 
+/// Reports whether the hosting window can be seen at all (NSWindow occlusion state).
+struct WindowVisibility: NSViewRepresentable {
+    @Binding var visible: Bool
+
+    final class Probe: NSView {
+        var onChange: ((Bool) -> Void)?
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observer.map(NotificationCenter.default.removeObserver)
+            observer = nil
+            guard let window else { return }
+            observer = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                              object: window, queue: .main) { [weak self] _ in self?.report() }
+            report()
+        }
+
+        /// Offscreen debug windows (--trace-walk, snapshots) are never "visible" but must keep animating.
+        private static let offscreenTool = CommandLine.arguments.contains { $0.hasPrefix("--") }
+
+        private func report() { onChange?(Self.offscreenTool || (window?.occlusionState.contains(.visible) ?? false)) }
+    }
+
+    func makeNSView(context: Context) -> Probe {
+        let v = Probe()
+        v.onChange = { visible in if self.visible != visible { self.visible = visible } }
+        return v
+    }
+
+    func updateNSView(_ nsView: Probe, context: Context) {}
+}
+
+/// SF Symbols are cached per point size and never evicted, so effects that grow or follow the zoom
+/// draw at one fixed size and scale the result; a new size every frame piled up 100k glyphs (~250 MB).
+enum Glyph {
+    static let base: CGFloat = 32
+}
+
 struct Departure: Identifiable {
     let id: String
     let character: Character?
@@ -902,7 +944,8 @@ struct DepartureView: View {
                 let a = Double(i) / 10 * 2 * .pi
                 let r = height * (0.15 + 0.7 * t)
                 Image(systemName: "sparkle")
-                    .font(.system(size: height * 0.18))
+                    .font(.system(size: Glyph.base))
+                    .scaleEffect(height * 0.18 / Glyph.base)
                     .foregroundStyle(i % 2 == 0 ? Color.yellow : Color.white)
                     .offset(x: cos(a) * r, y: sin(a) * r * 0.7 - height * 0.4 * t)
                     .opacity(t < 0.1 ? t * 10 : 1 - t)
@@ -1056,7 +1099,8 @@ struct BossView: View {
                 let t = ((k - 0.35) / 0.55 + Double(i) / 16).truncatingRemainder(dividingBy: 1)
                 if k > 0.35 && k < 0.95 {
                     Image(systemName: "flame.fill")
-                        .font(.system(size: size.height * (0.15 + 0.2 * t)))
+                        .font(.system(size: Glyph.base))
+                        .scaleEffect(size.height * (0.15 + 0.2 * t) / Glyph.base)
                         .foregroundStyle(LinearGradient(colors: [.yellow, .orange, .red], startPoint: .top, endPoint: .bottom))
                         .position(x: center.x + side * CGFloat(t) * size.width * 1.8,
                                   y: center.y + size.height * 0.1 + CGFloat(sin(Double(i) * 1.7)) * size.height * 0.25 * CGFloat(t))
@@ -1102,7 +1146,8 @@ struct BossView: View {
             let k = CGFloat(since / 0.9)
             let arc = sin(k * .pi) * size.height * 0.5
             Image(systemName: "diamond.fill")
-                .font(.system(size: max(8, size.height * 0.12)))
+                .font(.system(size: Glyph.base))
+                .scaleEffect(max(8, size.height * 0.12) / Glyph.base)
                 .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
                 .shadow(color: .cyan, radius: 3)
                 .position(x: center.x + (a.0.x - center.x) * k, y: center.y + (a.0.y - center.y) * k - arc)
