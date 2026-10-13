@@ -1,0 +1,15 @@
+2026-10-12 10:37:29 · cloudflare worker suhyeok-feedback · wrangler deploy · feedback relay · deployed
+2026-10-12 10:37:29 · github oyhoyhk/suhyeok · gh label create feedback · feedback label · created
+2026-10-12 10:46:15 · cloudflare worker suhyeok-feedback · wrangler secret put GITHUB_TOKEN · token for issue creation · done
+2026-10-12 10:46:21 · github oyhoyhk/suhyeok issue # · relay e2e test · created+closed
+2026-10-12 10:46:53 · github oyhoyhk/suhyeok issue #1 · relay e2e test (first try 502, retry ok) · created+closed
+2026-10-12 13:51:25 · cloudflare worker suhyeok-feedback · wrangler deploy · add GET /privacy (Play privacy policy) · deployed
+2026-10-12 13:54:30 · google play com.pickuma.suhyeok · play-release.sh alpha --release-status draft · demo mode build for closed test · draft 409792
+2026-10-12 13:54:30 · google play com.pickuma.suhyeok · play-release.sh (internal) · demo mode build · completed 409793
+2026-10-12 13:54:30 · google play com.pickuma.suhyeok · gradlew publishPlayListing · store listing · PERMISSION_DENIED (service account lacks listing permission)
+2026-10-12 15:32:39 · google play com.pickuma.suhyeok · gradlew publishPlayListing · store listing (ko-KR texts, icon, feature graphic, 3 screenshots) · ok
+2026-10-12 17:21:27 · google play com.pickuma.suhyeok · play-release.sh alpha draft + internal · play build without foreground service (no FGS declaration) · ok
+2026-10-13 13:59:04 · Play alpha · API commit details/testers/track · try submit closed test · 403 (details,testers), 400 draft app (track) — nothing changed
+2026-10-13 14:20:22 · Play listing · gradlew publishPlayReleaseListing --rerun · listing has only title, no text/graphics · 403 PERMISSION_DENIED; user fills in console
+2026-10-13 14:40:20 · Play console (user) · contact email, category, KR, testers group, listing, alpha 409999 rollout · submitted 13 changes for review · 검토 중
+2026-10-13 18:44:27 · suhyeok-feedback · wrangler deploy · 개인정보처리방침에 Mac 정산·마켓 항목 추가 · ok

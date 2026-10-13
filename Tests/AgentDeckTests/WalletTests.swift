@@ -113,6 +113,22 @@ final class WalletTests: XCTestCase {
         XCTAssertEqual(w.ledger.entries.filter { $0.source == "live" }.map(\.kind), ["earn"])
     }
 
+    func testEntriesRecordFileNameNotPath() {
+        earned = ["/Users/someone/.claude/projects/-Users-someone-secret/s1.jsonl": 5]
+        let w = wallet()
+        w.settle(paths: Array(earned.keys))
+        XCTAssertEqual(w.ledger.entries.last?.source, "s1.jsonl")
+    }
+
+    func testOldFullPathEntriesAreNotPaidTwice() throws {
+        let path = "/Users/someone/.claude/projects/-Users-someone-p/s1.jsonl"
+        _ = try Ledger(url: url, signer: signer).append(kind: .earn, source: path, amount: 4, rule: Hunt.rule)
+        earned = [path: 6]
+        let w = wallet()
+        XCTAssertEqual(w.settle(paths: [path]).map(\.amount), [2])
+        XCTAssertEqual(w.ledger.entries.last?.source, "s1.jsonl")
+    }
+
     func testTranscriptDiscovery() throws {
         let home = dir.appendingPathComponent("home")
         let fm = FileManager.default

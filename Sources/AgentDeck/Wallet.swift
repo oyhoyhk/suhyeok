@@ -6,18 +6,23 @@ import Foundation
 final class Wallet {
     let ledger: Ledger
     private let earned: (String) -> Int
-    private var paid: [String: Int] = [:]  // log path → crystals already paid (genesis + earn)
+    private var paid: [String: Int] = [:]  // log key → crystals already paid (genesis + earn)
     private(set) var isMigrated = false
     private let lock = NSLock()
 
     /// Source of the ledger entry that marks the one-time migration of past logs as finished.
     static let migrationDone = "#migration-complete"
 
+    /// What a ledger entry records for a log: its file name (a session id), never the full path, because the
+    /// path carries the macOS user name and project folders and entries go to the ledger server.
+    /// Entries written before this rule hold full paths; they map to the same key so nothing is paid twice.
+    static func key(_ source: String) -> String { source.hasPrefix("/") ? (source as NSString).lastPathComponent : source }
+
     init(ledger: Ledger, earned: @escaping (String) -> Int = { HuntClock.progress(path: $0).earned }) {
         self.ledger = ledger
         self.earned = earned
         for e in ledger.entries where e.kind == LedgerEntry.Kind.earn.rawValue || e.kind == LedgerEntry.Kind.genesis.rawValue {
-            if e.source == Self.migrationDone { isMigrated = true } else { paid[e.source, default: 0] += e.amount }
+            if e.source == Self.migrationDone { isMigrated = true } else { paid[Self.key(e.source), default: 0] += e.amount }
         }
     }
 
@@ -27,9 +32,10 @@ final class Wallet {
         lock.lock(); defer { lock.unlock() }
         var out: [LedgerEntry] = []
         for path in Set(paths).sorted() {
-            let delta = earned(path) - paid[path, default: 0]
-            guard delta > 0, let e = try? ledger.append(kind: .earn, source: path, amount: delta, rule: Hunt.rule) else { continue }
-            paid[path, default: 0] += delta
+            let key = Self.key(path)
+            let delta = earned(path) - paid[key, default: 0]
+            guard delta > 0, let e = try? ledger.append(kind: .earn, source: key, amount: delta, rule: Hunt.rule) else { continue }
+            paid[key, default: 0] += delta
             out.append(e)
         }
         return out
@@ -43,9 +49,10 @@ final class Wallet {
             guard shouldContinue() else { return }
             progress(i, paths.count)
             lock.lock()
-            if paid[path] == nil {
+            let key = Self.key(path)
+            if paid[key] == nil {
                 let amount = max(earned(path), 0)
-                if (try? ledger.append(kind: .genesis, source: path, amount: amount, rule: Hunt.rule)) != nil { paid[path] = amount }
+                if (try? ledger.append(kind: .genesis, source: key, amount: amount, rule: Hunt.rule)) != nil { paid[key] = amount }
             }
             lock.unlock()
         }
