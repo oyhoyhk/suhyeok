@@ -100,6 +100,11 @@ enum TranscriptRenderer {
             if let s = msg["content"] as? String {
                 if type == "user", !s.hasPrefix("<") { out.append((.me, s)) }
                 else if type == "user", let c = slashCommand(s) { out.append((.me, c)) }
+                else if type == "user", let c = tag("bash-input", in: s) { out.append((.me, "! " + c)) }
+                else if type == "user", let o = tag("bash-stdout", in: s) {
+                    let all = [o, tag("bash-stderr", in: s) ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
+                    out.append((.result, all.isEmpty ? "(출력 없음)" : all))
+                }
                 continue
             }
             for item in msg["content"] as? [[String: Any]] ?? [] {
@@ -122,13 +127,15 @@ enum TranscriptRenderer {
 
     /// A slash command the user typed ("/clear", "/model haiku"), logged as <command-name>…<command-args>… tags.
     private static func slashCommand(_ s: String) -> String? {
-        func tag(_ t: String) -> String? {
-            guard let a = s.range(of: "<\(t)>"), let b = s.range(of: "</\(t)>", range: a.upperBound..<s.endIndex) else { return nil }
-            return s[a.upperBound..<b.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        guard let name = tag("command-name"), name.hasPrefix("/") else { return nil }
-        let args = tag("command-args") ?? ""
+        guard let name = tag("command-name", in: s), name.hasPrefix("/") else { return nil }
+        let args = tag("command-args", in: s) ?? ""
         return args.isEmpty ? name : name + " " + args
+    }
+
+    /// Text between <t> and </t>; also reads "!" shell-mode records (<bash-input>, <bash-stdout>, <bash-stderr>).
+    private static func tag(_ t: String, in s: String) -> String? {
+        guard let a = s.range(of: "<\(t)>"), let b = s.range(of: "</\(t)>", range: a.upperBound..<s.endIndex) else { return nil }
+        return s[a.upperBound..<b.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func codex(_ lines: [[String: Any]]) -> [(ChatItem.Role, String)] {

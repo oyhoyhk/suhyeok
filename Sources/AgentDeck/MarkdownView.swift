@@ -10,36 +10,64 @@ struct MarkdownView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(MarkdownBlock.parse(text).enumerated()), id: \.offset) { _, block in
-                view(for: block)
+            ForEach(Array(Self.group(MarkdownBlock.parse(text)).enumerated()), id: \.offset) { _, part in
+                switch part {
+                case .prose(let blocks): Text(prose(blocks)).fixedSize(horizontal: false, vertical: true)
+                case .block(let block): view(for: block)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Runs of text blocks (headings, paragraphs, lists, quotes) go into one Text, because a drag selects
+    /// inside a single Text only; code, tables, rules and diagrams stay views of their own.
+    private enum Part { case prose([MarkdownBlock]), block(MarkdownBlock) }
+
+    private static func group(_ blocks: [MarkdownBlock]) -> [Part] {
+        var out: [Part] = []
+        for b in blocks {
+            switch b {
+            case .heading, .paragraph, .list, .quote:
+                if case .prose(let run)? = out.last { out[out.count - 1] = .prose(run + [b]) } else { out.append(.prose([b])) }
+            default: out.append(.block(b))
+            }
+        }
+        return out
+    }
+
+    private func prose(_ blocks: [MarkdownBlock]) -> AttributedString {
+        var out = AttributedString()
+        // A blank line in a small font: about the 8pt gap the separate views had.
+        var gap = AttributedString("\n\n")
+        gap.font = .system(size: 5)
+        for (i, block) in blocks.enumerated() {
+            if i > 0 { out += gap }
+            switch block {
+            case .heading(let level, let t):
+                var h = inline(t)
+                h.font = level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline
+                out += h
+            case .paragraph(let t):
+                out += inline(t)
+            case .list(let items):
+                for (j, item) in items.enumerated() {
+                    var marker = AttributedString(String(repeating: "    ", count: item.indent) + item.marker + " ")
+                    marker.foregroundColor = .secondary
+                    out += (j > 0 ? AttributedString("\n") : AttributedString()) + marker + inline(item.text)
+                }
+            case .quote(let t):
+                var q = inline(t.split(separator: "\n", omittingEmptySubsequences: false).map { "▎ " + $0 }.joined(separator: "\n"))
+                q.foregroundColor = .secondary
+                out += q
+            default: break
+            }
+        }
+        return out
+    }
+
     @ViewBuilder private func view(for block: MarkdownBlock) -> some View {
         switch block {
-        case .heading(let level, let t):
-            Text(inline(t))
-                .font(level == 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
-                .padding(.top, level <= 2 ? 4 : 2)
-        case .paragraph(let t):
-            Text(inline(t)).fixedSize(horizontal: false, vertical: true)
-        case .list(let items):
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(item.marker).monospacedDigit().foregroundStyle(.secondary)
-                        Text(inline(item.text)).fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.leading, CGFloat(item.indent) * 14)
-                }
-            }
-        case .quote(let t):
-            HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 1).fill(Color.secondary.opacity(0.6)).frame(width: 3)
-                Text(inline(t)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
         case .rule:
             Divider()
         case .code(let lang, let body):
@@ -73,6 +101,8 @@ struct MarkdownView: View {
                 .padding(10)
             }
             .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+        case .heading, .paragraph, .list, .quote:
+            EmptyView()  // drawn by prose(_:)
         }
     }
 
