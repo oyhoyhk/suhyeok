@@ -85,19 +85,20 @@ enum TranscriptRenderer {
             // A message typed while the agent is busy is logged at once as a queue "enqueue", and again as a
             // queued_command attachment when the agent picks it up; show the first, skip the repeat below.
             if line["type"] as? String == "queue-operation", line["operation"] as? String == "enqueue",
-               let p = line["content"] as? String, !p.hasPrefix("<") {
+               let p = (line["content"] as? String).map(unwrapPaste), !p.hasPrefix("<") {
                 out.append((.me, p))
                 continue
             }
             // Messages typed while the agent was busy are stored as queued_command attachments.
             if let a = line["attachment"] as? [String: Any], a["type"] as? String == "queued_command",
-               (a["origin"] as? [String: Any])?["kind"] as? String == "human", let p = a["prompt"] as? String {
+               (a["origin"] as? [String: Any])?["kind"] as? String == "human", let p = (a["prompt"] as? String).map(unwrapPaste) {
                 if !out.contains(where: { $0.0 == .me && $0.1 == p }) { out.append((.me, p)) }
                 continue
             }
             guard line["isMeta"] as? Bool != true, let msg = line["message"] as? [String: Any] else { continue }
             let type = line["type"] as? String
-            if let s = msg["content"] as? String {
+            if let raw = msg["content"] as? String {
+                let s = unwrapPaste(raw)
                 if type == "user", !s.hasPrefix("<") { out.append((.me, s)) }
                 else if type == "user", let c = slashCommand(s) { out.append((.me, c)) }
                 else if type == "user", let c = tag("bash-input", in: s) { out.append((.me, "! " + c)) }
@@ -110,7 +111,7 @@ enum TranscriptRenderer {
             for item in msg["content"] as? [[String: Any]] ?? [] {
                 switch (type, item["type"] as? String) {
                 case ("user", "text"?):
-                    if let t = item["text"] as? String, !t.hasPrefix("<") { out.append((.me, t)) }
+                    if let t = (item["text"] as? String).map(unwrapPaste), !t.hasPrefix("<") { out.append((.me, t)) }
                 case ("assistant", "text"?):
                     if let t = item["text"] as? String { out.append((.agent, t)) }
                 case ("assistant", "tool_use"?):
@@ -123,6 +124,13 @@ enum TranscriptRenderer {
             }
         }
         return out
+    }
+
+    /// Pasted text is logged as <pasted_content id="…">…</pasted_content id="…">; drop the tags so it reads as typed.
+    private static func unwrapPaste(_ s: String) -> String {
+        guard s.contains("<pasted_content") else { return s }
+        return s.replacingOccurrences(of: #"<pasted_content[^>]*>\n?|\n?</pasted_content[^>]*>"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// A slash command the user typed ("/clear", "/model haiku"), logged as <command-name>…<command-args>… tags.
