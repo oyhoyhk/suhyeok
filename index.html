@@ -70,6 +70,10 @@ h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
 .voice figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .voice p { color: var(--muted); font-size: 15px; margin: 16px 0 0; }
 
+.videos { display: grid; grid-template-columns: repeat(2, minmax(0, 320px)); gap: 24px 32px; }
+.videos figure { margin: 0; }
+.videos iframe { display: block; width: 100%; aspect-ratio: 9 / 16; border: 1px solid var(--line); border-radius: 6px; background: #0d0907; }
+.videos figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .zones { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 15px; }
 .zones th, .zones td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .zones th { color: var(--muted); font-weight: 600; font-size: 13px; }
@@ -96,6 +100,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 @media (max-width: 760px) {
   header nav { display: none; }
   .features, .install, .voice { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .videos { grid-template-columns: minmax(0, 320px); }
   .roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   section { padding-top: 52px; }
 }
@@ -107,6 +112,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   <div class="wrap">
     <a class="brand" href="#"><img src="img/icon.png" alt="">수혁</a>
     <nav>
+      <a href="#video">영상</a>
       <a href="#features">기능</a>
       <a href="#install">설치</a>
       <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
@@ -126,6 +132,22 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
     <span class="sub">버전 0.2.0 · Apple Silicon Mac, macOS 14 이상</span>
   </div>
 </div>
+
+<section id="video">
+  <h2>영상으로 보기</h2>
+  <p class="section-note">세션 소환부터 폰으로 지휘하기까지 1분 안에 봅니다.</p>
+  <div class="videos">
+    <figure>
+      <iframe src="https://www.youtube-nocookie.com/embed/ZSC_6TE9jQU" title="수혁 소개 영상 (한국어)" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      <figcaption>한국어 · 60초 · <a href="https://youtube.com/shorts/ZSC_6TE9jQU">YouTube에서 보기</a></figcaption>
+    </figure>
+    <figure>
+      <iframe src="https://www.youtube-nocookie.com/embed/-Ti-XLDi4MY" title="Suhyeok intro video (English)" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      <figcaption>English · 50초 · <a href="https://youtube.com/shorts/-Ti-XLDi4MY">YouTube에서 보기</a></figcaption>
+    </figure>
+  </div>
+  <p class="section-note" style="margin-top:16px">영상은 데모 환경에서 녹화했습니다. 화면 속 마켓 상품·결정·테스트 수치는 데모 예시입니다.</p>
+</section>
 
 <section id="features">
   <h2>기능</h2>
