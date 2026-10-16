@@ -70,8 +70,10 @@ h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
 .voice figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .voice p { color: var(--muted); font-size: 15px; margin: 16px 0 0; }
 
-.videos { display: grid; grid-template-columns: repeat(2, minmax(0, 320px)); gap: 24px 32px; }
+.videos { max-width: 320px; }
 .videos figure { margin: 0; }
+.videos figure[data-lang="en"], .videos.en figure[data-lang="ko"] { display: none; }
+.videos.en figure[data-lang="en"] { display: block; }
 .videos iframe { display: block; width: 100%; aspect-ratio: 9 / 16; border: 1px solid var(--line); border-radius: 6px; background: #0d0907; }
 .videos figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .zones { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 15px; }
@@ -100,7 +102,6 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 @media (max-width: 760px) {
   header nav { display: none; }
   .features, .install, .voice { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-  .videos { grid-template-columns: minmax(0, 320px); }
   .roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   section { padding-top: 52px; }
 }
@@ -137,16 +138,29 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   <h2>영상으로 보기</h2>
   <p class="section-note">세션 소환부터 폰으로 지휘하기까지 1분 안에 봅니다.</p>
   <div class="videos">
-    <figure>
+    <figure data-lang="ko">
       <iframe src="https://www.youtube-nocookie.com/embed/ZSC_6TE9jQU" title="수혁 소개 영상 (한국어)" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-      <figcaption>한국어 · 60초 · <a href="https://youtube.com/shorts/ZSC_6TE9jQU">YouTube에서 보기</a></figcaption>
+      <figcaption>한국어 · 60초 · <a href="https://youtube.com/shorts/ZSC_6TE9jQU">YouTube에서 보기</a> · <a href="#video" data-show="en" lang="en">English version</a><br>데모 환경에서 녹화했습니다. 화면 속 마켓 상품·결정·테스트 수치는 예시입니다.</figcaption>
     </figure>
-    <figure>
+    <figure data-lang="en" lang="en">
       <iframe src="https://www.youtube-nocookie.com/embed/-Ti-XLDi4MY" title="Suhyeok intro video (English)" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-      <figcaption>English · 50초 · <a href="https://youtube.com/shorts/-Ti-XLDi4MY">YouTube에서 보기</a></figcaption>
+      <figcaption>English · 50s · <a href="https://youtube.com/shorts/-Ti-XLDi4MY">Watch on YouTube</a> · <a href="#video" data-show="ko" lang="ko">한국어 영상</a><br>Recorded in a demo environment. Market items, crystals and test numbers on screen are examples.</figcaption>
     </figure>
   </div>
-  <p class="section-note" style="margin-top:16px">영상은 데모 환경에서 녹화했습니다. 화면 속 마켓 상품·결정·테스트 수치는 데모 예시입니다.</p>
+  <script>
+  // Korean video for browsers whose first language is Korean, English video for everyone else.
+  (function () {
+    var box = document.querySelector('.videos');
+    var lang = ((navigator.languages && navigator.languages[0]) || navigator.language || 'ko').toLowerCase();
+    if (lang.indexOf('ko') !== 0) box.classList.add('en');
+    box.addEventListener('click', function (e) {
+      var a = e.target.closest('[data-show]');
+      if (!a) return;
+      e.preventDefault();
+      box.classList.toggle('en', a.getAttribute('data-show') === 'en');
+    });
+  })();
+  </script>
 </section>
 
 <section id="features">
