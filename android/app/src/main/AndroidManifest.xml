@@ -23,6 +23,14 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
+    <!-- Hands downloaded files to other apps: Mac files from the viewer, and (direct build) updates to the installer. -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.files"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+    </provider>
     <!-- Portrait QR scanner (zxing-android-embedded defaults to landscape). -->
     <activity
         android:name="com.journeyapps.barcodescanner.CaptureActivity"

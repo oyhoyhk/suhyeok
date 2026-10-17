@@ -54,7 +54,12 @@ data class Events(val boot: String, val seq: Int, val events: List<AgentEvent>)
 
 data class Release(val code: Int, val name: String, val sha256: String, val notes: String)
 
-data class ChatItem(val role: String, val text: String)   // me / agent / tool
+/** [files]: paths in the text that exist on the Mac, as written → full path there (folders end in "/"). */
+data class ChatItem(val role: String, val text: String, val files: Map<String, String> = emptyMap())   // me / agent / tool
+
+/** A folder on the Mac for the Files tab (MobileServer /api/files), entries newest first. */
+data class Listing(val dir: String, val parent: String?, val entries: List<FileEntry>)
+data class FileEntry(val name: String, val path: String, val dir: Boolean, val size: Long, val mtime: Double)
 data class Chat(
     val items: List<ChatItem>,
     val live: String?,
@@ -123,7 +128,12 @@ class Api(val base: String, private val token: String?) {
         val items = o.optJSONArray("items") ?: JSONArray()
         val menu = o.optJSONArray("menu") ?: JSONArray()
         Chat(
-            items = (0 until items.length()).map { items.getJSONObject(it).let { j -> ChatItem(j.getString("role"), j.getString("text")) } },
+            items = (0 until items.length()).map {
+                items.getJSONObject(it).let { j ->
+                    val f = j.optJSONObject("files")
+                    ChatItem(j.getString("role"), j.getString("text"), f?.keys()?.asSequence()?.associateWith { k -> f.getString(k) }.orEmpty())
+                }
+            },
             live = o.optString("live").ifEmpty { null },
             menu = (0 until menu.length()).map { menu.getJSONObject(it).getString("label") },
             menuDetails = (0 until menu.length()).map { menu.getJSONObject(it).optString("detail") },
@@ -199,6 +209,71 @@ class Api(val base: String, private val token: String?) {
         val o = request("POST", "/api/new", JSONObject().put("agent", agent).put("cwd", cwd).put("prompt", prompt))
         o.optBoolean("ok", false) to o.optString("message")
     }
+
+    // Files tab and file links (MobileServer /api/files, /api/file).
+
+    /** The Mac's home folder and the folders its agents work in. */
+    suspend fun fileRoots(): Pair<String, List<String>> = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/files")
+        val arr = o.optJSONArray("folders") ?: JSONArray()
+        o.optString("home") to (0 until arr.length()).map { arr.getString(it) }
+    }
+
+    /** null when the folder is gone or outside the Mac's home folder. */
+    suspend fun listing(dir: String): Listing? = withContext(Dispatchers.IO) {
+        val o = runCatching { request("GET", "/api/files?dir=" + enc(dir)) }.getOrElse { if (it is Unpaired) throw it else return@withContext null }
+        val arr = o.optJSONArray("entries") ?: JSONArray()
+        Listing(o.optString("dir", dir), o.optString("parent").ifEmpty { null }, (0 until arr.length()).map { i ->
+            arr.getJSONObject(i).let { e ->
+                FileEntry(e.getString("name"), e.getString("path"), e.optBoolean("dir"), e.optLong("size"), e.optDouble("mtime", 0.0))
+            }
+        })
+    }
+
+    /** Where the player streams a file from; it sends [headers] itself. */
+    fun fileUrl(path: String) = "$base/api/file?path=" + enc(path)
+    val headers: Map<String, String> get() = token?.let { mapOf("Cookie" to "sh=$it") }.orEmpty()
+
+    /** A text file's start, at most [limit] bytes. */
+    suspend fun text(path: String, limit: Int = 512 * 1024): String = withContext(Dispatchers.IO) {
+        if (demo) throw Failure(R.string.files_demo)
+        val c = open("GET", "/api/file?path=" + enc(path))
+        c.setRequestProperty("Range", "bytes=0-${limit - 1}")
+        val code = c.responseCode
+        if (code == 401) throw Unpaired()
+        if (code !in 200..299) throw Failure(R.string.error_code, code)
+        c.inputStream.use { String(it.readBytes(), Charsets.UTF_8) }  // the Range header keeps it within limit
+    }
+
+    /** Copies a file from the Mac into [file] (for another app to open). */
+    suspend fun download(path: String, file: java.io.File, progress: (Float) -> Unit) = withContext(Dispatchers.IO) {
+        if (demo) throw Failure(R.string.files_demo)
+        val c = open("GET", "/api/file?path=" + enc(path))
+        c.readTimeout = 60000
+        val code = c.responseCode
+        if (code == 401) throw Unpaired()
+        if (code != 200) throw Failure(R.string.error_code, code)
+        val total = c.contentLengthLong.coerceAtLeast(1)
+        file.parentFile?.mkdirs()
+        val part = java.io.File(file.path + ".part")
+        c.inputStream.use { input ->
+            part.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                var done = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    done += n
+                    progress(done.toFloat() / total)
+                }
+            }
+        }
+        part.renameTo(file)
+    }
+
+    /** The server decodes %XX only, so spaces must not become "+". */
+    private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     /** Map art (field, bosses, sprite frames). Built-in art is public; bought characters need the cookie. */
     fun art(path: String): android.graphics.Bitmap? = runCatching {

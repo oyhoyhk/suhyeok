@@ -87,6 +87,18 @@ object Demo {
                 JSONObject().put("ok", s != null)
             }
             "/api/key" -> JSONObject().put("ok", true)
+            // Sample folders for the Files tab; opening a file says it needs the Mac (Api.text / download).
+            "/api/files" -> if (!path.contains("dir=")) JSONObject().put("home", "~")
+                .put("folders", JSONArray(sessions.map { "~/" + it.project }.distinct()))
+            else {
+                val dir = java.net.URLDecoder.decode(path.substringAfter("dir="), "UTF-8")
+                val t = now()
+                JSONObject().put("dir", dir).put("parent", "~").put("entries", JSONArray(listOf(
+                    Triple("dist", true, 0L), Triple("demo.mp4", false, 18_400_000L), Triple("README.md", false, 4_200L),
+                ).mapIndexed { i, (n, d, size) ->
+                    JSONObject().put("name", n).put("path", "$dir/$n").put("dir", d).put("size", size).put("mtime", t - 600 * (i + 1))
+                }))
+            }
             "/api/action" -> JSONObject().put("ok", false).put("message", tr("체험 모드에서는 쓸 수 없음", "Not available in demo mode"))
             else -> JSONObject().put("error", tr("체험 모드", "Demo mode"))
         }

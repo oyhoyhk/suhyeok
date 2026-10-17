@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
@@ -19,18 +20,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 
-enum class Tab { World, Sessions, Terminal, Settings }
+enum class Tab { World, Sessions, Terminal, Files, Settings }
 
-/** The four tabs under one bottom bar: world, session list, the Mac's terminals, settings. */
+/** The tabs under one bottom bar: world, session list, the Mac's terminals, its files, settings. */
 @Composable
 fun HomeScreen(api: Api, prefs: Prefs, tab: Tab, onTab: (Tab) -> Unit, openRequest: String?,
-               onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRepair: () -> Unit) {
+               onOpen: (Agent) -> Unit, onUnpaired: () -> Unit, onRepair: () -> Unit,
+               filesDir: String?, onFilesDir: (String?) -> Unit, onFile: (String) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (tab) {
                 Tab.World -> WorldTab(api, onOpen, onUnpaired)
                 Tab.Sessions -> AgentsScreen(api, openRequest, onOpen, onUnpaired)
                 Tab.Terminal -> TerminalTab(api, onUnpaired)
+                Tab.Files -> FilesTab(api, filesDir, onFilesDir, onFile, onUnpaired)
                 Tab.Settings -> SettingsTab(api, prefs, onRepair)
             }
         }
@@ -39,6 +42,7 @@ fun HomeScreen(api: Api, prefs: Prefs, tab: Tab, onTab: (Tab) -> Unit, openReque
                 Triple(Tab.World, Icons.Filled.Public, R.string.tab_world),
                 Triple(Tab.Sessions, Icons.AutoMirrored.Filled.FormatListBulleted, R.string.tab_sessions),
                 Triple(Tab.Terminal, Icons.Filled.Terminal, R.string.tab_terminal),
+                Triple(Tab.Files, Icons.Filled.Folder, R.string.tab_files),
                 Triple(Tab.Settings, Icons.Filled.Settings, R.string.tab_settings),
             ).forEach { (t, icon, label) ->
                 NavigationBarItem(

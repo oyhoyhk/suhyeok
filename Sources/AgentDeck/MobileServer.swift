@@ -131,20 +131,22 @@ final class MobileServer: ObservableObject {
     static let maxUpload = 25 * 1024 * 1024
     /// Connections carrying an upload: they get minutes instead of 15 s, as phone networks are slow.
     private var uploading: Set<ObjectIdentifier> = []
+    /// Connections sending a file to the phone (GET /api/file): no time limit while the bytes keep flowing.
+    private var streaming: Set<ObjectIdentifier> = []
 
     private func serve(_ c: NWConnection) {
         guard connections < Self.maxConnections else { c.cancel(); return }
         connections += 1
         c.stateUpdateHandler = { [weak self] st in
             switch st {
-            case .cancelled, .failed: Task { @MainActor in self?.connections -= 1; self?.uploading.remove(ObjectIdentifier(c)) }
+            case .cancelled, .failed: Task { @MainActor in self?.connections -= 1; self?.uploading.remove(ObjectIdentifier(c)); self?.streaming.remove(ObjectIdentifier(c)) }
             default: break
             }
         }
         c.start(queue: .main)
         // Slow or idle clients are dropped after 15 s.
         DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
-            guard c.state != .cancelled else { return }
+            guard c.state != .cancelled, self?.streaming.contains(ObjectIdentifier(c)) != true else { return }
             guard self?.uploading.contains(ObjectIdentifier(c)) == true else { c.cancel(); return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 285) { if c.state != .cancelled { c.cancel() } }
         }
@@ -159,6 +161,8 @@ final class MobileServer: ObservableObject {
                 if let data { buf.append(data) }
                 if buffer.isEmpty, buf.starts(with: Data("POST /api/upload".utf8)) { self.uploading.insert(ObjectIdentifier(c)) }
                 switch Self.parse(buf) {
+                case .ready(let req) where req.method == "GET" && req.path == "/api/file":
+                    self.sendFile(c, req)
                 case .ready(let req):
                     let (status, type, body, extra) = await self.route(req)
                     self.respond(c, status: status, type: type, body: body, headers: extra)
@@ -221,6 +225,40 @@ final class MobileServer: ObservableObject {
         for (k, v) in headers { head += "\(k): \(v)\r\n" }
         head += "\r\n"
         c.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in c.cancel() })
+    }
+
+    /// A file for the phone's viewer (MobileFiles), in ranges when asked so videos play while they load.
+    /// Sent in chunks as the connection drains, so a large video never sits in memory.
+    private func sendFile(_ c: NWConnection, _ r: Request) {
+        func fail(_ status: Int, _ error: String) {
+            let (_, t, d, _) = json(["error": error], status)
+            respond(c, status: status, type: t, body: d, headers: [:])
+        }
+        guard allowedHost(r) else { return fail(421, "host") }
+        guard authorized(r) else { return fail(401, "pair") }
+        guard let path = MobileFiles.resolve(r.query["path"]),
+              let attrs = try? FileManager.default.attributesOfItem(atPath: path), attrs[.type] as? FileAttributeType == .typeRegular,
+              let handle = FileHandle(forReadingAtPath: path) else { return fail(404, "gone") }
+        let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+        var range = size > 0 ? Int64(0)...(size - 1) : nil
+        var status = 200
+        switch MobileFiles.span(r.headers["range"], size: size) {
+        case .whole: break
+        case .part(let p): range = p; status = 206
+        case .unsatisfiable:
+            try? handle.close()
+            return respond(c, status: 416, type: "text/plain", body: Data(), headers: ["Content-Range": "bytes */\(size)"])
+        }
+        let length = range.map { $0.upperBound - $0.lowerBound + 1 } ?? 0
+        var head = "HTTP/1.1 \(status) \(status == 206 ? "Partial Content" : "OK")\r\nContent-Type: \(MobileFiles.mimeType(path))\r\n"
+        head += "Content-Length: \(length)\r\nAccept-Ranges: bytes\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n"
+        // A page an agent wrote must not run as this server's origin, where the phone's cookie works.
+        head += "Content-Security-Policy: sandbox\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n"
+        if status == 206, let range { head += "Content-Range: bytes \(range.lowerBound)-\(range.upperBound)/\(size)\r\n" }
+        head += "\r\n"
+        streaming.insert(ObjectIdentifier(c))
+        if let range { try? handle.seek(toOffset: UInt64(range.lowerBound)) }
+        FileSender(c, handle, length).start(Data(head.utf8))
     }
 
     /// Where android/publish.sh leaves the latest phone app (suhyeok.apk + version.json).
@@ -354,6 +392,13 @@ final class MobileServer: ObservableObject {
             else { return json(["ok": false]) }
             store.refresh()
             return json(["ok": true, "name": name])
+        // Files tab (MobileFiles): the agents' folders, then a folder's entries newest first. Files come from sendFile.
+        case ("GET", "/api/files"):
+            if let dir = r.query["dir"] {
+                guard let listing = await Task.detached(operation: { MobileFiles.list(dir) }).value else { return json(["error": "gone"], 404) }
+                return json(listing)
+            }
+            return json(["home": NSHomeDirectory(), "folders": MobileFiles.roots(store.knownFolders)])
         // New session from the phone's ＋ button (NewSessionSheet in Workspace.swift): recent folders, then start.
         case ("GET", "/api/folders"):
             return json(["home": NSHomeDirectory(), "folders": store.knownFolders])
@@ -505,7 +550,15 @@ final class MobileServer: ObservableObject {
         await Task.detached { () -> [String: Any] in
             let items = s.transcriptPath.map { TranscriptRenderer.items(path: $0, agent: s.agent) } ?? []
             var out: [String: Any] = [
-                "items": items.suffix(80).filter { $0.role != .result }.map { ["role": "\($0.role)", "text": $0.text] },
+                "items": items.suffix(80).filter { $0.role != .result }.map { item -> [String: Any] in
+                    var o: [String: Any] = ["role": "\(item.role)", "text": item.text]
+                    // Paths in the text that exist on the Mac, so the phone can make them tappable (dirs end in "/").
+                    if item.role != .tool {
+                        let files = FileLinks.paths(in: item.text, cwd: s.cwd).filter { MobileFiles.resolve($0.value) != nil }
+                        if !files.isEmpty { o["files"] = files }
+                    }
+                    return o
+                },
                 // The phone's header shows where the agent is now, fresher than the list it was opened from.
                 "status": s.status.rawValue, "activity": s.activity.label, "activityCode": "\(s.activity)",
                 "action": s.action?.detail ?? "",

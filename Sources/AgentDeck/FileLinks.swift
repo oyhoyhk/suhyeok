@@ -11,8 +11,29 @@ enum FileLinks {
 
     static func link(_ s: AttributedString, cwd: String?) -> AttributedString {
         let text = String(s.characters)
-        guard text.contains("/") || text.contains(".") else { return s }
         var out = s
+        for (r, token, url) in matches(in: text, cwd: cwd) {
+            let lower = text.distance(from: text.startIndex, to: r.lowerBound)
+            let start = out.characters.index(out.startIndex, offsetBy: lower)
+            let end = out.characters.index(start, offsetBy: token.count)
+            out[start..<end].link = url
+        }
+        return out
+    }
+
+    /// The linked paths in `text`, as written to what they point to; folders end in "/" (the phone's file links).
+    static func paths(in text: String, cwd: String?) -> [String: String] {
+        var out: [String: String] = [:]
+        for (_, token, url) in matches(in: text, cwd: cwd) {
+            out[token] = url.path + (url.hasDirectoryPath ? "/" : "")
+        }
+        return out
+    }
+
+    /// Each path in `text` that exists on disk: where it is, as written, and its file URL.
+    private static func matches(in text: String, cwd: String?) -> [(Range<String.Index>, String, URL)] {
+        guard text.contains("/") || text.contains(".") else { return [] }
+        var out: [(Range<String.Index>, String, URL)] = []
         for m in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
             guard let r = Range(m.range, in: text) else { continue }
             var token = String(text[r])
@@ -23,10 +44,7 @@ enum FileLinks {
                 url = target(token, cwd: cwd)
             }
             guard let url else { continue }
-            let lower = text.distance(from: text.startIndex, to: r.lowerBound)
-            let start = out.characters.index(out.startIndex, offsetBy: lower)
-            let end = out.characters.index(start, offsetBy: token.count)
-            out[start..<end].link = url
+            out.append((r.lowerBound..<text.index(r.lowerBound, offsetBy: token.count), token, url))
         }
         return out
     }
@@ -44,7 +62,9 @@ enum FileLinks {
             full = (cwd as NSString).appendingPathComponent(full)
         }
         full = (full as NSString).standardizingPath
-        return FileManager.default.fileExists(atPath: full) ? URL(fileURLWithPath: full) : nil
+        var dir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: full, isDirectory: &dir) else { return nil }
+        return URL(fileURLWithPath: full, isDirectory: dir.boolValue)
     }
 
     /// File links open only with ⌘ held; other links keep their usual behavior.

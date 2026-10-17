@@ -78,7 +78,7 @@ fun statusColor(status: String, activity: String): Color = when {
  * fenced code in monospace. Enough to read a report on a phone; tables stay as text.
  */
 @Composable
-fun Markdown(text: String, color: Color = Color.White) {
+fun Markdown(text: String, color: Color = Color.White, files: Map<String, String> = emptyMap()) {
     Column {
         var code: StringBuilder? = null
         val blocks = mutableListOf<Pair<String, String>>()   // kind to text
@@ -105,23 +105,23 @@ fun Markdown(text: String, color: Color = Color.White) {
         }
         code?.let { blocks += "code" to it.toString().trimEnd() }
         for ((kind, s) in blocks) when (kind) {
-            "h" -> Text(inline(s), color = Gold, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+            "h" -> Text(inline(s, files = files), color = Gold, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
             "quote" -> Row(Modifier.padding(vertical = 2.dp)) {
                 Box(Modifier.width(3.dp).size(3.dp, 18.dp).background(Gold.copy(alpha = 0.6f)))
-                Text(inline(s), color = color.copy(alpha = 0.85f), modifier = Modifier.padding(start = 8.dp))
+                Text(inline(s, files = files), color = color.copy(alpha = 0.85f), modifier = Modifier.padding(start = 8.dp))
             }
-            "table" -> Table(s.lines(), color)
+            "table" -> Table(s.lines(), color, files)
             "code" -> Text(s, color = Color(0xFFB9F6CA), fontFamily = FontFamily.Monospace, fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(6.dp)).padding(8.dp))
-            else -> Text(inline(s), color = color)
+            else -> Text(inline(s, files = files), color = color)
         }
     }
 }
 
 /** A Markdown table as a small grid: first row bold, columns sharing the width evenly. */
 @Composable
-private fun Table(rows: List<String>, color: Color) {
+private fun Table(rows: List<String>, color: Color, files: Map<String, String>) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)
         .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(6.dp))) {
         rows.forEachIndexed { r, row ->
@@ -129,7 +129,7 @@ private fun Table(rows: List<String>, color: Color) {
             Row(Modifier.fillMaxWidth().background(if (r == 0) Color.White.copy(alpha = 0.08f) else Color.Transparent)
                 .padding(horizontal = 6.dp, vertical = 4.dp)) {
                 cells.forEach { c ->
-                    Text(inline(c), color = color, fontSize = 12.sp, lineHeight = 15.sp,
+                    Text(inline(c, files = files), color = color, fontSize = 12.sp, lineHeight = 15.sp,
                         fontWeight = if (r == 0) FontWeight.Bold else null,
                         modifier = Modifier.weight(1f).padding(end = 4.dp))
                 }
@@ -141,13 +141,35 @@ private fun Table(rows: List<String>, color: Color) {
 /** `[label](https://…)` or a bare http(s) address at the start of `s`; trailing sentence punctuation is not part of it. */
 private val linkPattern = Regex("""^\[([^\]\n]+)]\((https?://[^\s)]+)\)|^https?://[^\s<>"'`)\]]+""")
 
-/** **bold**, `code` and links inside a line; tapping a link opens it in the browser. */
-fun inline(s: String, linkColor: Color = Gold): AnnotatedString = buildAnnotatedString {
+/** A file link's address: [FileLinkHandler] opens it in the viewer or the Files tab instead of the browser. */
+const val FILE_LINK = "suhyeok-file:"
+fun fileLink(path: String) = FILE_LINK + java.net.URLEncoder.encode(path, "UTF-8")
+fun fileLinkPath(uri: String): String? =
+    if (uri.startsWith(FILE_LINK)) java.net.URLDecoder.decode(uri.removePrefix(FILE_LINK), "UTF-8") else null
+
+private fun pathChar(c: Char) = c.isLetterOrDigit() || c in "/._~-@+"
+
+/** The longest of [files] written at [i] in [s], not glued to a longer word before it. */
+private fun fileAt(s: String, i: Int, files: Map<String, String>): String? {
+    if (files.isEmpty() || (i > 0 && pathChar(s[i - 1]))) return null
+    return files.keys.filter { s.startsWith(it, i) }.maxByOrNull { it.length }
+}
+
+/**
+ * **bold**, `code` and links inside a line; tapping a link opens it in the browser.
+ * [files] (ChatItem.files) are paths on the Mac: they become file links.
+ */
+fun inline(s: String, linkColor: Color = Gold, files: Map<String, String> = emptyMap()): AnnotatedString = buildAnnotatedString {
     val linkStyle = TextLinkStyles(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
     var i = 0
     while (i < s.length) {
         val link = if (s[i] == '[' || s[i] == 'h') linkPattern.find(s.substring(i)) else null
+        val file = if (link == null) fileAt(s, i, files) else null
         when {
+            file != null -> {
+                withLink(LinkAnnotation.Url(fileLink(files.getValue(file)), linkStyle)) { append(file) }
+                i += file.length
+            }
             link != null -> {
                 var url = link.groupValues[2].ifEmpty { link.value }
                 val label = link.groupValues[1].ifEmpty { null }
@@ -167,6 +189,9 @@ fun inline(s: String, linkColor: Color = Gold): AnnotatedString = buildAnnotated
                 val code = s.substring(i + 1, end)
                 // Replies often quote addresses as code (`https://…`): still a link.
                 if (Regex("""https?://\S+""").matches(code)) withLink(LinkAnnotation.Url(code, linkStyle)) { append(code) }
+                else if (code in files) withLink(LinkAnnotation.Url(fileLink(files.getValue(code)), linkStyle)) {
+                    withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(code) }
+                }
                 else withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = Color(0xFFFFE082))) { append(code) }
                 i = end + 1
             }

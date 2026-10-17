@@ -305,10 +305,10 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
 private fun Bubble(item: ChatItem) {
     when (item.role) {
         "me" -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            Text(inline(item.text, linkColor = Color(0xFF0D2A8A)), color = Color.Black, modifier = Modifier.widthIn(max = 320.dp)
+            Text(inline(item.text, linkColor = Color(0xFF0D2A8A), files = item.files), color = Color.Black, modifier = Modifier.widthIn(max = 320.dp)
                 .background(Gold, RoundedCornerShape(12.dp)).padding(10.dp))
         }
-        "agent" -> Box(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(10.dp)) { Markdown(item.text) }
+        "agent" -> Box(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(10.dp)) { Markdown(item.text, files = item.files) }
         else -> Text("🔧 " + item.text, color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp, maxLines = 2)
     }
 }
