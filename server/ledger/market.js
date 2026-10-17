@@ -25,7 +25,7 @@
 // must also be strictly newer than the device's previous one (devices.lastMarketReq, separate from the /spend
 // guard so a hire and a purchase in the same second do not collide). Reads and the idempotent, content-pinned
 // file upload only check the time window.
-import { classifyPath, validateFile, validateManifest, SPEC } from './assets.js';
+import { classifyPath, profileOf, validateFile, validateManifest, SPEC } from './assets.js';
 import {
   CONFIG, chainRows, fail, importDeviceKey, isInt, liveDeviceIn, sha256hex, stableStringify, transactWith, verifyDeviceSig,
 } from './ledger.js';
@@ -129,6 +129,9 @@ export function createMarket({
       }
       const { manifest: m, errors } = validateManifest(manifest);
       if (!m || errors.length) fail(422, 'invalid_pack', 'manifest does not meet the pack spec', { errors });
+      if (m.format !== SPEC.UPLOAD_FORMAT) {
+        fail(422, 'invalid_pack', `uploads need format ${SPEC.UPLOAD_FORMAT} with a profile`, { errors: [{ code: 'bad_format_version', path: '' }] });
+      }
       const open = (await store.listListings({ seller: dev.id })).filter((l) => l.status === 'draft' || l.status === 'pending');
       if (open.length >= market.MAX_OPEN_LISTINGS) fail(429, 'too_many_open', `at most ${market.MAX_OPEN_LISTINGS} drafts or pending listings`);
       const t = now();
@@ -193,8 +196,8 @@ export function createMarket({
     for (const l of await store.listListings({ seller: dev.id })) {
       const sales = counts.get(l.id) ?? 0;
       listings.push({
-        id: l.id, kind: l.kind, name: l.name, description: l.description, alias: l.alias, price: l.price, status: l.status,
-        reason: l.reason, createdAt: l.createdAt, updatedAt: l.updatedAt, sales, earned: sales * sellerShare(l.price),
+        id: l.id, kind: l.kind, name: l.name, profile: profileOf(JSON.parse(l.manifest)), description: l.description,
+        alias: l.alias, price: l.price, status: l.status, reason: l.reason, createdAt: l.createdAt, updatedAt: l.updatedAt, sales, earned: sales * sellerShare(l.price),
         missing: l.status === 'draft' ? await missingFiles(l) : [],
       });
     }
@@ -221,7 +224,7 @@ export function createMarket({
       if (!revoked.has(l.seller)) revoked.set(l.seller, (await store.getDevice(l.seller))?.revokedAt != null);
       if (revoked.get(l.seller)) continue;
       out.push({
-        id: l.id, kind: l.kind, name: l.name, description: l.description, price: l.price,
+        id: l.id, kind: l.kind, name: l.name, profile: profileOf(JSON.parse(l.manifest)), description: l.description, price: l.price,
         seller: { tag: sellerTag(l.seller), alias: l.alias }, sales: counts.get(l.id) ?? 0, approvedAt: l.updatedAt,
         previews: { portrait: previewPath(l, 'portrait'), sprite: previewPath(l, 'sprite') },
       });
@@ -331,9 +334,10 @@ export function createMarket({
       const files = (await store.listListingFiles(l.id)).map((f) => ({
         path: f.path, sha256: f.sha256, bytes: f.bytes, url: `${base}/admin/market/${l.id}/files/${f.path}`,
       }));
+      const manifest = JSON.parse(l.manifest);
       out.push({
-        id: l.id, kind: l.kind, name: l.name, description: l.description, price: l.price, seller: l.seller,
-        sellerTag: sellerTag(l.seller), alias: l.alias, submittedAt: l.updatedAt, history, manifest: JSON.parse(l.manifest), files,
+        id: l.id, kind: l.kind, name: l.name, profile: profileOf(manifest), description: l.description, price: l.price, seller: l.seller,
+        sellerTag: sellerTag(l.seller), alias: l.alias, submittedAt: l.updatedAt, history, manifest, files,
       });
     }
     return { pending: out };

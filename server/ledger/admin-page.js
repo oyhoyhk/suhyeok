@@ -63,6 +63,10 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .actions { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .msg { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.profile { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.profile.missing { color: var(--muted); }
+.tone { border: 1px solid var(--bad); border-radius: 6px; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tone .warn { display: block; color: var(--bad); font-size: 12px; font-weight: 600; margin-bottom: 4px; }
 .msg.ok { color: var(--ok); }
 .hidden { display: none !important; }
 @media (max-width: 420px) { .grid { grid-template-columns: 1fr; } }
@@ -351,6 +355,26 @@ dd { margin: 0; overflow-wrap: anywhere; }
     card.appendChild(el('p', 'desc' + (d ? '' : ' empty'), d || '설명 없음'));
   }
 
+  /** The character's profile (format 2). The tone goes into buyers' agent prompts, so it is set apart for review. */
+  function profile(card, it) {
+    var p = it.profile;
+    if (!p || typeof p !== 'object') {
+      card.appendChild(el('p', 'profile missing', '프로필 없음 (format 1 팩)'));
+      return;
+    }
+    var box = el('div', 'profile');
+    box.appendChild(el('p', 'name', (p.ko || '') + ' · ' + (it.name || '')));
+    var rows = [['직업', p.role]];
+    if (p.visual) rows.push(['외형', p.visual]);
+    if (p.weapon) rows.push(['무기', p.weapon]);
+    info(box, rows);
+    var tone = el('div', 'tone');
+    tone.appendChild(el('span', 'warn', '말투 · 구매자 에이전트 프롬프트에 들어감 — 지시문·명령이 섞였는지 확인'));
+    tone.appendChild(document.createTextNode(String(p.tone || '')));
+    box.appendChild(tone);
+    card.appendChild(box);
+  }
+
   function seller(alias, tag) { return (alias ? alias + ' · ' : '') + '기기 ' + tag; }
 
   /** Action buttons; a reason box is shown when any action needs one, and those buttons stay disabled until it has text. */
@@ -412,6 +436,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
     var motions = (it.manifest && it.manifest.frames) || {};
     media(card, files[portrait], files['sprite.png'], motions, function (m, i) { return files['frames/' + m + '_' + i + '.png']; });
     heading(card, it);
+    profile(card, it);
     var h = it.history || {};
     info(card, [
       ['가격', it.price + ' 결정'],
@@ -437,6 +462,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
     media(card, /^portrait\.(png|jpg)$/.test(portrait) ? base + portrait : null, base + 'sprite.png', motions,
       function (m, i) { return base + 'frames/' + m + '_' + i + '.png'; });
     heading(card, it);
+    profile(card, it);
     var s = it.seller || {};
     info(card, [
       ['가격', it.price + ' 결정'],

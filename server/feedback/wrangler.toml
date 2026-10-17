@@ -1,0 +1,16 @@
+name = "suhyeok-feedback"
+main = "worker.js"
+compatibility_date = "2026-05-01"
+# Served at suhyeok-feedback.pickuma.workers.dev: the API token cannot add routes, and the app only needs a stable URL.
+workers_dev = true
+
+# Secret (wrangler secret put GITHUB_TOKEN): fine-grained token, repository oyhoyhk/suhyeok, Issues: Read and write.
+
+# Per-IP limit so an open endpoint cannot flood the public issue list.
+[[ratelimits]]
+name = "LIMIT"
+namespace_id = "4319"
+simple = { limit = 3, period = 60 }
+
+[observability]
+enabled = true

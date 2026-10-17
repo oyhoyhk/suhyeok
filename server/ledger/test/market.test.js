@@ -236,6 +236,32 @@ for (const [name, makeStore] of stores) {
       });
     });
 
+    test('uploads need format 2 with a profile; format-1 packs are refused before anything is stored', async () => {
+      const a = await registered();
+      await assert.rejects(draft(a, { pack: loadPack('format1_legacy') }), (e) => {
+        assert.equal(e.code, 'invalid_pack');
+        assert.deepEqual(e.extra.errors, [{ code: 'bad_format_version', path: '' }]);
+        return true;
+      });
+      await assert.rejects(draft(a, { pack: loadPack('no_profile') }), (e) => {
+        assert.ok(e.extra.errors.some((x) => x.code === 'bad_profile' && x.path === 'profile'));
+        return true;
+      });
+      assert.deepEqual(await ctx.store.listListings({ seller: a.id }), []);
+    });
+
+    test('listing responses carry the pack profile with trimmed fields', async () => {
+      const a = await registered();
+      const want = JSON.parse(PACK.manifest).profile;
+      const id = await published(a);
+      assert.deepEqual((await market.listings()).listings.find((l) => l.id === id).profile, want);
+      assert.deepEqual((await mine(a)).listings.find((l) => l.id === id).profile, want);
+      const d = await draft(a, { price: 400 });
+      await uploadAll(a, d.listingId);
+      await submit(a, d.listingId);
+      assert.deepEqual((await market.listPending()).pending[0].profile, want);
+    });
+
     test('state-changing requests are replay-protected; uploads are only for the seller and only in draft', async () => {
       const a = await registered();
       const b = await registered();
@@ -663,5 +689,5 @@ test('migrations/0002_market.sql brings a pre-market database to the fresh schem
 });
 
 test('the asset vectors used here exist', () => {
-  for (const n of ['ok_minimal', 'ok_knight', 'svg_sprite', 'map_kind']) assert.ok(readdirSync(VECTORS).includes(n), n);
+  for (const n of ['ok_minimal', 'ok_knight', 'svg_sprite', 'map_kind', 'format1_legacy', 'no_profile']) assert.ok(readdirSync(VECTORS).includes(n), n);
 });

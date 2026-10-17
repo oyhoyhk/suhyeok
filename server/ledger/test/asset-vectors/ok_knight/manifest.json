@@ -1,7 +1,14 @@
 {
- "format": 1,
+ "format": 2,
  "kind": "character",
- "name": "Sir Bolt",
+ "name": "Gawain",
+ "profile": {
+  "ko": "가웨인",
+  "role": "기사",
+  "tone": "충직하고 진중한 기사. 하오체로 말함(~하오, ~하겠소, ~이오). '명을 받들겠소', '임무를 마쳤소' 같은 표현을 가끔 씀",
+  "visual": "armored knight in silver plate armor with a blue cape and a short sword, round helmet with a visor",
+  "weapon": "slashing a short sword"
+ },
  "frames": {
   "attack": 6,
   "hammer": 3,

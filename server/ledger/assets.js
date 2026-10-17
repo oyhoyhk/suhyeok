@@ -2,7 +2,9 @@
 // test/asset-vectors/ keeps the two in step. Header-level only: nothing here decodes pixels.
 
 export const SPEC = {
-  FORMAT: 1,
+  FORMATS: [1, 2],
+  // Uploads need format 2 (with a profile); format 1 packs stay valid so packs already sold keep installing.
+  UPLOAD_FORMAT: 2,
   KINDS: ['character'],
   MAX_MANIFEST: 16 * 1024,
   MAX_FILE: 1024 * 1024,
@@ -12,6 +14,9 @@ export const SPEC = {
   REQUIRED: ['walk_down', 'walk_left', 'walk_up', 'attack'],
   FRAME_MAX: 256,
   PORTRAIT: { minW: 128, maxW: 1024, minH: 128, maxH: 1365 },
+  // profile field -> [min, max] code points after trimming; `required` fields must be present.
+  PROFILE: { ko: [1, 20], role: [1, 30], tone: [10, 300], visual: [0, 300], weapon: [0, 100] },
+  PROFILE_REQUIRED: ['ko', 'role', 'tone'],
 };
 
 const PATH = /^(?:(portrait)\.(jpg|png)|(sprite)\.png|frames\/([a-z_]+)_(\d{1,2})\.png)$/;
@@ -30,6 +35,35 @@ const err = (code, path = '') => ({ code, path });
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 const isCount = (v) => Number.isInteger(v) && v > 0;
 
+const CONTROL = /[\u0000-\u001f\u007f]/;
+
+/** Problems with a manifest's `profile` (the character's names, voice and looks). */
+function profileErrors(p) {
+  if (!isObj(p)) return [err('bad_profile', 'profile')];
+  const errors = [];
+  for (const key of Object.keys(p)) {
+    if (!Object.hasOwn(SPEC.PROFILE, key)) errors.push(err('bad_profile', `profile.${key}`));
+  }
+  for (const [key, [min, max]] of Object.entries(SPEC.PROFILE)) {
+    const v = p[key];
+    if (v === undefined && !SPEC.PROFILE_REQUIRED.includes(key)) continue;
+    const t = typeof v === 'string' ? v.trim() : null;
+    const n = t === null ? -1 : [...t].length;
+    if (t === null || n < min || n > max || CONTROL.test(t)) errors.push(err('bad_profile', `profile.${key}`));
+  }
+  return errors;
+}
+
+/** The manifest's profile with trimmed fields (absent optional ones left out), or null for format-1 packs. */
+export function profileOf(m) {
+  if (!isObj(m?.profile)) return null;
+  const out = {};
+  for (const key of Object.keys(SPEC.PROFILE)) {
+    if (typeof m.profile[key] === 'string') out[key] = m.profile[key].trim();
+  }
+  return out;
+}
+
 /** Parses and checks manifest.json. Returns { manifest, errors }; manifest is null when unusable. */
 export function validateManifest(text) {
   if (typeof text !== 'string') return { manifest: null, errors: [err('bad_manifest')] };
@@ -39,7 +73,8 @@ export function validateManifest(text) {
   if (!isObj(m) || !isObj(m.files) || !isObj(m.frames)) return { manifest: null, errors: [err('bad_manifest')] };
 
   const errors = [];
-  if (m.format !== SPEC.FORMAT) errors.push(err('bad_format_version'));
+  if (!SPEC.FORMATS.includes(m.format)) errors.push(err('bad_format_version'));
+  if (m.format === 2 || m.profile !== undefined) errors.push(...profileErrors(m.profile));
   if (!SPEC.KINDS.includes(m.kind)) errors.push(err('bad_kind'));
   const name = typeof m.name === 'string' ? m.name.trim() : '';
   if (!name || [...name].length > SPEC.NAME_MAX || /[\u0000-\u001f\u007f]/.test(name)) errors.push(err('bad_name'));

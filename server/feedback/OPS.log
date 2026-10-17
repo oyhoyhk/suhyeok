@@ -13,3 +13,4 @@
 2026-10-13 14:20:22 · Play listing · gradlew publishPlayReleaseListing --rerun · listing has only title, no text/graphics · 403 PERMISSION_DENIED; user fills in console
 2026-10-13 14:40:20 · Play console (user) · contact email, category, KR, testers group, listing, alpha 409999 rollout · submitted 13 changes for review · 검토 중
 2026-10-13 18:44:27 · suhyeok-feedback · wrangler deploy · 개인정보처리방침에 Mac 정산·마켓 항목 추가 · ok
+2026-10-14 03:31:25 · pickuma-suhyeok-ledger · wrangler deploy (version 591afd6f) · 캐릭터 팩 format 2(profile: 한글이름·직업·말투) 업로드 필수, 목록·심사에 profile 노출, 심사 페이지 말투 경고 · ok (admin 페이지 경고 문구 확인, 승인 목록 0건이라 profile 응답은 미확인)

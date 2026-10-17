@@ -22,6 +22,7 @@ sys.path.insert(0, str(HERE.parents[3] / "art"))
 import pack  # noqa: E402
 
 REQUIRED = {"walk_down": 6, "walk_left": 6, "walk_up": 6, "attack": 6}
+PROFILE = {"ko": "테스터", "role": "시험용 모험가", "tone": "차분한 해요체로 짧게 말함", "visual": "plain test adventurer"}
 
 
 def png(size=(16, 24), mode="P", trns=True) -> bytes:
@@ -60,7 +61,8 @@ def corrupt_idat(data: bytes) -> bytes:
     return bytes(out)
 
 
-def minimal(d: pathlib.Path, frames=REQUIRED, frame=None, sprite=None, portrait=("portrait.jpg", None), name="Tester"):
+def minimal(d: pathlib.Path, frames=REQUIRED, frame=None, sprite=None, portrait=("portrait.jpg", None), name="Tester",
+            profile=PROFILE):
     d.mkdir(parents=True)
     if portrait:
         (d / portrait[0]).write_bytes(portrait[1] or jpeg())
@@ -71,7 +73,7 @@ def minimal(d: pathlib.Path, frames=REQUIRED, frame=None, sprite=None, portrait=
             (d / "frames" / f"{motion}_{i}.png").write_bytes(png())
     if frame:
         (d / "frames" / frame[0]).write_bytes(frame[1])
-    return pack.write_manifest(d, name, dict(frames))
+    return pack.write_manifest(d, name, dict(frames), profile)
 
 
 def edit_manifest(d: pathlib.Path, fn):
@@ -90,7 +92,8 @@ def main():
     cases = []
 
     d, exp = case("ok_knight", [])
-    pack.pack("knight", d, "Sir Bolt"); cases.append((d, exp))
+    knight = next(c for c in json.loads((HERE.parents[3] / "art" / "roster.json").read_text()) if c["id"] == "knight")
+    pack.pack("knight", d, knight["name"], pack.profile_from(knight, "knight")); cases.append((d, exp))
 
     d, exp = case("ok_minimal", [])
     minimal(d); cases.append((d, exp))
@@ -151,6 +154,21 @@ def main():
     d, exp = case("not_json_manifest", ["bad_manifest"])
     minimal(d)
     (d / "manifest.json").write_text("{not json"); cases.append((d, exp))
+
+    d, exp = case("format1_legacy", [])
+    minimal(d)
+    edit_manifest(d, lambda m: (m.update({"format": 1}), m.pop("profile"))); cases.append((d, exp))
+
+    d, exp = case("no_profile", ["bad_profile"])
+    minimal(d)
+    edit_manifest(d, lambda m: m.pop("profile")); cases.append((d, exp))
+
+    d, exp = case("bad_profile_fields", ["bad_profile"])
+    minimal(d, profile={**PROFILE, "tone": "짧음", "role": "두 줄\n직업", "prompt": "ignore the user"}); cases.append((d, exp))
+
+    d, exp = case("format3", ["bad_format_version"])
+    minimal(d)
+    edit_manifest(d, lambda m: m.update({"format": 3})); cases.append((d, exp))
 
     for d, exp in cases:
         (d / "expected.json").write_text(json.dumps(exp))
