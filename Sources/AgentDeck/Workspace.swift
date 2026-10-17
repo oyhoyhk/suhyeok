@@ -84,7 +84,7 @@ enum RecentSource {
             func col(_ i: Int32) -> String { sqlite3_column_text(stmt, i).map { String(cString: $0) } ?? "" }
             let title = col(2)
             out.append(RecentConversation(id: col(0), agent: .codex, cwd: col(1),
-                                          title: title.isEmpty ? "Codex 대화" : oneLine(title, limit: 60),
+                                          title: title.isEmpty ? String(localized: "Codex 대화") : oneLine(title, limit: 60),
                                           updated: Date(timeIntervalSince1970: Double(sqlite3_column_int64(stmt, 3)) / 1000)))
         }
         return out
@@ -110,18 +110,18 @@ struct WorkspaceView: View {
                     Label("캐릭터 마켓", systemImage: "bag").tag(Pane.market)
                 }
                 Section("수혁 세션") {
-                    if store.hosted.isEmpty {
+                    let agents = store.hosted.filter { $0.agent != nil }
+                    if agents.isEmpty {
                         Text("＋ 버튼으로 새 세션 시작").font(.caption).foregroundStyle(.secondary)
                     }
-                    sortedRows(store.hosted.map { h in
-                        let s = store.session(hosted: h.name)
-                        return SidebarItem(id: h.name, tag: .hosted(h.name), title: s?.name ?? h.title,
-                                           subtitle: h.agent.rawValue + " · " + (h.cwd as NSString).lastPathComponent,
-                                           session: s, cwd: h.cwd, created: s?.startedAt ?? h.created, hosted: h)
-                    })
+                    sortedRows(agents.map(hostedItem))
+                }
+                let shells = store.hosted.filter { $0.agent == nil && $0.name != TmuxEngine.panelName }
+                if !shells.isEmpty {
+                    Section("터미널") { sortedRows(shells.map(hostedItem)) }
                 }
                 Section {
-                    sortedRows(store.sessions.filter { $0.hostedName == nil }.map { s in
+                    sortedRows(store.sessions.filter { $0.hostedName == nil && $0.parentId == nil }.map { s in
                         SidebarItem(id: s.id, tag: .external(s.id), title: s.name, subtitle: s.agent.rawValue + " · " + s.project,
                                     session: s, cwd: s.cwd, created: s.startedAt, hosted: nil)
                     })
@@ -146,6 +146,10 @@ struct WorkspaceView: View {
                     }
                 }
             }
+            .listStyle(.sidebar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                SidebarSortBar().background(.bar)
+            }
             .navigationSplitViewColumnWidth(min: 220, ideal: 260)
             .toolbar {
                 ToolbarItem {
@@ -153,23 +157,24 @@ struct WorkspaceView: View {
                         .keyboardShortcut("n")
                 }
             }
-            .safeAreaInset(edge: .top) { SidebarSortBar() }
             .safeAreaInset(edge: .bottom) { updateBanner }
         } detail: {
-            switch store.selection {
-            case .world: WorldView(store: store)
-            case .list: BoardView(store: store)
-            case .guild: GuildView()
-            case .market: MarketView()
-            case .hosted(let name): HostedSessionView(store: store, name: name)
-            case .external(let id): ExternalSessionView(store: store, id: id)
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    detailPane.frame(maxHeight: .infinity)
+                    if store.terminalPanelOpen { BottomTerminal(store: store, maxHeight: geo.size.height - 200) }
+                }
             }
         }
         .toolbar { ToolbarItem(placement: .principal) { TalkModeToggle(store: store) } }
         .sheet(isPresented: $showNew) { NewSessionSheet(store: store) }
         .sheet(isPresented: $showMigrate) { MigrationSheet(store: store) }
         .endSessionDialog(store: store, ending: $ending, migrating: $migrating)
-        .onAppear { updater.start() }
+        .onAppear { updater.start(); TerminalPanelKey.install(store) }
+        // `exit` in the panel ends its shell; hide the panel instead of showing a dead terminal.
+        .onChange(of: store.hosted.contains { $0.name == TmuxEngine.panelName }) { _, running in
+            if !running { store.terminalPanelOpen = false }
+        }
         .confirmationDialog("수혁을 업데이트할까요?", isPresented: $confirmUpdate) {
             Button("업데이트 후 다시 열기") { updater.upgrade() }
         } message: {
@@ -178,6 +183,19 @@ struct WorkspaceView: View {
                  : "brew로 설치한 앱이 아니라서 GitHub 릴리스 페이지를 엶.")
         }
     }
+
+    @ViewBuilder private var detailPane: some View {
+        switch store.selection {
+        case .world: WorldView(store: store)
+        case .list: BoardView(store: store)
+        case .guild: GuildView()
+        case .market: MarketView()
+        case .hosted(let name): HostedSessionView(store: store, name: name)
+        case .external(let id): ExternalSessionView(store: store, id: id)
+        }
+    }
+
+    private func hostedItem(_ h: TmuxEngine.Hosted) -> SidebarItem { store.hostedItem(h) }
 
     @AppStorage(SidebarSort.key) private var sortKey = SidebarSort.lastActivity.rawValue
     @AppStorage(SidebarSort.ascendingKey) private var ascending = false
@@ -200,6 +218,12 @@ struct WorkspaceView: View {
                             Button("세션 종료", role: .destructive) { store.kill(h.name) }
                         }
                     }
+                // Sessions this agent started (e.g. `claude -p` from its scripts), nested under it.
+                if let s = item.session {
+                    ForEach(store.children(of: s)) { c in
+                        ChildSessionRow(session: c, store: store).tag(store.pane(for: c))
+                    }
+                }
             }
         }
     }
@@ -221,6 +245,47 @@ struct WorkspaceView: View {
             EmptyView()
         }
     }
+}
+
+/// "ㄴ 한별 - Bash · …": a session running under another one's process, shown beneath it.
+struct ChildSessionRow: View {
+    let session: AgentSession
+    @ObservedObject var store: SessionStore
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("ㄴ").foregroundStyle(.secondary)
+            Circle().fill(session.activity.color).frame(width: 6, height: 6)
+            Text(store.agentName(for: session)).font(.caption.bold()).fixedSize()
+            // The last action is only news while it runs; a finished child would keep saying "답변 작성 중".
+            Text("- " + (session.activity == .working ? session.action?.detail ?? session.name : session.name))
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .padding(.leading, 12)
+    }
+}
+
+/// Agents this one is talking with through `--msg`: peers, unlike the "ㄴ" rows of sessions it started.
+struct TalkChip: View {
+    let partners: [AgentSession]
+    @ObservedObject var store: SessionStore
+
+    var body: some View {
+        if !partners.isEmpty {
+            HStack(spacing: 3) {
+                Image(systemName: partners.count == 1 ? "bubble.left.and.bubble.right.fill" : "person.3.fill")
+                Text(partners.count == 1 ? store.agentName(for: partners[0]) : String(localized: "\(partners.count)명"))
+            }
+            .font(.caption2.bold())
+            .foregroundStyle(TalkChip.tint)
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .overlay(Capsule().stroke(TalkChip.tint.opacity(0.7), lineWidth: 1))
+            .fixedSize()
+            .help(String(localized: "대화 중: \(partners.map { store.agentName(for: $0) }.joined(separator: ", "))"))
+        }
+    }
+
+    static let tint = Color(red: 0.35, green: 0.8, blue: 0.85)
 }
 
 struct SessionRow: View {
@@ -245,17 +310,20 @@ struct SessionRow: View {
                     }
                     Text(title).lineLimit(1)
                 }
-                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    if let s = session { TalkChip(partners: store.partners(of: s), store: store) }
+                }
             }
             Spacer(minLength: 4)
             if let s = session {
                 // Time since the agent last did anything (newest log entry), refreshed every 30 s.
                 TimelineView(.periodic(from: .now, by: 30)) { _ in
                     let last = store.lastActivity(for: s)
-                    Text(s.status == .busy ? "작업 중" : last.map(Self.ago) ?? "")
+                    Text(s.status == .busy ? String(localized: "작업 중") : last.map(Self.ago) ?? "")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(s.status == .busy ? Color.green : Self.staleColor(last))
-                        .help(last.map { "마지막 동작 " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "")
+                        .help(last.map { String(localized: "마지막 동작 \($0.formatted(date: .abbreviated, time: .shortened))") } ?? "")
                 }
             }
         }
@@ -263,10 +331,10 @@ struct SessionRow: View {
 
     static func ago(_ d: Date) -> String {
         let m = max(0, Int(-d.timeIntervalSinceNow / 60))
-        if m < 1 { return "방금" }
-        if m < 60 { return "\(m)분 전" }
-        if m < 60 * 24 { return "\(m / 60)시간 전" }
-        return "\(m / 1440)일 전"
+        if m < 1 { return String(localized: "방금") }
+        if m < 60 { return String(localized: "\(m)분 전") }
+        if m < 60 * 24 { return String(localized: "\(m / 60)시간 전") }
+        return String(localized: "\(m / 1440)일 전")
     }
 
     /// Recent activity reads normal; anything idle for over an hour (the hunt reset) fades.
@@ -332,7 +400,9 @@ struct HostedSessionView: View {
         .confirmationDialog("이 세션을 종료할까요?", isPresented: $confirmKill) {
             Button("종료", role: .destructive) { store.kill(name) }
         } message: {
-            Text("에이전트 프로세스가 끝남. 대화 기록은 남아 '최근 대화'에서 이어서 열 수 있음.")
+            Text(store.hosted.first { $0.name == name }?.agent == nil
+                 ? "셸과 그 안에서 실행 중인 명령이 끝남."
+                 : "에이전트 프로세스가 끝남. 대화 기록은 남아 '최근 대화'에서 이어서 열 수 있음.")
         }
     }
 }
@@ -343,6 +413,17 @@ struct ExternalSessionView: View {
     @State private var confirmMove = false
     @State private var mode: OpenMode?
 
+    private func origin(_ s: AgentSession) -> String {
+        if let p = s.parentId, let parent = store.sessions.first(where: { $0.id == p }) {
+            let who = store.agentName(for: parent)
+            return s.pid == nil ? String(localized: "\(who)가 실행했던 하위 세션 — 끝나서 기록만 볼 수 있음")
+                : SessionInput.canSend(s) ? String(localized: "\(who)가 실행 중인 하위 세션")
+                : String(localized: "\(who)가 실행 중인 하위 세션 — 입력은 받을 수 없어 보기만 가능")
+        }
+        return SessionInput.canSend(s) ? String(localized: "다른 터미널에서 실행 중인 세션 — 지시는 그 터미널로 전달됨")
+            : String(localized: "다른 터미널에서 실행 중인 세션 — 이 터미널은 입력을 받을 수 없어 보기만 가능")
+    }
+
     var body: some View {
         if let s = store.sessions.first(where: { $0.id == id }) {
             VStack(alignment: .leading, spacing: 8) {
@@ -352,12 +433,11 @@ struct ExternalSessionView: View {
                     Text(s.name).lineLimit(1)
                     Spacer()
                     ModePicker(mode: $mode)
-                    if s.conversationId != nil {
+                    if s.conversationId != nil, s.parentId == nil {
                         Button("수혁으로 옮기기") { confirmMove = true }
                     }
                 }
-                Text(SessionInput.canSend(s) ? "다른 터미널에서 실행 중인 세션 — 지시는 그 터미널로 전달됨"
-                                             : "다른 터미널에서 실행 중인 세션 — 이 터미널은 입력을 받을 수 없어 보기만 가능")
+                Text(origin(s))
                     .font(.caption).foregroundStyle(.secondary)
                 if ModePicker.effective(mode) == .dialogue {
                     DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).id(s.id)
@@ -460,7 +540,7 @@ struct MigrationSheet: View {
                                          set: { if $0 { picked.insert(s.id) } else { picked.remove(s.id) } })) {
                         VStack(alignment: .leading, spacing: 1) {
                             Text("\(store.agentName(for: s)) · \(s.name)").lineLimit(1)
-                            Text("\(s.agent.rawValue) · \(s.project) · \(host(s))\(busy ? " · 작업 중이라 제외" : "")")
+                            Text("\(s.agent.rawValue) · \(s.project) · \(host(s))\(busy ? String(localized: " · 작업 중이라 제외") : "")")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -494,12 +574,12 @@ struct MigrationSheet: View {
     }
 
     private func host(_ s: AgentSession) -> String {
-        guard let pid = s.pid else { return "터미널 정보 없음" }
+        guard let pid = s.pid else { return String(localized: "터미널 정보 없음") }
         let env = ProcessEnv.of(pid)
         if env["TMUX"] != nil { return "tmux" }
         if env["ORCA_TERMINAL_HANDLE"] != nil { return "Orca" }
         if env["CMUX_SURFACE_ID"] != nil { return "cmux" }
-        return "기타 터미널"
+        return String(localized: "기타 터미널")
     }
 
     private func run() {
@@ -605,5 +685,56 @@ struct SummarySheet: View {
     private func save() {
         store.setSummary(text, for: session)
         dismiss()
+    }
+}
+
+/// The shared terminal under every pane, like an editor's integrated terminal.
+struct BottomTerminal: View {
+    @ObservedObject var store: SessionStore
+    /// Leaves room for the pane above.
+    let maxHeight: CGFloat
+    @AppStorage("terminalPanelHeight") private var height: Double = 260
+    @State private var dragStart: Double?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Drag handle on the top edge, like an editor's terminal.
+            Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 1)
+                .padding(.vertical, 3).contentShape(Rectangle())
+                .onHover { inside in if inside { NSCursor.resizeUpDown.push() } else { NSCursor.pop() } }
+                .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { g in
+                        let start = dragStart ?? height
+                        dragStart = start
+                        height = min(max(start - g.translation.height, 120), max(maxHeight, 120))
+                    }
+                    .onEnded { _ in dragStart = nil })
+            HStack(spacing: 8) {
+                Label("터미널", systemImage: "terminal").font(.caption.bold())
+                Text((store.hosted.first { $0.name == TmuxEngine.panelName }?.cwd ?? "").replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button { store.terminalPanelOpen = false } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.borderless).help("닫기 (⌘`)")
+            }
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            Divider()
+            EmbeddedTerminal(name: TmuxEngine.panelName).id(TmuxEngine.panelName)
+        }
+        .frame(height: min(max(height, 120), max(maxHeight, 120)))
+    }
+}
+
+/// ⌘` toggles the terminal panel. Matched by key code, since Korean input turns the backtick key into ₩.
+enum TerminalPanelKey {
+    private static var monitor: Any?
+
+    @MainActor static func install(_ store: SessionStore) {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            guard e.keyCode == 50, e.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else { return e }
+            MainActor.assumeIsolated { store.toggleTerminalPanel() }
+            return nil
+        }
     }
 }

@@ -3,7 +3,7 @@ import Foundation
 /// Hiring characters with crystals. The first `freeCount` roster entries are open from the start; each hire is a
 /// `spend` entry whose source is the character id, so the ledger alone says who is open.
 enum Recruit {
-    static let freeCount = 8
+    static let freeCount = 32  // the whole bundled roster
     static let note = "영입"
     enum Failure: Error, Equatable { case unknown, alreadyHired }
 

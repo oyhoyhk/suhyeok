@@ -231,10 +231,10 @@ final class LedgerSyncTests: XCTestCase {
     func testSpendRequestIsSignedByTheDeviceKey() async throws {
         let c = try await registered()
         try ledger.append(kind: .earn, source: "a", amount: 500)
-        try await Recruit.hire("hero8", roster: (0..<12).map { "hero\($0)" }, ledger: ledger,
+        try await Recruit.hire("hero32", roster: (0..<36).map { "hero\($0)" }, ledger: ledger,
                                confirm: { try await c.confirmSpend(item: $0, amount: $1, time: Date(timeIntervalSince1970: 1_760_142_000)) })
         let req = server.requests.last { $0.path == "/spend" }!.body
-        let message = #"{"action":"spend","amount":100,"device":"dev-1","item":"hero8","time":1760142000}"#
+        let message = #"{"action":"spend","amount":100,"device":"dev-1","item":"hero32","time":1760142000}"#
         let sig = try P256.Signing.ECDSASignature(rawRepresentation: Data(base64Encoded: req["sig"] as! String)!)
         XCTAssertTrue(ledger.signer!.publicKey.isValidSignature(sig, for: Data(message.utf8)))
         XCTAssertEqual(ledger.entries.last?.kind, "spend")
@@ -245,7 +245,7 @@ final class LedgerSyncTests: XCTestCase {
         try ledger.append(kind: .earn, source: "a", amount: 500)
         server.error = (409, "insufficient")
         let before = ledger.entries.count
-        await assertThrows(try await Recruit.hire("hero8", roster: (0..<12).map { "hero\($0)" }, ledger: ledger,
+        await assertThrows(try await Recruit.hire("hero32", roster: (0..<36).map { "hero\($0)" }, ledger: ledger,
                                                   confirm: { try await c.confirmSpend(item: $0, amount: $1) }))
         XCTAssertEqual(ledger.entries.count, before)
     }

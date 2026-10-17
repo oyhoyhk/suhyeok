@@ -86,7 +86,7 @@ final class WakeWord: ObservableObject {
                 DispatchQueue.main.async {
                     NSLog("[wake] auth speech=%d mic=%d", status.rawValue, mic ? 1 : 0)
                     guard status == .authorized, mic else {
-                        self.state = .failed("음성 인식·마이크 권한이 필요함 — 시스템 설정 > 개인정보 보호 및 보안")
+                        self.state = .failed(String(localized: "음성 인식·마이크 권한이 필요함 — 시스템 설정 > 개인정보 보호 및 보안"))
                         return
                     }
                     self.beginAudio()
@@ -102,16 +102,16 @@ final class WakeWord: ObservableObject {
 
     private func beginAudio() {
         guard let recognizer, recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
-            state = .failed("이 Mac에서 한국어 온디바이스 음성 인식을 쓸 수 없음 — 시스템 설정 > 키보드 > 받아쓰기를 켤 것")
+            state = .failed(String(localized: "이 Mac에서 한국어 온디바이스 음성 인식을 쓸 수 없음 — 시스템 설정 > 키보드 > 받아쓰기를 켤 것"))
             return
         }
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else { state = .failed("입력 장치(마이크)를 찾지 못함"); return }
+        guard format.sampleRate > 0, format.channelCount > 0 else { state = .failed(String(localized: "입력 장치(마이크)를 찾지 못함")); return }
         input.removeTap(onBus: 0)
         Self.installTap(on: input, format: format, feed: feed)
         engine.prepare()
-        do { try engine.start() } catch { state = .failed("마이크를 열지 못함: \(error.localizedDescription)"); return }
+        do { try engine.start() } catch { state = .failed(String(localized: "마이크를 열지 못함: \(error.localizedDescription)")); return }
         state = .listening
         NSLog("[wake] listening")
         newRound()
@@ -141,7 +141,7 @@ final class WakeWord: ObservableObject {
         req.shouldReportPartialResults = true
         req.requiresOnDeviceRecognition = true
         // Bias recognition toward the wake phrase and the agents' names.
-        req.contextualStrings = ["안녕 수혁아", "수혁아"] + (store.map { s in s.sessions.map { s.agentName(for: $0) } } ?? [])
+        req.contextualStrings = ["안녕 수혁아", "수혁아"] + (store.map { s in s.sessions.map { s.spokenName(for: $0) } } ?? [])
         feed.set(req)
         task = Self.recognize(recognizer, req) { [weak self] text, done in
             DispatchQueue.main.async {
@@ -210,9 +210,9 @@ final class WakeWord: ObservableObject {
             Speaker.shared.say("네, 필요하면 수혁아 하고 불러 주세요.")
             return
         }
-        let named = store.sessions.map { (store.agentName(for: $0), $0) }
+        let named = store.sessions.map { (store.spokenName(for: $0), $0) }
         // No name in a conversation: the agent spoken to last, else the one open in the window.
-        let fallback = target ?? (talkMode ? store.selectedSession.map { store.agentName(for: $0) } : nil)
+        let fallback = target ?? (talkMode ? store.selectedSession.map { store.spokenName(for: $0) } : nil)
         let direct = Self.route(command, names: named.map(\.0))
         // Without a name, a fragment of one or two letters ("구", "노래") is noise the microphone caught, not an
         // instruction: drop it silently rather than sending it to the agent.
@@ -261,7 +261,7 @@ final class WakeWord: ObservableObject {
     /// aloud (summarized, in the F1 voice); one that stops on a question says so.
     func observe(_ sessions: [AgentSession]) {
         // In talk mode the picked agent's finished turns are read too, even ones typed rather than spoken.
-        if talkMode, let target, let s = sessions.first(where: { store?.agentName(for: $0) == target }),
+        if talkMode, let target, let s = sessions.first(where: { store?.spokenName(for: $0) == target }),
            s.status == .busy, awaiting[s.id] == nil {
             awaiting[s.id] = Awaiting(since: Date(), before: s.lastAssistant, sawBusy: true)
         }
@@ -269,7 +269,7 @@ final class WakeWord: ObservableObject {
             guard let s = sessions.first(where: { $0.id == id }), Date().timeIntervalSince(a.since) < 3600 else {
                 awaiting[id] = nil; continue
             }
-            let name = store?.agentName(for: s) ?? "에이전트"
+            let name = store?.spokenName(for: s) ?? "에이전트"
             switch s.status {
             case .busy:
                 a.sawBusy = true
@@ -485,8 +485,10 @@ struct TalkModeToggle: View {
 
     var body: some View {
         let target = wake.target
-        let cwd = target.flatMap { name in store.sessions.first { store.agentName(for: $0) == name }?.cwd } ?? ""
-        TalkModeCapsule(on: wake.talkMode, phase: phase, target: target, targetColor: projectColor(cwd)) {
+        // The listener works with Korean names; show the agent's name as the rest of the UI does.
+        let s = target.flatMap { name in store.sessions.first { store.spokenName(for: $0) == name } }
+        TalkModeCapsule(on: wake.talkMode, phase: phase, target: s.map { store.agentName(for: $0) } ?? target,
+                        targetColor: projectColor(s?.cwd ?? "")) {
             wake.setTalkMode(!wake.talkMode)
         }
     }
@@ -550,7 +552,7 @@ struct TalkModeCapsule: View {
         }
     }
 
-    private var title: String {
+    private var title: LocalizedStringKey {
         guard on else { return "대화 모드" }
         switch phase {
         case .failed: return "음성 인식 안 됨"

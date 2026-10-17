@@ -67,7 +67,7 @@ final class Updater: ObservableObject {
         Task.detached {
             let ok = Self.run(brew, ["update", "--quiet"]) == 0 && Self.run(brew, ["upgrade", Self.formula]) == 0
             await MainActor.run {
-                if ok { Self.relaunch(brew: brew) } else { Updater.shared.state = .failed("brew upgrade 실패 — 터미널에서 brew upgrade suhyeok 실행") }
+                if ok { Self.relaunch(brew: brew) } else { Updater.shared.state = .failed(String(localized: "brew upgrade 실패 — 터미널에서 brew upgrade suhyeok 실행")) }
             }
         }
     }

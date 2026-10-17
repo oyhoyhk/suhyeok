@@ -2,13 +2,13 @@
 enum MobilePage {
     static let html = #"""
 <!doctype html>
-<html lang="ko"><head>
+<html lang="\#(L10n.english ? "en" : "ko")"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#120f1c">
-<title>수혁</title>
+<title>\#(String(localized: "수혁"))</title>
 <link rel="apple-touch-icon" href="/art/sprites/knight.png">
 <style>
   :root { --bg:#120f1c; --panel:#1d1829; --line:#3a3150; --gold:#e0b44a; --fg:#ece6f5; --muted:#a99fbb;
@@ -46,6 +46,7 @@ enum MobilePage {
   .menu { border:1.5px solid var(--gold); border-radius:10px; padding:8px; display:flex; flex-direction:column; gap:6px; }
   .menu button { text-align:left; background:#ffffff10; color:var(--fg); border:0; border-radius:8px; padding:10px; font-size:14px; }
   .menu small { display:block; color:var(--muted); }
+  .menu .ctx { margin:0; background:#00000066; border-radius:6px; padding:8px; font-size:11.5px; white-space:pre-wrap; word-break:break-all; max-height:240px; overflow:auto; }
   .input { display:flex; gap:8px; padding:8px 12px 10px; border-top:1px solid var(--line); }
   .input textarea { flex:1; min-width:0; resize:none; height:42px; max-height:120px; background:#0008; color:var(--fg);
                     border:1px solid var(--line); border-radius:10px; padding:10px; font:15px inherit; }
@@ -66,14 +67,14 @@ enum MobilePage {
 </style></head>
 <body>
 <canvas id="map"></canvas>
-<div class="bar"><b>수혁</b><div class="pill" id="counts"></div></div>
+<div class="bar"><b>\#(String(localized: "수혁"))</b><div class="pill" id="counts"></div></div>
 <div class="toast" id="toast"></div>
 
 <div id="sheet">
   <div class="head">
     <img id="hImg" alt="">
     <div class="t"><div class="n" id="hName"></div><div class="s" id="hSub"></div></div>
-    <button class="x" id="close" aria-label="닫기">✕</button>
+    <button class="x" id="close" aria-label="\#(String(localized: "닫기"))">✕</button>
   </div>
   <div id="log"></div>
   <div class="keys">
@@ -81,14 +82,14 @@ enum MobilePage {
     <button data-k="enter">⏎</button>
   </div>
   <div class="input">
-    <textarea id="msg" placeholder="지시하기"></textarea>
-    <button id="send">보내기</button>
+    <textarea id="msg" placeholder="\#(String(localized: "지시하기"))"></textarea>
+    <button id="send">\#(String(localized: "보내기"))</button>
   </div>
 </div>
 
 <div id="pair"><div class="pairBox">
-  <h1>수혁 연결</h1>
-  <p id="pairMsg">Mac의 수혁 → 설정(⌘,) → 모바일 접속에서 <b>연결 시작</b>을 누르고, 나온 QR을 이 폰 카메라로 찍으세요.</p>
+  <h1>\#(String(localized: "수혁 연결"))</h1>
+  <p id="pairMsg">\#(String(localized: "Mac의 수혁 → 설정(⌘,) → 모바일 접속에서 <b>연결 시작</b>을 누르고, 나온 QR을 이 폰 카메라로 찍으세요."))</p>
   <div id="pairErr"></div>
 </div></div>
 
@@ -243,9 +244,9 @@ async function poll() {
     $("pair").classList.remove("show");
     world = s.world; avatar = s.avatar; agents = s.agents; bosses = s.bosses; crystals = s.crystals;
     const n = k => agents.filter(a => (a.tier || "camp") === k).length;
-    $("counts").innerHTML = `<span title="대기소"><i class="dot" style="background:#888"></i>${n("camp")}</span>` +
-      `<span title="하급"><i class="dot" style="background:#4cc38a"></i>${n("low")}</span><span title="중급"><i class="dot" style="background:#4dd0e1"></i>${n("mid")}</span>` +
-      `<span title="상급"><i class="dot" style="background:#f0883e"></i>${n("high")}</span><span>💎 ${crystals}</span>`;
+    $("counts").innerHTML = `<span title="\#(String(localized: "대기소"))"><i class="dot" style="background:#888"></i>${n("camp")}</span>` +
+      `<span title="\#(String(localized: "하급"))"><i class="dot" style="background:#4cc38a"></i>${n("low")}</span><span title="\#(String(localized: "중급"))"><i class="dot" style="background:#4dd0e1"></i>${n("mid")}</span>` +
+      `<span title="\#(String(localized: "상급"))"><i class="dot" style="background:#f0883e"></i>${n("high")}</span><span>💎 ${crystals}</span>`;
     if (!fitted && agents.length) {
       fit(); fitted = true;
       // Deep link: #a-<agent id> opens that agent's chat (used by the Mac's "폰에서 열기").
@@ -261,8 +262,8 @@ function header() {
   const a = agents.find(a => a.id === selected); if (!a) return close();
   $("hImg").src = "/art/frames/" + a.character + "/walk_down_2.png";
   $("hName").textContent = a.name + " · " + a.title;
-  $("hSub").textContent = (a.status === "busy" ? "작업 중" : a.status === "waiting" ? "선택 기다리는 중" : a.activity) + " · " + a.hunt;
-  $("msg").disabled = !a.canSend; $("msg").placeholder = a.canSend ? a.name + "에게 지시하기" : "이 터미널은 입력을 받을 수 없음";
+  $("hSub").textContent = (a.status === "busy" ? "\#(String(localized: "작업 중"))" : a.status === "waiting" ? "\#(String(localized: "선택 기다리는 중"))" : a.activity) + " · " + a.hunt;
+  $("msg").disabled = !a.canSend; $("msg").placeholder = a.canSend ? "\#(String(localized: "\("{name}")에게 지시하기"))".replace("{name}", a.name) : "\#(String(localized: "이 터미널은 입력을 받을 수 없음"))";
 }
 let chatTimer = null, lastLog = "";
 function open(id) { selected = id; lastLog = ""; header(); $("sheet").classList.add("open"); loadChat(); }
@@ -281,8 +282,9 @@ async function loadChat() {
       if (c.live) { const d = document.createElement("div"); d.className = "live"; d.textContent = c.live; log.appendChild(d); }
       if (c.menu) {
         const m = document.createElement("div"); m.className = "menu";
-        m.innerHTML = "<b style='color:var(--gold)'>선택해 주세요</b>";
-        c.menu.forEach((o, i) => { const b = document.createElement("button"); b.innerHTML = (i + 1) + ". " + esc(o.label) + (o.detail ? "<small>" + esc(o.detail) + "</small>" : ""); b.onclick = () => choose(i); m.appendChild(b); });
+        m.innerHTML = "<b style='color:var(--gold)'>" + (c.menuQuestion ? esc(c.menuQuestion) : "\#(String(localized: "선택해 주세요"))") + "</b>"
+          + (c.menuContext ? "<pre class='ctx'>" + esc(c.menuContext) + "</pre>" : "");
+        c.menu.forEach((o, i) => { const b = document.createElement("button"); b.innerHTML = (i + 1) + ". " + esc(o.label) + (o.detail ? "<small>" + esc(o.detail) + "</small>" : ""); b.onclick = () => { if (!o.free) return choose(i); const t = (prompt("\#(String(localized: "직접 입력"))") || "").trim(); if (t) choose(i, t); }; m.appendChild(b); });
         log.appendChild(m);
       }
       if (stick || !log.dataset.seen) log.scrollTop = log.scrollHeight;
@@ -310,10 +312,10 @@ async function send() {
   const text = $("msg").value.trim(); if (!text || !selected) return;
   $("msg").value = "";
   const r = await api("/api/send", { id: selected, text }).catch(() => ({}));
-  toast(r.ok ? "보냄" : "보내지 못함");
+  toast(r.ok ? "\#(String(localized: "보냄"))" : "\#(String(localized: "보내지 못함"))");
   loadChat();
 }
-async function choose(i) { const r = await api("/api/choose", { id: selected, index: i }).catch(() => ({})); toast(r.ok ? "선택함" : "선택하지 못함"); loadChat(); }
+async function choose(i, text) { const r = await api("/api/choose", text ? { id: selected, index: i, text } : { id: selected, index: i }).catch(() => ({})); toast(r.ok ? (text ? "\#(String(localized: "입력함"))" : "\#(String(localized: "선택함"))") : "\#(String(localized: "선택하지 못함"))"); loadChat(); }
 $("send").onclick = send;
 document.querySelectorAll(".keys button").forEach(b => b.onclick = () => api("/api/key", { id: selected, key: b.dataset.k }).then(loadChat));
 // Pairing: the QR opens this page with #pair=<one-time secret>. Send it once, drop it from the address bar,
@@ -323,17 +325,17 @@ async function pairFromHash() {
   if (!m) return false;
   history.replaceState(null, "", location.pathname);
   $("pair").classList.add("show");
-  $("pairMsg").textContent = "연결 요청을 보내는 중…";
+  $("pairMsg").textContent = "\#(String(localized: "연결 요청을 보내는 중…"))";
   const r = await fetch("/pair", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ secret: m[1] }), credentials: "same-origin" });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) { $("pairMsg").textContent = ""; $("pairErr").textContent = j.error || "연결하지 못함"; return true; }
-  $("pairMsg").innerHTML = "<b>Mac에서 [허용]을 눌러 주세요.</b><br>2분 안에 허용하지 않으면 만료됨.";
+  if (!r.ok) { $("pairMsg").textContent = ""; $("pairErr").textContent = j.error || "\#(String(localized: "연결하지 못함"))"; return true; }
+  $("pairMsg").innerHTML = "\#(String(localized: "<b>Mac에서 [허용]을 눌러 주세요.</b><br>2분 안에 허용하지 않으면 만료됨."))";
   for (;;) {
     await new Promise(res => setTimeout(res, 1500));
     const s = await fetch("/pair/status?id=" + j.pending, { credentials: "same-origin" });
     const k = await s.json().catch(() => ({}));
     if (s.ok && k.ok) { $("pair").classList.remove("show"); $("pairErr").textContent = ""; poll(); return true; }
-    if (!s.ok) { $("pairMsg").textContent = ""; $("pairErr").textContent = k.error || "연결하지 못함"; return true; }
+    if (!s.ok) { $("pairMsg").textContent = ""; $("pairErr").textContent = k.error || "\#(String(localized: "연결하지 못함"))"; return true; }
   }
 }
 addEventListener("resize", resize);

@@ -47,19 +47,19 @@ final class Dictation: ObservableObject {
     private func afterSpeechAuth(_ status: SFSpeechRecognizerAuthorizationStatus) {
         Self.log("speech auth -> \(status.rawValue)")
         guard status == .authorized else {
-            error = "음성 인식 권한이 없음 — 시스템 설정 > 개인정보 보호 및 보안 > 음성 인식에서 수혁을 켜 주세요"
+            error = String(localized: "음성 인식 권한이 없음 — 시스템 설정 > 개인정보 보호 및 보안 > 음성 인식에서 수혁을 켜 주세요")
             return
         }
         AVCaptureDevice.requestAccess(for: .audio) { ok in
             DispatchQueue.main.async {
                 Dictation.log("mic auth -> \(ok)")
-                if ok { self.begin() } else { self.error = "마이크 권한이 없음 — 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 수혁을 켜 주세요" }
+                if ok { self.begin() } else { self.error = String(localized: "마이크 권한이 없음 — 시스템 설정 > 개인정보 보호 및 보안 > 마이크에서 수혁을 켜 주세요") }
             }
         }
     }
 
     private func begin() {
-        guard let recognizer, recognizer.isAvailable else { error = "음성 인식을 지금 쓸 수 없음"; Self.log("recognizer unavailable"); return }
+        guard let recognizer, recognizer.isAvailable else { error = String(localized: "음성 인식을 지금 쓸 수 없음"); Self.log("recognizer unavailable"); return }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }  // stays on this Mac
@@ -68,14 +68,14 @@ final class Dictation: ObservableObject {
         let format = input.outputFormat(forBus: 0)
         Self.log("input format \(format.sampleRate)Hz ch=\(format.channelCount)")
         guard format.sampleRate > 0, format.channelCount > 0 else {
-            error = "입력 장치(마이크)를 찾지 못함 — 시스템 설정 > 사운드 > 입력을 확인해 주세요"
+            error = String(localized: "입력 장치(마이크)를 찾지 못함 — 시스템 설정 > 사운드 > 입력을 확인해 주세요")
             return
         }
         input.removeTap(onBus: 0)
         Self.installTap(on: input, format: format, request: req)
         engine.prepare()
         do { try engine.start() } catch {
-            self.error = "마이크를 열지 못함: \(error.localizedDescription)"; Self.log("engine start failed \(error)"); return
+            self.error = String(localized: "마이크를 열지 못함: \(error.localizedDescription)"); Self.log("engine start failed \(error)"); return
         }
         text = ""
         listening = true
@@ -84,7 +84,7 @@ final class Dictation: ObservableObject {
                 guard let self else { return }
                 if let text { self.text = text }
                 if Dictation.dictationOff {
-                    self.error = "macOS 받아쓰기가 꺼져 있음 — 시스템 설정 > 키보드 > 받아쓰기를 켜면 됨"
+                    self.error = String(localized: "macOS 받아쓰기가 꺼져 있음 — 시스템 설정 > 키보드 > 받아쓰기를 켜면 됨")
                     Dictation.dictationOff = false
                 }
                 if done { self.finish() }

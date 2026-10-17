@@ -123,10 +123,13 @@ final class CrystalBank: ObservableObject {
         Task {
             do {
                 if let r = try await sync.sync() { lastReceipt = r }
-                syncLine = "정산 \(Date().formatted(date: .omitted, time: .shortened))"
-                    + (lastReceipt.map { " · 서버 잔액 \($0.balance)" + ($0.pendingClamp > 0 ? " · 상한 초과 \($0.pendingClamp)" : "") } ?? "")
+                syncLine = String(localized: "정산 \(Date().formatted(date: .omitted, time: .shortened))")
+                    + (lastReceipt.map {
+                        String(localized: " · 서버 잔액 \($0.balance)")
+                            + ($0.pendingClamp > 0 ? String(localized: " · 상한 초과 \($0.pendingClamp)") : "")
+                    } ?? "")
             } catch {
-                syncLine = "정산 실패: \(Self.describe(error))"
+                syncLine = String(localized: "정산 실패: \(Self.describe(error))")
             }
             lastSync = Date()
             syncing = false
@@ -148,27 +151,27 @@ final class CrystalBank: ObservableObject {
             anchors = try await sync.anchors()
             anchorError = nil
         } catch {
-            anchorError = "공증 목록을 받지 못함: \(Self.describe(error))"
+            anchorError = String(localized: "공증 목록을 받지 못함: \(Self.describe(error))")
         }
     }
 
     /// Checks one anchor against Bitcoin, and against the head hash this Mac saw in a signed receipt.
     func verify(_ a: LedgerSync.AnchorInfo) async {
-        anchorResults[a.id] = "확인 중…"
+        anchorResults[a.id] = String(localized: "확인 중…")
         guard let digest = AnchorVerifier.hexBytes(a.hash), let proof = try? await sync.proof(a) else {
-            anchorResults[a.id] = "증명을 받지 못함"
+            anchorResults[a.id] = String(localized: "증명을 받지 못함")
             return
         }
         if let seen = sync.knownHead(seq: a.seq), seen != a.hash {
-            anchorResults[a.id] = "⚠︎ 이 기기가 받은 영수증의 서버 장부와 다름"
+            anchorResults[a.id] = "⚠︎ " + String(localized: "이 기기가 받은 영수증의 서버 장부와 다름")
             return
         }
         switch await AnchorVerifier().verify(proof: proof, expectedDigest: digest) {
-        case .confirmed(let h): anchorResults[a.id] = "비트코인 #\(h) 확정"
-        case .pending: anchorResults[a.id] = "캘린더 대기 (보통 몇 시간)"
-        case .mismatch: anchorResults[a.id] = "⚠︎ 블록과 불일치"
-        case .unreachable: anchorResults[a.id] = "블록 탐색기 응답 없음"
-        case .invalid(let why): anchorResults[a.id] = "증명 오류: \(why)"
+        case .confirmed(let h): anchorResults[a.id] = String(localized: "비트코인 #\(h) 확정")
+        case .pending: anchorResults[a.id] = String(localized: "캘린더 대기 (보통 몇 시간)")
+        case .mismatch: anchorResults[a.id] = "⚠︎ " + String(localized: "블록과 불일치")
+        case .unreachable: anchorResults[a.id] = String(localized: "블록 탐색기 응답 없음")
+        case .invalid(let why): anchorResults[a.id] = String(localized: "증명 오류: \(why)")
         }
     }
 
@@ -213,22 +216,25 @@ final class CrystalBank: ObservableObject {
 
     static func describe(_ error: Error) -> String {
         switch error {
-        case Ledger.Failure.insufficient: return "결정이 부족함"
-        case Ledger.Failure.notWritable: return "장부에 쓸 수 없음"
-        case LedgerSync.Failure.notRegistered: return "서버 정산을 켰지만 아직 등록하지 않음"
-        case Recruit.Failure.alreadyHired: return "이미 영입함"
-        case LedgerSync.Failure.keyChanged: return "서버 키가 바뀜 — 연결을 멈춤"
-        case LedgerSync.Failure.badSignature: return "서버 서명이 맞지 않음"
+        case Ledger.Failure.insufficient: return String(localized: "결정이 부족함")
+        case Ledger.Failure.notWritable: return String(localized: "장부에 쓸 수 없음")
+        case LedgerSync.Failure.notRegistered: return String(localized: "서버 정산을 켰지만 아직 등록하지 않음")
+        case Recruit.Failure.alreadyHired: return String(localized: "이미 영입함")
+        case LedgerSync.Failure.keyChanged: return String(localized: "서버 키가 바뀜 — 연결을 멈춤")
+        case LedgerSync.Failure.badSignature: return String(localized: "서버 서명이 맞지 않음")
         case LedgerSync.Failure.server(_, let code):
-            return ["invalid_code": "등록 코드가 틀림", "code_used": "이미 쓴 등록 코드", "code_expired": "만료된 등록 코드",
-                    "insufficient": "서버 잔액 부족", "revoked": "해지된 기기", "key_registered": "이미 등록된 기기",
-                    "already_owned": "이미 산 캐릭터", "own_listing": "내 캐릭터는 살 수 없음", "not_for_sale": "판매 중이 아님",
-                    "price_mismatch": "가격이 바뀜 — 새로고침 필요", "too_many_open": "심사 대기·작성 중인 등록이 너무 많음",
-                    "bad_price": "가격은 50~5,000 결정", "invalid_pack": "캐릭터 팩 규격 오류"][code] ?? "서버 오류 \(code)"
-        case MarketService.Failure.invalidPack(let codes): return "캐릭터 팩 규격 오류: " + codes.joined(separator: ", ")
-        case AssetLibrary.Failure.invalid(let codes): return "받은 파일 검증 실패 (\(codes.joined(separator: ", "))) — 다시 받기"
-        case AssetLibrary.Failure.io: return "설치 중 파일 오류 — 다시 받기"
-        case is URLError: return "서버에 연결할 수 없음"
+            return ["invalid_code": String(localized: "등록 코드가 틀림"), "code_used": String(localized: "이미 쓴 등록 코드"),
+                    "code_expired": String(localized: "만료된 등록 코드"), "insufficient": String(localized: "서버 잔액 부족"),
+                    "revoked": String(localized: "해지된 기기"), "key_registered": String(localized: "이미 등록된 기기"),
+                    "already_owned": String(localized: "이미 산 캐릭터"), "own_listing": String(localized: "내 캐릭터는 살 수 없음"),
+                    "not_for_sale": String(localized: "판매 중이 아님"), "price_mismatch": String(localized: "가격이 바뀜 — 새로고침 필요"),
+                    "too_many_open": String(localized: "심사 대기·작성 중인 등록이 너무 많음"),
+                    "bad_price": String(localized: "가격은 50~5,000 결정"), "invalid_pack": String(localized: "캐릭터 팩 규격 오류")][code]
+                ?? String(localized: "서버 오류 \(code)")
+        case MarketService.Failure.invalidPack(let codes): return String(localized: "캐릭터 팩 규격 오류: \(codes.joined(separator: ", "))")
+        case AssetLibrary.Failure.invalid(let codes): return String(localized: "받은 파일 검증 실패 (\(codes.joined(separator: ", "))) — 다시 받기")
+        case AssetLibrary.Failure.io: return String(localized: "설치 중 파일 오류 — 다시 받기")
+        case is URLError: return String(localized: "서버에 연결할 수 없음")
         default: return "\(error)"
         }
     }
@@ -282,6 +288,9 @@ struct GuildView: View {
     @State private var message: String?
     @State private var code = ""
     @State private var confirmReset = false
+    /// Character ids in lineup order (Lineup); dragging a card reorders it.
+    @State private var lineup: [String] = []
+    @State private var dragging: String?
 
     private let gold = Color(red: 0.85, green: 0.68, blue: 0.25)
 
@@ -316,7 +325,7 @@ struct GuildView: View {
         }
     }
 
-    private var protection: String {
+    private var protection: LocalizedStringKey {
         switch (bank.status, bank.strength) {
         case (.broken, _): return "장부 훼손"
         case (.readOnly(.noKey), _), (_, nil): return "서명 키 없음 · 읽기 전용"
@@ -327,7 +336,7 @@ struct GuildView: View {
         }
     }
 
-    private func brokenBanner(_ title: String, _ detail: String) -> some View {
+    private func brokenBanner(_ title: LocalizedStringKey, _ detail: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.headline).foregroundStyle(.red)
             Text(detail).font(.callout)
@@ -343,21 +352,40 @@ struct GuildView: View {
 
     private var recruits: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text("용병 영입").font(.title3.bold())
+                Text("번호 순서대로 새 에이전트에게 배정됨 · 카드를 끌어서 순서 변경").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Text("다음 영입 \(bank.nextPrice) 결정").font(.callout).foregroundStyle(.secondary)
-            }
-            if let message { Text(message).font(.callout).foregroundStyle(.orange) }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 12)], spacing: 12) {
-                ForEach(Array(Art.roster.enumerated()), id: \.offset) { i, c in
-                    card(i, c)
+                if bank.unlocked.count < Art.roster.count {
+                    Text("다음 영입 \(bank.nextPrice) 결정").font(.callout).foregroundStyle(.secondary)
                 }
             }
+            if let message { Text(message).font(.callout).foregroundStyle(.orange) }
+            let roster = Art.roster
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 12)], spacing: 12) {
+                ForEach(Array(lineup.enumerated()), id: \.element) { n, id in
+                    if let i = roster.firstIndex(where: { $0.id == id }) {
+                        card(i, roster[i], number: n + 1)
+                            .opacity(dragging == id ? 0.4 : 1)
+                            .onDrag {
+                                dragging = id
+                                return NSItemProvider(object: id as NSString)
+                            }
+                            .onDrop(of: [.text], delegate: LineupDrop(target: id, lineup: $lineup, dragging: $dragging))
+                    }
+                }
+            }
+            .onAppear { loadLineup() }
+            .onChange(of: roster.map(\.id)) { loadLineup() }
         }
     }
 
-    private func card(_ i: Int, _ c: Character) -> some View {
+    private func loadLineup() {
+        let roster = Art.roster
+        lineup = Lineup.order(roster).map { roster[$0].id }
+    }
+
+    private func card(_ i: Int, _ c: Character, number: Int) -> some View {
         let open = bank.unlocked.contains(i)
         let affordable = bank.balance >= bank.nextPrice && bank.status == .ok && !bank.hiring
         return VStack(spacing: 6) {
@@ -371,7 +399,8 @@ struct GuildView: View {
                 }
             }
             .frame(height: 72)
-            Text(open ? c.name : "???").font(.caption.bold()).lineLimit(1)
+            Text(open ? c.displayName : "???").font(.caption.bold()).lineLimit(1)
+            if open, c.ko != nil, !L10n.english { Text(c.name).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
             if !open {
                 Button("\(bank.nextPrice) 💎") {
                     Task { message = await bank.hire(c.id) }
@@ -383,6 +412,13 @@ struct GuildView: View {
         .padding(8)
         .frame(maxWidth: .infinity, minHeight: 140, alignment: .top)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(alignment: .topLeading) {
+            Text("\(number)").font(.caption2.bold().monospacedDigit()).foregroundStyle(.black)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(gold, in: Capsule()).padding(5)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .hoverInfo(enabled: open && dragging == nil) { CharacterInfo(character: c) }
     }
 
     private var server: some View {
@@ -393,7 +429,7 @@ struct GuildView: View {
                 .font(.caption).foregroundStyle(.secondary)
             if bank.syncEnabled {
                 if bank.registered {
-                    Text(bank.syncLine.isEmpty ? "등록됨 · 정산 대기" : bank.syncLine).font(.callout)
+                    Text(bank.syncLine.isEmpty ? String(localized: "등록됨 · 정산 대기") : bank.syncLine).font(.callout)
                     if let r = bank.lastReceipt, r.pending > 0 {
                         Text("이관분 \(r.pending) 결정은 관리자 승인 대기").font(.caption).foregroundStyle(.secondary)
                     }
@@ -448,11 +484,34 @@ struct GuildView: View {
     }
 
     static let guarantees: [(String, String, String)] = [
-        ("장부 항목 수정·삭제·순서 변경", "✅ 탐지", "해시 사슬이 깨짐"),
-        ("해시를 다시 계산해 장부 바꿔치기", "✅ 탐지", "보안칩 서명을 다시 만들 수 없음"),
-        ("장부·키를 지우고 새로 시작", "서버만 ✅", "서버가 기기별 잔액을 보관"),
-        ("고친 앱이 가짜 활동을 보고", "서버 상한까지", "시간당 상한을 넘는 지급은 서버가 잘라냄"),
-        ("대화 기록 파일 위조", "서버 상한까지", "입력이 로컬 파일이라 막을 수 없음"),
-        ("운영자가 서버 잔액 수정", "✅ 탐지", "서버 장부 해시 사슬 + 비트코인 공증"),
+        (String(localized: "장부 항목 수정·삭제·순서 변경"), String(localized: "✅ 탐지"), String(localized: "해시 사슬이 깨짐")),
+        (String(localized: "해시를 다시 계산해 장부 바꿔치기"), String(localized: "✅ 탐지"), String(localized: "보안칩 서명을 다시 만들 수 없음")),
+        (String(localized: "장부·키를 지우고 새로 시작"), String(localized: "서버만 ✅"), String(localized: "서버가 기기별 잔액을 보관")),
+        (String(localized: "고친 앱이 가짜 활동을 보고"), String(localized: "서버 상한까지"), String(localized: "시간당 상한을 넘는 지급은 서버가 잘라냄")),
+        (String(localized: "대화 기록 파일 위조"), String(localized: "서버 상한까지"), String(localized: "입력이 로컬 파일이라 막을 수 없음")),
+        (String(localized: "운영자가 서버 잔액 수정"), String(localized: "✅ 탐지"), String(localized: "서버 장부 해시 사슬 + 비트코인 공증")),
     ]
+}
+
+/// Moves the dragged card to where the pointer enters another card, and saves the lineup as it changes.
+private struct LineupDrop: DropDelegate {
+    let target: String
+    @Binding var lineup: [String]
+    @Binding var dragging: String?
+
+    func dropEntered(info: DropInfo) {
+        guard let d = dragging, d != target, let from = lineup.firstIndex(of: d), let to = lineup.firstIndex(of: target) else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            lineup.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        }
+        Lineup.save(lineup)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        Lineup.save(lineup)
+        return true
+    }
 }

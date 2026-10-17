@@ -1,0 +1,5 @@
+/* English names and permission prompts for Info.plist. */
+"CFBundleName" = "Suhyeok";
+"CFBundleDisplayName" = "Suhyeok";
+"NSMicrophoneUsageDescription" = "Suhyeok uses the microphone so you can give agents instructions by voice in the chat.";
+"NSSpeechRecognitionUsageDescription" = "Suhyeok turns what you say into text for the instruction box. When possible, this is processed only on this Mac.";

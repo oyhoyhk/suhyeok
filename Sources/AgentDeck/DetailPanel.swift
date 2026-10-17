@@ -20,7 +20,7 @@ struct HoverCard: View {
                 Label(a.detail, systemImage: a.symbol).font(.caption.weight(.semibold)).lineLimit(1)
             }
             if let u = session.lastUser {
-                Text("지시: " + u).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text("지시: \(u)").font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
         }
         .padding(10)
@@ -47,13 +47,13 @@ struct StatusCard: View {
                 portrait.frame(width: 64, height: 80).clipShape(RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(agentName).font(.title3.bold())
-                    if let c = character { Text(c.name).font(.caption).foregroundStyle(.secondary) }
+                    if let c = character, !L10n.english { Text(c.name).font(.caption).foregroundStyle(.secondary) }
                     HStack(spacing: 5) {
                         Circle().fill(session.activity.color).frame(width: 8, height: 8)
-                        Text(session.status == .waiting ? "선택 기다리는 중"
-                             : session.activity.label + (session.status == .shell ? " · 백그라운드 셸 실행 중" : ""))
+                        Text(session.status == .waiting ? String(localized: "선택 기다리는 중")
+                             : session.activity.label + (session.status == .shell ? String(localized: " · 백그라운드 셸 실행 중") : ""))
                             .font(.caption.bold()).foregroundStyle(session.activity.color)
-                        Text(session.agent.rawValue + (session.estimated ? " · 추정" : ""))
+                        Text(session.agent.rawValue + (session.estimated ? String(localized: " · 추정") : ""))
                             .font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
                             .background(.quaternary, in: Capsule())
                     }
@@ -68,7 +68,7 @@ struct StatusCard: View {
             Divider()
             Text(session.name).font(.callout.weight(.semibold)).lineLimit(2)
             if session.activity == .working, let a = session.action {
-                Label("지금: " + a.detail, systemImage: a.symbol).font(.caption.weight(.semibold)).lineLimit(1)
+                Label("지금: \(a.detail)", systemImage: a.symbol).font(.caption.weight(.semibold)).lineLimit(1)
             }
             Text(session.cwd.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                 .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
@@ -111,10 +111,10 @@ struct StatusCard: View {
 
 func duration(since date: Date) -> String {
     let s = max(0, Int(-date.timeIntervalSinceNow))
-    if s < 60 { return "\(s)초" }
-    if s < 3600 { return "\(s / 60)분" }
-    if s < 86400 { return "\(s / 3600)시간 \(s % 3600 / 60)분" }
-    return "\(s / 86400)일"
+    if s < 60 { return String(localized: "\(s)초") }
+    if s < 3600 { return String(localized: "\(s / 60)분") }
+    if s < 86400 { return String(localized: "\(s / 3600)시간 \(s % 3600 / 60)분") }
+    return String(localized: "\(s / 86400)일")
 }
 
 /// Live terminal screen when the host terminal can be read, otherwise (or on request) the conversation log.
@@ -138,7 +138,7 @@ struct TerminalPanel: View {
             }
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(text ?? "불러오는 중…")
+                    Text(text ?? String(localized: "불러오는 중…"))
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Color(white: 0.9))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -167,14 +167,14 @@ struct TerminalPanel: View {
         var note = ""
         if mode == .auto, let pid = s.pid {
             switch TerminalSource.read(pid: pid) {
-            case .text(let t, let host): return (t, "\(host) 터미널 화면")
-            case .denied(let host, let hint): note = "\(host) 화면을 읽지 못해 대화 기록 표시 — \(hint)"
-            case .unsupported: note = "화면 읽기를 지원하지 않는 터미널이라 대화 기록 표시"
+            case .text(let t, let host): return (t, String(localized: "\(host) 터미널 화면"))
+            case .denied(let host, let hint): note = String(localized: "\(host) 화면을 읽지 못해 대화 기록 표시 — \(hint)")
+            case .unsupported: note = String(localized: "화면 읽기를 지원하지 않는 터미널이라 대화 기록 표시")
             }
         } else if mode == .auto {
-            note = "터미널 정보가 없는 세션이라 대화 기록 표시"
+            note = String(localized: "터미널 정보가 없는 세션이라 대화 기록 표시")
         }
-        guard let path = s.transcriptPath else { return ("대화 기록 파일을 찾지 못함", note) }
-        return (TranscriptRenderer.render(path: path, agent: s.agent), note.isEmpty ? "대화 기록" : note)
+        guard let path = s.transcriptPath else { return (String(localized: "대화 기록 파일을 찾지 못함"), note) }
+        return (TranscriptRenderer.render(path: path, agent: s.agent), note.isEmpty ? String(localized: "대화 기록") : note)
     }
 }

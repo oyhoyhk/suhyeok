@@ -10,7 +10,7 @@ final class TerminalHost: NSObject, LocalProcessTerminalViewDelegate {
 
     func view(for name: String) -> LocalProcessTerminalView {
         if let v = views[name] { return v }
-        let v = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
+        let v = CopyingTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
         v.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         v.processDelegate = self
         var env = ProcessInfo.processInfo.environment

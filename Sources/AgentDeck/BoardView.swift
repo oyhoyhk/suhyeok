@@ -25,6 +25,7 @@ struct BoardView: View {
                 }
             }
         }
+        .background { Backdrop(opacity: 0.08) }
     }
 
     private var header: some View {
@@ -53,7 +54,7 @@ struct SessionCard: View {
             HStack(spacing: 6) {
                 Circle().fill(session.activity.color).frame(width: 9, height: 9)
                 Text(session.activity.label).font(.caption.bold()).foregroundStyle(session.activity.color)
-                Text(session.agent.rawValue + (session.estimated ? " · 추정" : ""))
+                Text(session.agent.rawValue + (session.estimated ? String(localized: " · 추정") : ""))
                     .font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
                     .background(.quaternary, in: Capsule())
                 Spacer()
@@ -90,10 +91,10 @@ struct SessionCard: View {
 
     private func relative(_ date: Date) -> String {
         let s = Int(-date.timeIntervalSinceNow)
-        if s < 60 { return "방금" }
-        if s < 3600 { return "\(s / 60)분 전" }
-        if s < 86400 { return "\(s / 3600)시간 전" }
-        return "\(s / 86400)일 전"
+        if s < 60 { return String(localized: "방금") }
+        if s < 3600 { return String(localized: "\(s / 60)분 전") }
+        if s < 86400 { return String(localized: "\(s / 3600)시간 전") }
+        return String(localized: "\(s / 86400)일 전")
     }
 }
 

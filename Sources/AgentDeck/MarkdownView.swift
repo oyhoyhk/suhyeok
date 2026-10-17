@@ -248,7 +248,7 @@ struct MermaidWeb: NSViewRepresentable {
             <pre class="mermaid">\(escaped)</pre>
             <script>
             mermaid.initialize({startOnLoad:false, theme:'dark', securityLevel:'strict'});
-            mermaid.run().catch(e => { document.body.innerHTML = '<div class="err">다이어그램 오류: ' + (e.message||e) + '</div>'; })
+            mermaid.run().catch(e => { document.body.innerHTML = '<div class="err">\(String(localized: "다이어그램 오류")): ' + (e.message||e) + '</div>'; })
               .finally(() => setTimeout(() => webkit.messageHandlers.size.postMessage(document.body.scrollHeight), 50));
             </script></body></html>
             """

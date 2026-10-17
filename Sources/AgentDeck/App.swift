@@ -128,6 +128,19 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--snapshot-hosted"), i + 2 < args.count {
             Snapshot.hosted(name: args[i + 1], path: args[i + 2])
         }
+        // `AgentDeck --agents`: live agents by the names the app shows (who can be messaged).
+        // `AgentDeck --msg <이름>[,<이름>…] "본문"`: types a message into those agents' terminals, signed by the caller.
+        if args.contains("--agents") || args.contains("--msg") { Snapshot.mail(args) }
+        // `AgentDeck --usage` prints each live session's model, context and rate limits (the dialogue's status line).
+        if args.contains("--usage") {
+            if let i = args.firstIndex(of: "--usage"), i + 1 < args.count {  // a Codex rollout path
+                print(UsageInfo.codex(args[i + 1]).map { String(describing: $0) } ?? "-"); exit(0)
+            }
+            for s in Snapshot.loadedStorePublic().sessions {
+                print(s.agent.rawValue, s.id, "pid=" + (s.pid.map { String($0) } ?? "-"), "parent=" + (s.parentId ?? "-"), UsageInfo.load(s).map { String(describing: $0) } ?? "-")
+            }
+            exit(0)
+        }
         // `AgentDeck --check-update` prints installed vs latest release.
         if args.contains("--check-update") {
             let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
@@ -221,6 +234,17 @@ struct AgentDeckApp: App {
         if args.contains("--reopen-permissions") {
             Snapshot.reopenPermissions()
         }
+        // `--ledger-register <code>`: registers this Mac with an admin code (as the guild's server section does),
+        // without settling; the app settles on its next start.
+        if let i = args.firstIndex(of: "--ledger-register"), i + 1 < args.count {
+            Snapshot.ledgerRegister(code: args[i + 1])
+        }
+        // `--market-upload <pack folder> <price> <description file> [alias]`: the selling tab's upload, for packs
+        // made outside the app. Needs server sync on and this Mac registered, like the tab.
+        if let i = args.firstIndex(of: "--market-upload"), i + 3 < args.count {
+            Snapshot.marketUpload(folder: args[i + 1], price: Int(args[i + 2]) ?? 0, descriptionFile: args[i + 3],
+                                  alias: args.dropFirst(i + 4).first ?? "")
+        }
         for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--clone", "--summary", "--hunt", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
@@ -254,13 +278,17 @@ struct AgentDeckApp: App {
             exit(0)
         }
         // Session engine from the command line:
-        //   --new-session <Claude|Codex> <cwd> [prompt]   --list-sessions   --kill-session <name>
+        //   --new-session <Claude|Codex|Shell> <cwd> [prompt]   --list-sessions   --kill-session <name>
+        if let i = args.firstIndex(of: "--new-session"), i + 2 < args.count, args[i + 1] == TmuxEngine.shellTag {
+            print(TmuxEngine.createShell(cwd: args[i + 2]) ?? "FAILED")
+            exit(0)
+        }
         if let i = args.firstIndex(of: "--new-session"), i + 2 < args.count, let agent = Agent(rawValue: args[i + 1]) {
             print(TmuxEngine.create(agent: agent, cwd: args[i + 2], prompt: args.dropFirst(i + 3).first) ?? "FAILED")
             exit(0)
         }
         if args.contains("--list-sessions") {
-            for h in TmuxEngine.list() { print(h.name, h.agent.rawValue, h.cwd, h.title, separator: "\t") }
+            for h in TmuxEngine.list() { print(h.name, h.agent?.rawValue ?? TmuxEngine.shellTag, h.cwd, h.title, separator: "\t") }
             exit(0)
         }
         if let i = args.firstIndex(of: "--kill-session"), i + 1 < args.count {
@@ -273,6 +301,8 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             Snapshot.run(path: args[i + 1], select: i + 2 < args.count ? args[i + 2] : nil)
         }
+        CommandHover.install()
+        AppAppearance.current.apply()
     }
 
     var body: some Scene {
@@ -285,6 +315,20 @@ struct AgentDeckApp: App {
                 Button("세션 이름 수정…") { store.editingSummary = store.selectedSession }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(store.selectedSession == nil)
+            }
+            CommandGroup(after: .sidebar) {
+                ForEach(1...10, id: \.self) { n in
+                    // Order read on the key press: the sidebar sort can change without the store publishing.
+                    Button("수혁 세션 \(n)번으로 이동") {
+                        let panes = store.hostedAgentPanes()
+                        if n <= panes.count { store.selection = panes[n - 1] }
+                    }
+                    .keyboardShortcut(KeyEquivalent(Swift.Character("\(n % 10)")))  // ⌘0 is the 10th
+                }
+                Divider()
+                // Shown for the menu; the key itself is caught by TerminalPanelKey before the menu sees it.
+                Button(store.terminalPanelOpen ? "터미널 패널 닫기" : "터미널 패널 열기") { store.toggleTerminalPanel() }
+                    .keyboardShortcut("`")
             }
         }
         Settings { SettingsView().environmentObject(store) }
@@ -302,6 +346,7 @@ final class SessionStore: ObservableObject {
     @Published var lastRefresh = Date()
     @Published private var assignments: [String: Int] = [:]
     @Published private var names: [String: String] = [:]
+    private var spokenNames: [String: String] = [:]
     @Published var selection: Pane = .world
     @Published var hosted: [TmuxEngine.Hosted] = []
     @Published var recent: [RecentConversation] = []
@@ -336,9 +381,33 @@ final class SessionStore: ObservableObject {
         return Art.roster[i]
     }
 
-    func agentName(for session: AgentSession) -> String { names[session.id] ?? "모험가" }
+    func agentName(for session: AgentSession) -> String { names[session.id] ?? String(localized: "모험가") }
+    /// The Korean name, for voice features (wake word, spoken replies), which stay Korean in any UI language.
+    func spokenName(for session: AgentSession) -> String { spokenNames[session.id] ?? "모험가" }
+
+    /// Messages between agents in the last couple of hours (`AgentDeck --msg`).
+    @Published var mail: [AgentMail.Entry] = []
+
+    /// Live agents `s` exchanged messages with, most recent first. Distinct from children: peers, not sessions it started.
+    func partners(of s: AgentSession) -> [AgentSession] {
+        var order: [String] = []
+        for e in mail.reversed() where e.from == s.id || e.to.contains(s.id) {
+            for id in [e.from] + e.to where id != s.id && !order.contains(id) { order.append(id) }
+        }
+        return order.compactMap { id in sessions.first { $0.id == id } }
+    }
+
+    func mailRoster() -> [AgentMail.Agent] {
+        sessions.map { s in
+            AgentMail.Agent(id: s.id, name: agentName(for: s), agent: s.agent.rawValue, pid: s.pid, cwd: s.cwd, activity: s.activity.label)
+        }
+    }
 
     func session(hosted name: String) -> AgentSession? { sessions.first { $0.hostedName == name } }
+    /// Sessions started from inside `s` (e.g. `claude -p` runs from its scripts), oldest first.
+    func children(of s: AgentSession) -> [AgentSession] {
+        sessions.filter { $0.parentId == s.id }.sorted { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) }
+    }
 
     // MARK: hunting
 
@@ -355,9 +424,9 @@ final class SessionStore: ObservableObject {
     /// "중급 사냥터 · 연속 6.2시간 · 결정 31 · 마나 1200" for cards (this log's earnings and output tokens).
     func huntLine(for s: AgentSession) -> String {
         let p = hunt[s.id] ?? Hunt.Progress()
-        let place = ground(for: s).map { $0.label } ?? "대기소"
-        let run = p.run().map { String(format: " · 연속 %.1f시간", $0 / 3600) } ?? ""
-        return "\(place)\(run) · 결정 \(p.earned) · 마나 \(p.mana)"
+        let place = ground(for: s).map { $0.label } ?? String(localized: "대기소")
+        let run = p.run().map { String(localized: " · 연속 \(String(format: "%.1f", $0 / 3600))시간") } ?? ""
+        return place + run + String(localized: " · 결정 \(p.earned) · 마나 \(p.mana)")
     }
 
     /// Where every agent stands: its hunting ground's attack spots, or the camp. Shared by the map and the phone.
@@ -432,8 +501,9 @@ final class SessionStore: ObservableObject {
     }
 
     func start(agent: Agent, cwd: String, prompt: String?, resume: String? = nil) {
+        let face = character(resuming: resume)
         Task.detached {
-            let name = TmuxEngine.create(agent: agent, cwd: cwd, prompt: prompt, resume: resume)
+            let name = TmuxEngine.create(agent: agent, cwd: cwd, prompt: prompt, resume: resume, character: face)
             await MainActor.run {
                 self.hosted = TmuxEngine.list()
                 if let name { self.selection = .hosted(name) }
@@ -442,12 +512,32 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Bottom terminal panel (⌘`). Its shell stays on the tmux server, so closing the panel only hides it.
+    @Published var terminalPanelOpen = false
+
+    /// Opens the panel, first starting its shell in the selected session's folder if none is running.
+    func toggleTerminalPanel() {
+        if terminalPanelOpen { terminalPanelOpen = false; return }
+        if !hosted.contains(where: { $0.name == TmuxEngine.panelName }) {
+            let cwd: String? = switch selection {
+            case .hosted(let n): hosted.first { $0.name == n }?.cwd
+            case .external(let id): sessions.first { $0.id == id }?.cwd
+            default: nil
+            }
+            guard TmuxEngine.createShell(cwd: cwd ?? NSHomeDirectory(), name: TmuxEngine.panelName) != nil else { return }
+            hosted = TmuxEngine.list()
+        }
+        terminalPanelOpen = true
+    }
+
     /// A new agent that starts from a copy of this session's conversation; the original keeps running.
     func clone(_ s: AgentSession) {
         guard let id = s.conversationId else { return }
         let flags = Self.permissionFlags(s)
+        let face = character(resuming: nil)  // a clone is a new agent with its own face
         Task.detached {
-            let name = TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: id, fork: true, extraArgs: flags)
+            let name = TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: id, fork: true, extraArgs: flags,
+                                         character: face)
             await MainActor.run {
                 self.hosted = TmuxEngine.list()
                 if let name { self.selection = .hosted(name) }
@@ -502,7 +592,7 @@ final class SessionStore: ObservableObject {
         for s in targets {
             let label = agentName(for: s) + " · " + s.name
             guard let conversation = s.conversationId else {
-                results.append(.init(id: s.id, name: label, message: "대화 ID를 몰라 이어서 열 수 없음", ok: false)); continue
+                results.append(.init(id: s.id, name: label, message: String(localized: "대화 ID를 몰라 이어서 열 수 없음"), ok: false)); continue
             }
             var note = ""
             let flags = Self.permissionFlags(s)  // read before the original process is gone
@@ -513,11 +603,13 @@ final class SessionStore: ObservableObject {
                     results.append(.init(id: s.id, name: label, message: note, ok: false)); continue
                 }
             }
+            let face = character(resuming: conversation, from: s)
             let name = await Task.detached {
-                TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: conversation, extraArgs: flags)
+                TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: conversation, extraArgs: flags, character: face)
             }.value
             results.append(.init(id: s.id, name: label,
-                                 message: name == nil ? "수혁에서 여는 데 실패" : (note.isEmpty ? "옮김" : "옮김 — " + note),
+                                 message: name == nil ? String(localized: "수혁에서 여는 데 실패")
+                                    : note.isEmpty ? String(localized: "옮김") : String(localized: "옮김 — \(note)"),
                                  ok: name != nil))
         }
         hosted = TmuxEngine.list()
@@ -547,17 +639,20 @@ final class SessionStore: ObservableObject {
             guard has != want, let name = s.hostedName, let conversation = s.conversationId else { continue }
             let label = agentName(for: s) + " · " + s.name
             if s.status == .busy || s.status == .waiting {
-                results.append(.init(id: s.id, name: label, message: "작업 중이라 건너뜀", ok: false)); continue
+                results.append(.init(id: s.id, name: label, message: String(localized: "작업 중이라 건너뜀"), ok: false)); continue
             }
             let note = await Task.detached { Self.closeOriginal(s) }.value
             if let pid = s.pid, Darwin.kill(pid, 0) == 0 {
-                results.append(.init(id: s.id, name: label, message: note.isEmpty ? "종료되지 않음" : note, ok: false)); continue
+                results.append(.init(id: s.id, name: label, message: note.isEmpty ? String(localized: "종료되지 않음") : note, ok: false)); continue
             }
             TerminalHost.shared.drop(name)
             TmuxEngine.kill(name)
             // Without extraArgs: TmuxEngine adds the flag from the current setting.
-            let new = await Task.detached { TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: conversation) }.value
-            results.append(.init(id: s.id, name: label, message: new == nil ? "다시 열기 실패" : "다시 열림", ok: new != nil))
+            let face = character(resuming: conversation, from: s)
+            let new = await Task.detached {
+                TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: conversation, character: face)
+            }.value
+            results.append(.init(id: s.id, name: label, message: new == nil ? String(localized: "다시 열기 실패") : String(localized: "다시 열림"), ok: new != nil))
         }
         hosted = TmuxEngine.list()
         refresh()
@@ -580,20 +675,20 @@ final class SessionStore: ObservableObject {
     /// Refuses when the input box holds unsent text: typing /exit would append to it and submit the draft.
     nonisolated private static func closeOriginal(_ s: AgentSession) -> String {
         guard let pid = s.pid, SessionInput.canSend(s) else {
-            return "원래 세션을 닫지 못함 — 원래 터미널에서 직접 종료할 것"
+            return String(localized: "원래 세션을 닫지 못함 — 원래 터미널에서 직접 종료할 것")
         }
         guard case .text(let screen, _) = TerminalSource.read(pid: pid, lines: 40) else {
-            return "화면을 읽지 못해 종료하지 않음 — 원래 터미널에서 직접 종료할 것"
+            return String(localized: "화면을 읽지 못해 종료하지 않음 — 원래 터미널에서 직접 종료할 것")
         }
         if let draft = inputDraft(screen) {
-            return "입력칸에 보내지 않은 글이 있어 종료하지 않음(\(oneLine(draft, limit: 30))) — 원래 터미널에서 정리 후 다시 시도"
+            return String(localized: "입력칸에 보내지 않은 글이 있어 종료하지 않음(\(oneLine(draft, limit: 30))) — 원래 터미널에서 정리 후 다시 시도")
         }
         _ = SessionInput.send(s, text: s.agent == .claude ? "/exit" : "/quit")
         for _ in 0..<30 {
             if Darwin.kill(pid, 0) != 0 { return "" }
             usleep(500_000)
         }
-        return "원래 세션이 15초 안에 끝나지 않음 — 원래 터미널에서 확인할 것"
+        return String(localized: "원래 세션이 15초 안에 끝나지 않음 — 원래 터미널에서 확인할 것")
     }
 
     /// Text typed into the agent's input box, if any. The box is the last line starting with "❯";
@@ -604,6 +699,54 @@ final class SessionStore: ObservableObject {
         let text = line.trimmingCharacters(in: .whitespaces).dropFirst().trimmingCharacters(in: .whitespaces)
         if text.isEmpty || text.hasPrefix("Try \"") { return nil }
         return text
+    }
+
+    // MARK: characters
+
+    private static let conversationCharactersKey = "conversationCharacters"
+    /// Character of each conversation 수혁 started, so resuming it brings back the same face and voice.
+    private var conversationCharacters =
+        UserDefaults.standard.dictionary(forKey: SessionStore.conversationCharactersKey) as? [String: String] ?? [:]
+
+    /// Characters just given to sessions that are still starting, so back-to-back launches do not draw the same one
+    /// before the first session shows up in a refresh.
+    private var launching: [Int: Date] = [:]
+
+    /// The character a new 수혁 session gets: the conversation's own when resuming, then the one `s` already shows,
+    /// else one no live or starting agent has.
+    func character(resuming conversation: String?, from s: AgentSession? = nil) -> Character? {
+        let roster = Art.roster
+        if let id = conversation.flatMap({ conversationCharacters[$0] }), let c = roster.first(where: { $0.id == id }) { return c }
+        if let s, let i = assignments[s.id], roster.indices.contains(i) { return roster[i] }
+        launching = launching.filter { Date().timeIntervalSince($0.value) < 60 }
+        let open = CrystalBank.shared.unlocked
+        let lineup = Lineup.order(roster).filter(open.contains)
+        guard let i = Self.pick(lineup: lineup, live: Set(assignments.values), starting: Set(launching.keys)) else { return nil }
+        launching[i] = Date()
+        return roster[i]
+    }
+
+    /// The first in the lineup nobody uses; failing that the first no starting session took; failing that the
+    /// first (more agents than characters).
+    nonisolated static func pick(lineup: [Int], live: Set<Int>, starting: Set<Int>) -> Int? {
+        lineup.first { !live.contains($0) && !starting.contains($0) } ?? lineup.first { !starting.contains($0) } ?? lineup.first
+    }
+
+    /// Roster index per session whose character is fixed: chosen at launch (tmux `@character`) or remembered for
+    /// its conversation. Newly seen conversations of pinned sessions are remembered here.
+    private func pins(_ sessions: [AgentSession], hosted: [TmuxEngine.Hosted]) -> [String: Int] {
+        let roster = Art.roster
+        var pins: [String: Int] = [:]
+        var changed = false
+        for s in sessions {
+            let launched = s.hostedName.flatMap { n in hosted.first { $0.name == n }?.character }
+            guard let id = launched ?? s.conversationId.flatMap({ conversationCharacters[$0] }),
+                  let i = roster.firstIndex(where: { $0.id == id }) else { continue }
+            pins[s.id] = i
+            if let c = s.conversationId, conversationCharacters[c] != id { conversationCharacters[c] = id; changed = true }
+        }
+        if changed { UserDefaults.standard.set(conversationCharacters, forKey: Self.conversationCharactersKey) }
+        return pins
     }
 
     func kill(_ name: String) {
@@ -619,11 +762,13 @@ final class SessionStore: ObservableObject {
         guard !loading else { return }
         loading = true
         Task.detached(priority: .utility) {
-            let all = (ClaudeSource.load() + CodexSource.load()).sorted {
+            let all = SessionTree.link(ClaudeSource.load() + CodexSource.load()).sorted {
                 if $0.activity.sortRank != $1.activity.sortRank { return $0.activity.sortRank < $1.activity.sortRank }
                 return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast)
             }
             let hosted = TmuxEngine.list()
+            AgentMail.deliverSpool(all)
+            let mail = AgentMail.recent()
             var hunt: [String: Hunt.Progress] = [:]
             for s in all { if let p = s.transcriptPath { hunt[s.id] = HuntClock.progress(path: p) } }
             let reloadRecent = await MainActor.run { Date().timeIntervalSince(self.lastRecentLoad) > 30 }
@@ -642,8 +787,12 @@ final class SessionStore: ObservableObject {
                 if let recent { self.recent = recent; self.lastRecentLoad = Date() }
                 self.sessions = all
                 self.updateStations(all)
-                self.assignments = self.assigner.update(all, allowed: CrystalBank.shared.unlocked)
-                self.names = AgentNames.assign(all)
+                self.assignments = self.assigner.update(all, allowed: CrystalBank.shared.unlocked, pinned: self.pins(all, hosted: hosted),
+                                                          order: Lineup.order(Art.roster))
+                self.names = AgentNames.assign(all, assignments: self.assignments)
+                self.spokenNames = L10n.english ? AgentNames.assign(all, assignments: self.assignments, english: false) : self.names
+                self.mail = mail
+                AgentMail.writeRoster(self.mailRoster())
                 self.lastRefresh = Date()
                 WakeWord.shared.observe(all)
                 Notifier.shared.observe(all, store: self)
@@ -664,7 +813,7 @@ struct MenuBarLabel: View {
             if working > 0 { Text("\(working)") }
         }
         // The menu bar label lives as long as the app, so the wake listener hangs off it.
-        .onAppear { WakeWord.shared.attach(store); Notifier.shared.attach(store) }
+        .onAppear { WakeWord.shared.attach(store); Notifier.shared.attach(store); CopyOnSelect.install() }
     }
 
     /// Monochrome template derived from the app icon (art/out/menubar.png); macOS tints it for light/dark bars.
@@ -685,11 +834,12 @@ struct MenuBarContent: View {
         let counts = Activity.allCases.map { a in "\(a.label) \(store.sessions.filter { $0.activity == a }.count)" }
         Text(counts.joined(separator: " · "))
         Divider()
-        ForEach(store.sessions.filter { $0.activity == .working }) { s in
-            Button("\(store.agentName(for: s)) — \(s.action?.detail ?? s.name)") {
-                store.selection = store.pane(for: s)
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
+        ForEach(store.sessions.filter { s in
+            s.parentId == nil && (s.activity == .working || store.children(of: s).contains { $0.activity == .working })
+        }) { s in
+            Button("\(store.agentName(for: s)) — \(s.action?.detail ?? s.name)") { open(s) }
+            ForEach(store.children(of: s)) { c in
+                Button("    ㄴ \(store.agentName(for: c)) — \(c.action?.detail ?? c.name)") { open(c) }
             }
         }
         Divider()
@@ -705,12 +855,59 @@ struct MenuBarContent: View {
         }
         Button("종료") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
+
+    private func open(_ s: AgentSession) {
+        store.selection = store.pane(for: s)
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }
 
 /// Offscreen checks that never touch the user's screen.
 @MainActor
 enum Snapshot {
     static func loadedStorePublic() -> SessionStore { loadedStore() }
+
+    static func mail(_ args: [String]) {
+        // The running app rewrites the roster on every refresh; only without it does the CLI read sessions itself.
+        let fresh = ((try? FileManager.default.attributesOfItem(atPath: AgentMail.rosterPath)[.modificationDate]) as? Date)
+            .map { -$0.timeIntervalSinceNow < 120 } ?? false
+        let agents = fresh ? AgentMail.roster().filter { a in a.pid.map { kill($0, 0) == 0 || errno == EPERM } ?? false }  // EPERM: alive, but a sandbox (Codex) may not signal it
+            : loadedStore().mailRoster()
+        let me = AgentMail.sender(in: agents)
+        if args.contains("--agents") {
+            for a in agents {
+                print(a.name, a.agent, a.activity, a.id, (a.cwd as NSString).lastPathComponent,
+                      a.id == me?.id ? "(나)" : "", separator: "\t")
+            }
+            exit(0)
+        }
+        guard let i = args.firstIndex(of: "--msg"), i + 2 < args.count else {
+            print("usage: AgentDeck --msg <이름>[,<이름>…] \"본문\""); exit(2)
+        }
+        let (to, missing) = AgentMail.resolve(args[i + 1], in: agents.filter { $0.id != me?.id })
+        guard missing.isEmpty, !to.isEmpty else {
+            print("모르는 이름: \(missing.joined(separator: ", ")) — 보낼 수 있는 에이전트: \(agents.map(\.name).joined(separator: ", "))"); exit(1)
+        }
+        let from = me ?? AgentMail.Agent(id: "user", name: "사용자", agent: "user", pid: nil, cwd: "", activity: "")
+        let request = AgentMail.Request(from: from, to: to, text: args[i + 2], exe: Bundle.main.executablePath ?? args[0])
+        // Typing needs only the pid: SessionInput finds the hosting terminal from the process environment.
+        let sessions = to.map { a in
+            AgentSession(id: a.id, agent: Agent(rawValue: a.agent) ?? .claude, name: a.name, cwd: a.cwd, status: .unknown,
+                         startedAt: nil, updatedAt: nil, lastUser: nil, lastAssistant: nil, estimated: false, pid: a.pid)
+        }
+        // Typed directly when this process may reach the terminals; from a sandbox (Codex) the tmux socket is off limits,
+        // so whoever failed goes through the running app.
+        var (out, failed) = AgentMail.deliver(request, sessions: sessions)
+        if !failed.isEmpty, fresh {
+            var relay = request
+            relay.pending = failed
+            out = AgentMail.spoolAndWait(relay) ?? "보내지 못함: 수혁 앱이 응답하지 않음"
+            if out.hasPrefix("보냄"), failed.count < to.count { out = "보냄 → \(to.map(\.name).joined(separator: ", "))" }
+        }
+        print(out)
+        exit(out.hasPrefix("보냄") ? 0 : 1)
+    }
 
     private static func loadedStore() -> SessionStore {
         let store = SessionStore()
@@ -731,6 +928,44 @@ enum Snapshot {
             try? png.write(to: URL(fileURLWithPath: path))
         }
         exit(0)
+    }
+
+    static func ledgerRegister(code: String) {
+        let sync = CrystalBank.shared.sync
+        Task {
+            do {
+                try await sync.register(code: code.trimmingCharacters(in: .whitespacesAndNewlines))
+                print("registered")
+                exit(0)
+            } catch {
+                print("FAILED", CrystalBank.describe(error)); exit(1)
+            }
+        }
+        RunLoop.main.run()
+    }
+
+    static func marketUpload(folder: String, price: Int, descriptionFile: String, alias: String) {
+        let bank = CrystalBank.shared
+        guard let market = bank.market, bank.canTrade else {
+            print("market unavailable: turn on server sync and register this Mac first"); exit(1)
+        }
+        guard let description = try? String(contentsOfFile: descriptionFile, encoding: .utf8) else {
+            print("cannot read \(descriptionFile)"); exit(1)
+        }
+        Task {
+            do {
+                let id = try await market.upload(folder: URL(fileURLWithPath: folder), price: price, alias: alias,
+                                                 description: description.trimmingCharacters(in: .whitespacesAndNewlines)) { done, total in
+                    print("uploaded \(done)/\(total)")
+                }
+                let status = (try? await market.mine())?.listings.first { $0.id == id }?.status ?? "?"
+                print("listing \(id) \(status)")
+                exit(0)
+            } catch {
+                print("FAILED", CrystalBank.describe(error)); exit(1)
+            }
+        }
+        RunLoop.main.run()
     }
 
     static func dialogueAudit() {
@@ -754,8 +989,9 @@ enum Snapshot {
         let until = Date().addingTimeInterval(40)
         while store.sessions.isEmpty, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
         let view = VStack(alignment: .leading, spacing: 10) {
-            ForEach(store.sessions.prefix(12)) { s in
+            ForEach(store.sessions.filter { $0.parentId == nil }.prefix(12)) { s in
                 SessionRow(title: s.name, subtitle: s.agent.rawValue + " · " + s.project, session: s, store: store)
+                ForEach(store.children(of: s)) { c in ChildSessionRow(session: c, store: store) }
             }
         }
         .padding(14).frame(width: 300, alignment: .leading).background(Color(nsColor: .windowBackgroundColor))
@@ -991,7 +1227,7 @@ enum Snapshot {
             while Date() < deadline, Set(TmuxEngine.list().map(\.name)).subtracting(before).isEmpty {
                 RunLoop.main.run(until: Date().addingTimeInterval(0.2))
             }
-            print("clones:", TmuxEngine.list().filter { $0.title.hasSuffix("(클론)") }.map(\.name))
+            print("clones:", TmuxEngine.list().filter { $0.title.hasSuffix(String(localized: " (클론)")) }.map(\.name))
         case "--summary":
             store.setSummary(arg ?? "", for: s)
             print("summary:", store.summary(for: s) ?? "(cleared)")
@@ -1030,6 +1266,58 @@ enum Snapshot {
                                   styleMask: [.borderless], backing: .buffered, defer: false)
             window.contentView = host
             RunLoop.main.run(until: Date().addingTimeInterval(2.5))
+            // SUHYEOK_TEST_PASTEBOARD=<name>: press ⌘V in the input twice — a long text, then an image — from that pasteboard.
+            if let name = ProcessInfo.processInfo.environment["SUHYEOK_TEST_PASTEBOARD"] {
+                func fields(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(fields) }
+                let pb = NSPasteboard(name: .init(name))
+                if let field = fields(host).first(where: \.isEditable) {
+                    window.makeFirstResponder(field)
+                    let long = (1...40).map { "line \($0) of a long pasted log" }.joined(separator: "\n")
+                    let img = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { r in NSColor.red.setFill(); r.fill(); return true }
+                    for content in [long as NSPasteboardWriting, img] {
+                        pb.clearContents(); pb.writeObjects([content])
+                        let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+                                                 windowNumber: window.windowNumber, context: nil, characters: "v",
+                                                 charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9)!
+                        NSApp.sendEvent(e)
+                        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+                    }
+                    print("field:", field.stringValue)
+                    pb.releaseGlobally()
+                }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            }
+            // SUHYEOK_TEST_DROP=<file>: list views that accept drops, then drop that file on the middle of the dialogue.
+            if let file = ProcessInfo.processInfo.environment["SUHYEOK_TEST_DROP"] {
+                func all(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(all) }
+                for v in all(host) where !v.registeredDraggedTypes.isEmpty {
+                    print("drop view:", type(of: v), v.frame, v.registeredDraggedTypes.map(\.rawValue).prefix(6))
+                }
+                let pb = NSPasteboard(name: .init("suhyeok-test-drop"))
+                pb.clearContents(); pb.writeObjects([URL(fileURLWithPath: file) as NSURL])
+                func editable(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(editable) }
+                var point = NSPoint(x: host.bounds.midX, y: host.bounds.midY)
+                // SUHYEOK_TEST_DROP_AT=field: focus the input (as when the dialogue opens) and drop right on it.
+                if ProcessInfo.processInfo.environment["SUHYEOK_TEST_DROP_AT"] == "field", let f = editable(host).first(where: \.isEditable) {
+                    window.makeFirstResponder(f)
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+                    let r = f.convert(f.bounds, to: nil)
+                    point = NSPoint(x: r.midX, y: r.midY)
+                    for v in all(host) where !v.registeredDraggedTypes.isEmpty {
+                        print("after focus:", type(of: v), v.convert(v.bounds, to: nil), v.registeredDraggedTypes.count)
+                    }
+                }
+                let drag = TestDrag(pasteboard: pb, location: point, window: window)
+                if let target = all(host).last(where: { !$0.registeredDraggedTypes.isEmpty && $0.convert($0.bounds, to: nil).contains(point) }) {
+                    print("target:", type(of: target))
+                    print("entered:", target.draggingEntered(drag), "updated:", target.draggingUpdated(drag))
+                    print("perform:", target.performDragOperation(drag))
+                } else { print("no drop target under", point) }
+                RunLoop.main.run(until: Date().addingTimeInterval(1))
+                func fields(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(fields) }
+                print("field:", fields(host).first(where: \.isEditable)?.stringValue ?? "-")
+                pb.releaseGlobally()
+            }
             // SUHYEOK_SNAPSHOT_SCROLL=top: scroll the conversation up first (shows the "맨 아래로" button).
             if ProcessInfo.processInfo.environment["SUHYEOK_SNAPSHOT_SCROLL"] == "top" {
                 func scrollViews(_ v: NSView) -> [NSScrollView] { (v as? NSScrollView).map { [$0] } ?? v.subviews.flatMap(scrollViews) }
@@ -1059,4 +1347,29 @@ enum Snapshot {
         print(text.split(separator: "\n", omittingEmptySubsequences: false).suffix(14).joined(separator: "\n"))
         exit(0)
     }
+}
+
+
+/// A drag that never happened on screen, for checking drop handling offscreen.
+final class TestDrag: NSObject, NSDraggingInfo {
+    let draggingPasteboard: NSPasteboard
+    let draggingLocation: NSPoint
+    let draggingDestinationWindow: NSWindow?
+    init(pasteboard: NSPasteboard, location: NSPoint, window: NSWindow) {
+        draggingPasteboard = pasteboard; draggingLocation = location; draggingDestinationWindow = window
+    }
+    var draggingSourceOperationMask: NSDragOperation { .copy }
+    var draggedImageLocation: NSPoint { draggingLocation }
+    var draggedImage: NSImage? { nil }
+    var draggingSource: Any? { nil }
+    var draggingSequenceNumber: Int { 1 }
+    var draggingFormation: NSDraggingFormation = .default
+    var animatesToDestination = false
+    var numberOfValidItemsForDrop = 1
+    var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+    func slideDraggedImage(to screenPoint: NSPoint) {}
+    func enumerateDraggingItems(options: NSDraggingItemEnumerationOptions = [], for view: NSView?, classes: [AnyClass],
+                                searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:],
+                                using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+    func resetSpringLoading() {}
 }

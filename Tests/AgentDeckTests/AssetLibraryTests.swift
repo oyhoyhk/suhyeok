@@ -34,6 +34,9 @@ final class AssetLibraryTests: XCTestCase {
         try lib.install(listingId: "abc123", manifest: m, files: files)
         XCTAssertEqual(lib.characters.map(\.id), ["market.abc123"])
         XCTAssertEqual(lib.characters.first?.name, "Tester")
+        // The profile rides along, so a bought character gets its voice like a bundled one.
+        XCTAssertNotNil(lib.characters.first?.ko)
+        XCTAssertNotNil(lib.characters.first.flatMap(Persona.instructions(for:)))
         XCTAssertEqual(lib.file(forArtName: "frames/market.abc123/walk_down_1")?.lastPathComponent, "walk_down_1.png")
         XCTAssertEqual(lib.file(forArtName: "sprites/market.abc123")?.lastPathComponent, "sprite.png")
         XCTAssertEqual(lib.file(forArtName: "portraits/market.abc123")?.lastPathComponent, "portrait.jpg")

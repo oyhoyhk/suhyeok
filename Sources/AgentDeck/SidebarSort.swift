@@ -9,11 +9,11 @@ enum SidebarSort: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .folder: return "폴더별"
-        case .lastActivity: return "마지막 응답 순"
-        case .created: return "생성 순"
-        case .name: return "이름 순"
-        case .status: return "상태 순"
+        case .folder: return String(localized: "폴더별")
+        case .lastActivity: return String(localized: "마지막 응답 순")
+        case .created: return String(localized: "생성 순")
+        case .name: return String(localized: "이름 순")
+        case .status: return String(localized: "상태 순")
         }
     }
 
@@ -41,6 +41,21 @@ struct SidebarItem: Identifiable {
 }
 
 extension SessionStore {
+    func hostedItem(_ h: TmuxEngine.Hosted) -> SidebarItem {
+        let s = session(hosted: h.name)
+        return SidebarItem(id: h.name, tag: .hosted(h.name), title: s?.name ?? h.title,
+                           subtitle: (h.agent?.rawValue ?? String(localized: "터미널")) + " · " + (h.cwd as NSString).lastPathComponent,
+                           session: s, cwd: h.cwd, created: s?.startedAt ?? h.created, hosted: h)
+    }
+
+    /// The 수혁 세션 rows top to bottom, as the sidebar shows them (⌘1…⌘9, ⌘0 follow this order).
+    func hostedAgentPanes() -> [Pane] {
+        let d = UserDefaults.standard
+        let sort = d.string(forKey: SidebarSort.key).flatMap(SidebarSort.init) ?? .lastActivity
+        let items = hosted.filter { $0.agent != nil }.map(hostedItem)
+        return ordered(items, by: sort, ascending: d.bool(forKey: SidebarSort.ascendingKey)).flatMap(\.items).map(\.tag)
+    }
+
     /// Items in the chosen order; for `.folder`, grouped under their folder (folders in order, newest activity
     /// first inside each). Other orders come back as a single group with no folder name.
     func ordered(_ items: [SidebarItem], by sort: SidebarSort, ascending: Bool) -> [(folder: String?, items: [SidebarItem])] {
@@ -110,9 +125,11 @@ struct SidebarSortBar: View {
 
     private func directionHelp(_ s: SidebarSort) -> String {
         switch s {
-        case .folder, .name: return ascending ? "가 → 하 (누르면 반대로)" : "하 → 가 (누르면 반대로)"
-        case .lastActivity, .created: return ascending ? "오래된 것 먼저 (누르면 최신 먼저)" : "최신 먼저 (누르면 오래된 것 먼저)"
-        case .status: return ascending ? "선택 필요 → 작업 중 → 대기 → 휴식" : "휴식 → 대기 → 작업 중 → 선택 필요"
+        case .folder, .name: return ascending ? String(localized: "가 → 하 (누르면 반대로)") : String(localized: "하 → 가 (누르면 반대로)")
+        case .lastActivity, .created:
+            return ascending ? String(localized: "오래된 것 먼저 (누르면 최신 먼저)") : String(localized: "최신 먼저 (누르면 오래된 것 먼저)")
+        case .status:
+            return ascending ? String(localized: "선택 필요 → 작업 중 → 대기 → 휴식") : String(localized: "휴식 → 대기 → 작업 중 → 선택 필요")
         }
     }
 }

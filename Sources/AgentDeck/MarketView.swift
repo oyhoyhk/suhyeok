@@ -60,7 +60,7 @@ struct MarketView: View {
         } catch is CancellationError {
         } catch URLError.cancelled {  // switching tabs cancels the previous load: not an error
         } catch {
-            message = "마켓을 불러오지 못함: \(CrystalBank.describe(error))"
+            message = String(localized: "마켓을 불러오지 못함: \(CrystalBank.describe(error))")
         }
     }
 
@@ -104,8 +104,9 @@ struct MarketView: View {
                 }
             }
             .frame(height: 150).frame(maxWidth: .infinity)
-            Text(l.name).font(.headline).lineLimit(1)
-            Text("\(l.seller.alias?.isEmpty == false ? l.seller.alias! : "판매자") · \(l.seller.tag)")
+            Text(l.profile.map { L10n.english ? l.name : "\($0.ko) · \(l.name)" } ?? l.name).font(.headline).lineLimit(1)
+            if let role = l.profile?.role { Text(role).font(.caption).lineLimit(1) }
+            Text("\(l.seller.alias?.isEmpty == false ? l.seller.alias! : String(localized: "판매자")) · \(l.seller.tag)")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             if let d = l.description, !d.isEmpty { Text(d).font(.caption).lineLimit(3) }
             HStack {
@@ -125,6 +126,10 @@ struct MarketView: View {
         }
         .padding(10)
         .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+        .hoverInfo {
+            CharacterInfo(character: Character(id: AssetLibrary.idPrefix + l.id, name: l.name, ko: l.profile?.ko, role: l.profile?.role,
+                                               visual: l.profile?.visual, tone: l.profile?.tone))
+        }
     }
 
     private func act(_ id: String, _ work: (MarketService) async throws -> Void) async {
@@ -145,6 +150,7 @@ struct MarketView: View {
 
     @State private var folder: URL?
     @State private var issues: [String] = []
+    @State private var picked: Character?
     @State private var price = 300
     @State private var alias = ""
     @State private var note = ""
@@ -154,13 +160,22 @@ struct MarketView: View {
         VStack(alignment: .leading, spacing: 16) {
             GroupBox("새 캐릭터 올리기") {
                 VStack(alignment: .leading, spacing: 8) {
+                    MarketGuide()
+                    Divider()
                     HStack {
                         Button("팩 폴더 선택…") { pickFolder() }
-                        Text(folder?.lastPathComponent ?? "manifest.json이 있는 폴더 (docs/asset-pack-spec.md)").font(.caption).foregroundStyle(.secondary)
+                        Text(folder?.lastPathComponent ?? String(localized: "manifest.json이 있는 폴더 (docs/asset-pack-spec.md)")).font(.caption).foregroundStyle(.secondary)
                     }
                     if !issues.isEmpty {
-                        Text("규격 오류: " + issues.joined(separator: ", ")).font(.caption).foregroundStyle(.red)
+                        Text("규격 오류: \(issues.joined(separator: ", "))").font(.caption).foregroundStyle(.red)
                     }
+                    if let picked {
+                        // What buyers will get: their agents talk in this voice.
+                        CharacterInfo(character: picked)
+                            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    Text("팩에는 일러스트·스프라이트·동작 프레임과 profile(한글 이름·직업·말투, 선택: 외형·무기)이 모두 있어야 함 (format 2, docs/asset-pack-spec.md). 말투는 구매자 에이전트의 대답 말투로 쓰임.")
+                        .font(.caption).foregroundStyle(.secondary)
                     HStack {
                         Text("가격")
                         TextField("", value: $price, format: .number).frame(width: 80).textFieldStyle(.roundedBorder)
@@ -169,7 +184,7 @@ struct MarketView: View {
                     TextField("판매자 별칭 (선택, 24자)", text: $alias).textFieldStyle(.roundedBorder).frame(maxWidth: 260)
                     TextField("설명 (선택, 500자)", text: $note, axis: .vertical).textFieldStyle(.roundedBorder).lineLimit(2...4)
                     HStack {
-                        Button(progress.map { "올리는 중 \($0.0)/\($0.1)" } ?? "심사 요청") { Task { await upload() } }
+                        Button(progress.map { String(localized: "올리는 중 \($0.0)/\($0.1)") } ?? String(localized: "심사 요청")) { Task { await upload() } }
                             .disabled(folder == nil || !issues.isEmpty || progress != nil || !bank.canTrade || !(50...5000).contains(price))
                         Text("운영진이 승인하면 마켓에 올라감").font(.caption).foregroundStyle(.secondary)
                     }
@@ -198,8 +213,9 @@ struct MarketView: View {
         }
     }
 
-    static let status = ["draft": "올리는 중", "pending": "심사 대기", "approved": "판매 중", "rejected": "거절",
-                         "delisted": "판매 중지", "withdrawn": "취소"]
+    static let status = ["draft": String(localized: "올리는 중"), "pending": String(localized: "심사 대기"),
+                         "approved": String(localized: "판매 중"), "rejected": String(localized: "거절"),
+                         "delisted": String(localized: "판매 중지"), "withdrawn": String(localized: "취소")]
 
     private func pickFolder() {
         let panel = NSOpenPanel()
@@ -207,7 +223,14 @@ struct MarketView: View {
         panel.canChooseFiles = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         folder = url
-        issues = AssetPack.codes(AssetPack.validate(folder: url))
+        let manifest = (try? Data(contentsOf: url.appendingPathComponent("manifest.json"))).flatMap { AssetPack.validateManifest($0).0 }
+        var found = AssetPack.validate(folder: url)
+        // Format 1 packs still install, but new uploads must carry a profile.
+        if let m = manifest, m.format != AssetPack.uploadFormat { found.append(.init(code: "bad_format_version", path: "")) }
+        issues = AssetPack.codes(found)
+        picked = manifest.flatMap { m in
+            m.profile.map { Character(id: "", name: m.name ?? "", ko: $0.ko, role: $0.role, visual: $0.visual, tone: $0.tone) }
+        }
     }
 
     private func upload() async {
@@ -218,8 +241,9 @@ struct MarketView: View {
             try await market.upload(folder: folder, price: price, alias: alias, description: note) { done, total in
                 progress = (done, total)
             }
-            message = "심사 요청을 보냄"
+            message = String(localized: "심사 요청을 보냄")
             self.folder = nil
+            picked = nil
             mine = try? await market.mine()
         } catch {
             message = CrystalBank.describe(error)

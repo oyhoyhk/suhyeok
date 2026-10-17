@@ -127,19 +127,27 @@ final class MobileServer: ObservableObject {
     private static let maxConnections = 32
     private static let maxHeader = 16 * 1024
     private static let maxBody = 64 * 1024
+    /// Files sent from the phone (POST /api/upload) may be larger, but only from a paired phone (see receive).
+    static let maxUpload = 25 * 1024 * 1024
+    /// Connections carrying an upload: they get minutes instead of 15 s, as phone networks are slow.
+    private var uploading: Set<ObjectIdentifier> = []
 
     private func serve(_ c: NWConnection) {
         guard connections < Self.maxConnections else { c.cancel(); return }
         connections += 1
         c.stateUpdateHandler = { [weak self] st in
             switch st {
-            case .cancelled, .failed: Task { @MainActor in self?.connections -= 1 }
+            case .cancelled, .failed: Task { @MainActor in self?.connections -= 1; self?.uploading.remove(ObjectIdentifier(c)) }
             default: break
             }
         }
         c.start(queue: .main)
         // Slow or idle clients are dropped after 15 s.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { if c.state != .cancelled { c.cancel() } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+            guard c.state != .cancelled else { return }
+            guard self?.uploading.contains(ObjectIdentifier(c)) == true else { c.cancel(); return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 285) { if c.state != .cancelled { c.cancel() } }
+        }
         receive(c, buffer: Data())
     }
 
@@ -149,6 +157,7 @@ final class MobileServer: ObservableObject {
                 guard let self else { return }
                 var buf = buffer
                 if let data { buf.append(data) }
+                if buffer.isEmpty, buf.starts(with: Data("POST /api/upload".utf8)) { self.uploading.insert(ObjectIdentifier(c)) }
                 switch Self.parse(buf) {
                 case .ready(let req):
                     let (status, type, body, extra) = await self.route(req)
@@ -157,6 +166,9 @@ final class MobileServer: ObservableObject {
                     self.respond(c, status: 400, type: "text/plain", body: Data("bad request".utf8), headers: [:])
                 case .incomplete where done || err != nil:
                     c.cancel()
+                // Past the normal body size only a paired phone may keep sending (an upload).
+                case .incomplete where buf.count > Self.maxBody + Self.maxHeader && !self.authorizedHead(buf):
+                    self.respond(c, status: 401, type: "application/json", body: Data(#"{"error":"pair"}"#.utf8), headers: [:])
                 case .incomplete:
                     self.receive(c, buffer: buf)
                 }
@@ -166,21 +178,29 @@ final class MobileServer: ObservableObject {
 
     private enum Parsed { case ready(Request), incomplete, bad }
 
-    private static func parse(_ d: Data) -> Parsed {
-        guard let headEnd = d.firstRange(of: Data("\r\n\r\n".utf8)) else {
-            return d.count > maxHeader ? .bad : .incomplete
-        }
-        guard headEnd.lowerBound - d.startIndex <= maxHeader,
-              let head = String(data: d[..<headEnd.lowerBound], encoding: .utf8) else { return .bad }
+    /// The request line and headers, once they have all arrived; `bodyStart` is where the body begins in `d`.
+    private struct Head { let first: [Substring]; let headers: [String: String]; let bodyStart: Data.Index }
+
+    private static func head(_ d: Data) -> Head? {
+        guard let headEnd = d.firstRange(of: Data("\r\n\r\n".utf8)), headEnd.lowerBound - d.startIndex <= maxHeader,
+              let head = String(data: d[..<headEnd.lowerBound], encoding: .utf8) else { return nil }
         var lines = head.components(separatedBy: "\r\n")
         let first = lines.removeFirst().split(separator: " ")
-        guard first.count >= 2 else { return .bad }
+        guard first.count >= 2 else { return nil }
         var headers: [String: String] = [:]
         for l in lines { if let i = l.firstIndex(of: ":") { headers[l[..<i].lowercased()] = l[l.index(after: i)...].trimmingCharacters(in: .whitespaces) } }
+        return Head(first: first, headers: headers, bodyStart: headEnd.upperBound)
+    }
+
+    private static func parse(_ d: Data) -> Parsed {
+        guard d.firstRange(of: Data("\r\n\r\n".utf8)) != nil else { return d.count > maxHeader ? .bad : .incomplete }
+        guard let h = head(d) else { return .bad }
+        let first = h.first, headers = h.headers
         // Reject negative, non-numeric and oversized lengths (a negative one used to crash prefix()).
-        guard let length = Int(headers["content-length"] ?? "0"), (0...maxBody).contains(length) else { return .bad }
+        let limit = first[1].hasPrefix("/api/upload") ? maxUpload : maxBody
+        guard let length = Int(headers["content-length"] ?? "0"), (0...limit).contains(length) else { return .bad }
         guard headers["transfer-encoding"] == nil else { return .bad }  // chunked bodies are not supported
-        let body = d[headEnd.upperBound...]
+        let body = d[h.bodyStart...]
         guard body.count >= length else { return .incomplete }
         let target = String(first[1])
         var path = target, query: [String: String] = [:]
@@ -212,6 +232,12 @@ final class MobileServer: ObservableObject {
 
     private static func hash(_ t: String) -> String { SHA256.hash(data: Data(t.utf8)).map { String(format: "%02x", $0) }.joined() }
 
+    /// `authorized` for a request whose body is still arriving: judged from its headers alone.
+    private func authorizedHead(_ d: Data) -> Bool {
+        guard let h = Self.head(d) else { return false }
+        return authorized(Request(method: "POST", path: "", query: [:], headers: h.headers, body: Data()))
+    }
+
     private func authorized(_ r: Request) -> Bool {
         let cookie = r.headers["cookie"] ?? ""
         guard let t = cookie.split(separator: ";").map({ $0.trimmingCharacters(in: .whitespaces) })
@@ -235,7 +261,9 @@ final class MobileServer: ObservableObject {
     /// State-changing calls only from our own page: JSON bodies and, when the browser says, same-origin.
     private func sameOrigin(_ r: Request) -> Bool {
         guard r.method == "POST" else { return true }
-        guard (r.headers["content-type"] ?? "").hasPrefix("application/json") else { return false }
+        // Neither type can be sent cross-site without a CORS preflight, which this server never answers.
+        let type = r.path == "/api/upload" ? "application/octet-stream" : "application/json"
+        guard (r.headers["content-type"] ?? "").hasPrefix(type) else { return false }
         if let site = r.headers["sec-fetch-site"], site != "same-origin", site != "none" { return false }
         if let origin = r.headers["origin"], let host = URL(string: origin)?.host, let h = r.headers["host"],
            host.lowercased() != h.split(separator: ":").first.map(String.init)?.lowercased() { return false }
@@ -300,37 +328,79 @@ final class MobileServer: ObservableObject {
             guard let s = session(body["id"] as? String), let text = body["text"] as? String, !text.isEmpty else { return json(["ok": false], 400) }
             let ok = await Task.detached { SessionInput.send(s, text: text) }.value
             return json(["ok": ok])
+        // A file from the phone, kept in a temporary folder (Attachments.savePhone); the phone puts the path in its message.
+        case ("POST", "/api/upload"):
+            guard !r.body.isEmpty, let path = Attachments.savePhone(r.body, name: r.query["name"] ?? "") else { return json(["ok": false], 400) }
+            return json(["ok": true, "path": path])
+        // Terminal tab (MobileTerminal): 수혁's tmux sessions, their screens, typing and keys, a new shell.
+        case ("GET", "/api/terminals"):
+            return json(["terminals": await MobileTerminal.list(store)])
+        case ("GET", "/api/term"):
+            let name = r.query["name"] ?? "", history = Int(r.query["history"] ?? "") ?? 300
+            guard let screen = await Task.detached(operation: { MobileTerminal.screen(name, history: history) }).value
+            else { return json(["error": "gone"], 404) }
+            return json(screen)
+        case ("POST", "/api/term-input"):
+            guard let name = body["name"] as? String else { return json(["ok": false], 400) }
+            let text = body["text"] as? String, key = body["key"] as? String
+            let ok = await Task.detached { () -> Bool in
+                if let text { return MobileTerminal.type(name, text: text) }
+                if let key { return MobileTerminal.press(name, key: key) }
+                return false
+            }.value
+            return json(["ok": ok])
+        case ("POST", "/api/term-new"):
+            guard let name = await Task.detached(operation: { TmuxEngine.createShell(cwd: NSHomeDirectory()) }).value
+            else { return json(["ok": false]) }
+            store.refresh()
+            return json(["ok": true, "name": name])
+        // New session from the phone's ＋ button (NewSessionSheet in Workspace.swift): recent folders, then start.
+        case ("GET", "/api/folders"):
+            return json(["home": NSHomeDirectory(), "folders": store.knownFolders])
+        case ("POST", "/api/new"):
+            var dir: ObjCBool = false
+            guard let name = body["agent"] as? String, let agent = Agent(rawValue: name),
+                  let cwd = body["cwd"] as? String, FileManager.default.fileExists(atPath: cwd, isDirectory: &dir), dir.boolValue
+            else { return json(["ok": false, "message": String(localized: "작업 폴더가 없음")]) }
+            let prompt = (body["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            store.start(agent: agent, cwd: cwd, prompt: prompt.isEmpty ? nil : prompt)
+            return json(["ok": true])
         // The Mac's right-click menu, from the phone's long press (AgentMenu in Workspace.swift).
         case ("POST", "/api/action"):
             guard let s = session(body["id"] as? String), let action = body["action"] as? String else { return json(["ok": false], 400) }
             switch action {
             case "clone":
-                guard s.conversationId != nil else { return json(["ok": false, "message": "이어 열 대화가 없음"]) }
+                guard s.conversationId != nil else { return json(["ok": false, "message": String(localized: "이어 열 대화가 없음")]) }
                 store.clone(s)
-                return json(["ok": true, "message": "클론을 만드는 중"])
+                return json(["ok": true, "message": String(localized: "클론을 만드는 중")])
             case "rename":
                 store.setSummary(body["text"] as? String ?? "", for: s)
                 store.refresh()
                 return json(["ok": true])
             case "clear":
-                guard s.agent == .claude else { return json(["ok": false, "message": "Claude 세션만 가능"]) }
+                guard s.agent == .claude else { return json(["ok": false, "message": String(localized: "Claude 세션만 가능")]) }
                 let ok = await Task.detached { SessionInput.send(s, text: "/clear") }.value
                 return json(["ok": ok])
             case "migrate":
-                guard s.hostedName == nil, s.conversationId != nil else { return json(["ok": false, "message": "옮길 수 없는 세션"]) }
+                guard s.hostedName == nil, s.conversationId != nil else { return json(["ok": false, "message": String(localized: "옮길 수 없는 세션")]) }
                 let r = await store.migrate([s], closeOriginal: true).first
                 return json(["ok": r?.ok ?? false, "message": r?.message ?? ""])
             case "end":
                 let note = await store.end(s)
-                return json(["ok": true, "message": note ?? "종료함"])
+                return json(["ok": true, "message": note ?? String(localized: "종료함")])
             default:
                 return json(["ok": false], 400)
             }
         case ("POST", "/api/choose"):
             guard let s = session(body["id"] as? String), let i = body["index"] as? Int else { return json(["ok": false], 400) }
+            // "text" answers the menu's "Type something" row.
+            let text = (body["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let ok = await Task.detached { () -> Bool in
                 guard let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 60),
                       let menu = TerminalMenu.parse(t), menu.options.indices.contains(i) else { return false }
+                if menu.isFreeText(i) {
+                    return !text.isEmpty && SessionInput.answer(s, menu: menu, index: i, text: text)
+                }
                 return SessionInput.choose(s, menu: menu, index: i)
             }.value
             return json(["ok": ok])
@@ -350,17 +420,17 @@ final class MobileServer: ObservableObject {
     private func pair(_ r: Request) -> (Int, String, Data, [String: String]) {
         let who = client(r)
         failedPairs[who] = (failedPairs[who] ?? []).filter { Date().timeIntervalSince($0) < 600 }
-        guard failedPairs[who]!.count < 5 else { return json(["error": "잠시 후 다시 시도 — Mac에서 '연결 시작'을 다시 누르면 바로 풀림"], 429) }
+        guard failedPairs[who]!.count < 5 else { return json(["error": String(localized: "잠시 후 다시 시도 — Mac에서 '연결 시작'을 다시 누르면 바로 풀림")], 429) }
         let body = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any] ?? [:]
         guard let given = body["secret"] as? String, let secret = pairingSecret, Date() < secretExpires,
               Self.equal(given, secret) else {
             failedPairs[who, default: []].append(Date())
-            return json(["error": "연결 QR이 만료됨 — Mac의 수혁 설정에서 '연결 시작'을 누르고 QR을 다시 찍기"], 403)
+            return json(["error": String(localized: "연결 QR이 만료됨 — Mac의 수혁 설정에서 '연결 시작'을 누르고 QR을 다시 찍기")], 403)
         }
         pairingSecret = nil  // single use
         pending.removeAll { Date().timeIntervalSince($0.created) > 120 }
         let req = PendingPair(id: Self.random(16), device: Self.deviceName(r.headers["user-agent"] ?? ""),
-                              client: who == "local" ? "이 Mac" : who, created: Date())
+                              client: who == "local" ? String(localized: "이 Mac") : who, created: Date())
         pending.append(req)
         PairApproval.shared.show(server: self)
         return json(["pending": req.id])
@@ -369,18 +439,18 @@ final class MobileServer: ObservableObject {
     /// Step 2: the phone polls until the owner decides. The token is handed over once, as a cookie.
     private func pairStatus(_ r: Request) -> (Int, String, Data, [String: String]) {
         guard let id = r.query["id"], let i = pending.firstIndex(where: { $0.id == id }) else {
-            return json(["error": "요청을 찾을 수 없음 — 다시 연결"], 404)
+            return json(["error": String(localized: "요청을 찾을 수 없음 — 다시 연결")], 404)
         }
         if Date().timeIntervalSince(pending[i].created) > 120 {
             pending.remove(at: i); PairApproval.shared.update()
-            return json(["error": "Mac에서 2분 안에 허용하지 않아 만료됨"], 410)
+            return json(["error": String(localized: "Mac에서 2분 안에 허용하지 않아 만료됨")], 410)
         }
         switch pending[i].decision {
         case nil:
             return json(["waiting": true])
         case false?:
             pending.remove(at: i)
-            return json(["error": "Mac에서 거부됨"], 403)
+            return json(["error": String(localized: "Mac에서 거부됨")], 403)
         case true?:
             let token = pending[i].token ?? ""
             pending.remove(at: i)
@@ -400,7 +470,7 @@ final class MobileServer: ObservableObject {
     private static func deviceName(_ ua: String) -> String {
         for (k, n) in [("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Macintosh", "Mac"), ("Windows", "Windows")]
             where ua.contains(k) { return n }
-        return "브라우저"
+        return String(localized: "브라우저")
     }
 
     private func asset(_ path: String) -> Data? {
@@ -414,6 +484,7 @@ final class MobileServer: ObservableObject {
             return [
                 "id": s.id, "name": store.agentName(for: s), "title": s.name, "project": s.project, "cwd": s.cwd,
                 "agent": s.agent.rawValue, "status": s.status.rawValue, "activity": s.activity.label,
+                "activityCode": "\(s.activity)",  // working / waiting / resting; the label follows the Mac's language
                 "character": store.character(for: s)?.id ?? "", "x": p.point.x, "y": p.point.y,
                 "tier": p.tier.map { World.key($0) } ?? NSNull(), "hunt": store.huntLine(for: s),
                 "action": s.action?.detail ?? "", "last": store.lastActivity(for: s)?.timeIntervalSince1970 ?? 0,
@@ -436,11 +507,17 @@ final class MobileServer: ObservableObject {
             var out: [String: Any] = [
                 "items": items.suffix(80).filter { $0.role != .result }.map { ["role": "\($0.role)", "text": $0.text] },
                 // The phone's header shows where the agent is now, fresher than the list it was opened from.
-                "status": s.status.rawValue, "activity": s.activity.label, "action": s.action?.detail ?? "",
+                "status": s.status.rawValue, "activity": s.activity.label, "activityCode": "\(s.activity)",
+                "action": s.action?.detail ?? "",
             ]
             if let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 60) {
                 if let m = TerminalMenu.parse(t) {
-                    out["menu"] = m.options.map { ["label": $0.label, "detail": $0.detail ?? ""] }
+                    out["menu"] = m.options.indices.map { i -> [String: Any] in
+                        ["label": m.options[i].label, "detail": m.options[i].detail ?? "", "free": m.isFreeText(i)]
+                    }
+                    // What is being asked and why, shown above the choices as on the Mac (DialogueView.menuCard).
+                    out["menuQuestion"] = m.question.map(DialogueView.translate) ?? ""
+                    out["menuContext"] = m.context ?? ""
                 } else if s.status == .busy {
                     out["live"] = LiveReply.turn(t)
                 }
@@ -464,7 +541,7 @@ final class MobileTunnel: ObservableObject {
 
     func start() {
         guard process == nil else { return }
-        guard let bin = Self.cloudflared else { error = "cloudflared 없음 — 터미널에서 brew install cloudflared"; return }
+        guard let bin = Self.cloudflared else { error = String(localized: "cloudflared 없음 — 터미널에서 brew install cloudflared"); return }
         error = nil
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
@@ -483,7 +560,7 @@ final class MobileTunnel: ObservableObject {
                 }
             }
             p.terminationHandler = { _ in Task { @MainActor in MobileTunnel.shared.process = nil; MobileTunnel.shared.url = nil } }
-            do { try p.run(); process = p } catch { self.error = "터널을 시작하지 못함: \(error.localizedDescription)" }
+            do { try p.run(); process = p } catch { self.error = String(localized: "터널을 시작하지 못함: \(error.localizedDescription)") }
             return
         }
         // An empty config of our own: a user's ~/.cloudflared/config.yml (named tunnels, catch-all 404 ingress)
@@ -505,7 +582,7 @@ final class MobileTunnel: ObservableObject {
             }
         }
         p.terminationHandler = { _ in Task { @MainActor in MobileTunnel.shared.process = nil; MobileTunnel.shared.url = nil } }
-        do { try p.run(); process = p } catch { self.error = "터널을 시작하지 못함: \(error.localizedDescription)" }
+        do { try p.run(); process = p } catch { self.error = String(localized: "터널을 시작하지 못함: \(error.localizedDescription)") }
     }
 
     /// `~/Library/Application Support/Suhyeok/named-tunnel.yml`: a cloudflared config for a named tunnel whose
@@ -552,7 +629,7 @@ final class PairApproval {
             let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 380, height: 190),
                             styleMask: [.titled, .nonactivatingPanel, .hudWindow, .utilityWindow], backing: .buffered, defer: false)
             p.level = .floating
-            p.title = "수혁 · 새 기기 연결"
+            p.title = String(localized: "수혁 · 새 기기 연결")
             p.isReleasedWhenClosed = false
             p.center()
             panel = p

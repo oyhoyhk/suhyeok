@@ -101,7 +101,7 @@ struct WaitingBoard: View {
         .contentShape(Rectangle())
         .onHover { hovered = $0 ? s.id : (hovered == s.id ? nil : hovered) }
         .onTapGesture { open(s) }
-        .help(s.lastAssistant.map { "마지막 답변: " + $0 } ?? s.name)
+        .help(s.lastAssistant.map { String(localized: "마지막 답변: \($0)") } ?? s.name)
     }
 
     private func face(_ s: AgentSession, asking: Bool) -> some View {

@@ -40,12 +40,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func observe(_ sessions: [AgentSession], store: SessionStore) {
         defer { last = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) }) }
         guard !last.isEmpty else { return }
-        for s in sessions {
+        // Subagents (nested under the agent that launched them) report through their parent; no banner or phone event.
+        for s in sessions where s.parentId == nil {
             guard let before = last[s.id], before != s.status else { continue }
             let name = store.agentName(for: s)
             let kind: String, text: String
             if s.status == .waiting {
-                kind = "asking"; text = "\(s.name) — 선택지에서 멈춰 답을 기다림"
+                kind = "asking"; text = String(localized: "\(s.name) — 선택지에서 멈춰 답을 기다림")
             } else if before == .busy, s.status == .idle || s.status == .shell {
                 kind = "done"; text = s.lastAssistant.map { oneLine(Speaker.plain($0), limit: 160) } ?? s.name  // no ** or ` in a banner
             } else { continue }
@@ -55,7 +56,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             // Banners on the Mac; not for the agent you are looking at.
             guard authorized, kind == "asking" ? Self.asking : Self.done else { continue }
             if NSApp.isActive, store.selectedSession?.id == s.id { continue }
-            post(s, title: "\(name) · \(kind == "asking" ? "선택 필요" : "작업 완료")", body: text, sound: kind == "asking")
+            post(s, title: "\(name) · \(kind == "asking" ? String(localized: "선택 필요") : String(localized: "작업 완료"))", body: text, sound: kind == "asking")
         }
     }
 

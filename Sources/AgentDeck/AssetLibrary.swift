@@ -12,6 +12,8 @@ final class AssetLibrary {
         let listingId: String
         let name: String
         let installedAt: Date
+        /// From the pack's manifest; nil for format 1 packs.
+        var profile: AssetPack.Profile? = nil
     }
 
     enum Failure: Error, Equatable { case invalid([String]), io }
@@ -31,7 +33,12 @@ final class AssetLibrary {
     /// folder simply drops out; sessions using it fall back to a bundled character).
     var installed: [Installed] { lock.withLock { _installed } }
 
-    var characters: [Character] { installed.map { Character(id: Self.idPrefix + $0.listingId, name: $0.name) } }
+    var characters: [Character] {
+        installed.map {
+            Character(id: Self.idPrefix + $0.listingId, name: $0.name, ko: $0.profile?.ko, role: $0.profile?.role,
+                      visual: $0.profile?.visual, tone: $0.profile?.tone)
+        }
+    }
 
     func reload() {
         let listed = (try? Data(contentsOf: indexURL)).flatMap { try? Self.decoder.decode([Installed].self, from: $0) } ?? []
@@ -49,7 +56,8 @@ final class AssetLibrary {
         guard listingId.range(of: "^[A-Za-z0-9_-]{1,64}$", options: .regularExpression) != nil else { throw Failure.invalid(["bad_path"]) }
         let issues = AssetPack.validate(manifest: manifest, files: files)
         guard issues.isEmpty else { throw Failure.invalid(AssetPack.codes(issues)) }
-        let name = (try? JSONSerialization.jsonObject(with: manifest) as? [String: Any])?["name"] as? String ?? listingId
+        let header = AssetPack.validateManifest(manifest).0
+        let name = header?.name ?? listingId
 
         let fm = FileManager.default
         let staging = root.appendingPathComponent(".staging-\(listingId)-\(UUID().uuidString)", isDirectory: true)
@@ -69,7 +77,8 @@ final class AssetLibrary {
         try lock.withLock {
             // A reinstall keeps its place: roster indices of the characters after it must not move.
             var next = _installed
-            let entry = Installed(listingId: listingId, name: name.trimmingCharacters(in: .whitespacesAndNewlines), installedAt: Date())
+            let entry = Installed(listingId: listingId, name: name.trimmingCharacters(in: .whitespacesAndNewlines), installedAt: Date(),
+                                  profile: header?.profile)
             if let i = next.firstIndex(where: { $0.listingId == listingId }) { next[i] = entry } else { next.append(entry) }
             do { try Self.encoder.encode(next).write(to: indexURL, options: .atomic) } catch { throw Failure.io }
             _installed = next

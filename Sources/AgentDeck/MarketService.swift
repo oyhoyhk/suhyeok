@@ -15,6 +15,8 @@ final class MarketService {
         let seller: Seller
         let sales: Int?
         let previews: Previews?
+        /// Format 2 listings: who the character is and how it talks.
+        var profile: AssetPack.Profile? = nil
     }
     struct MyListing: Decodable, Identifiable, Equatable {
         let id: String

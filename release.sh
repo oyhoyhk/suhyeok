@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 VERSION="$(cat VERSION)"
-./build.sh
+SIGN_ADHOC=1 ./build.sh  # releases stay ad-hoc; the dev identity is this Mac only
 mkdir -p dist
 ZIP="dist/suhyeok-$VERSION-arm64.zip"
 rm -f "$ZIP"

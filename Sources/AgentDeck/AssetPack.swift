@@ -10,7 +10,9 @@ enum AssetPack {
         let path: String
     }
 
-    static let format = 1
+    /// Format 2 adds `profile`; uploads need it, format 1 packs already sold keep installing.
+    static let formats = [1, 2]
+    static let uploadFormat = 2
     static let kinds = ["character"]
     static let maxManifest = 16 * 1024
     static let maxFile = 1024 * 1024
@@ -29,9 +31,24 @@ enum AssetPack {
         let format: Int?
         let kind: String?
         let name: String?
+        var profile: Profile? = nil
         let frames: [String: Int]
         let files: [String: FileEntry]
     }
+
+    /// Everything a bundled character has besides its art (art/roster.json): Korean call name, class, voice, looks.
+    struct Profile: Codable, Equatable {
+        let ko: String
+        let role: String
+        let tone: String
+        var visual: String? = nil
+        var weapon: String? = nil
+    }
+
+    /// Profile fields: code-point length range and whether the field must be there.
+    static let profileFields: [(key: String, length: ClosedRange<Int>, required: Bool)] = [
+        ("ko", 1...20, true), ("role", 1...30, true), ("tone", 10...300, true), ("visual", 0...300, false), ("weapon", 0...100, false),
+    ]
 
     private static let pathPattern = try! NSRegularExpression(
         pattern: #"^(?:(portrait)\.(jpg|png)|(sprite)\.png|frames/([a-z_]+)_(\d{1,2})\.png)$"#)
@@ -56,7 +73,14 @@ enum AssetPack {
         guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               raw["files"] is [String: Any], raw["frames"] is [String: Any] else { return (nil, [Issue(code: "bad_manifest", path: "")]) }
         var issues: [Issue] = []
-        if (raw["format"] as? Int) != format || isBool(raw["format"]) { issues.append(Issue(code: "bad_format_version", path: "")) }
+        let version = isBool(raw["format"]) ? nil : raw["format"] as? Int
+        if !formats.contains(version ?? 0) { issues.append(Issue(code: "bad_format_version", path: "")) }
+        var profile: Profile?
+        if raw["profile"] != nil || version == 2 {
+            let (p, problems) = validateProfile(raw["profile"])
+            profile = p
+            issues += problems
+        }
         if !kinds.contains(raw["kind"] as? String ?? "") { issues.append(Issue(code: "bad_kind", path: "")) }
         let name = (raw["name"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty || name.unicodeScalars.count > nameMax || name.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }) {
@@ -94,9 +118,30 @@ enum AssetPack {
                 issues.append(Issue(code: "frame_count", path: motion))
             }
         }
-        let m = Manifest(format: raw["format"] as? Int, kind: raw["kind"] as? String, name: name,
+        let m = Manifest(format: version, kind: raw["kind"] as? String, name: name, profile: profile,
                          frames: declared.compactMapValues { $0 as? Int }, files: files)
         return (m, issues)
+    }
+
+    static func validateProfile(_ value: Any?) -> (Profile?, [Issue]) {
+        guard let d = value as? [String: Any] else { return (nil, [Issue(code: "bad_profile", path: "profile")]) }
+        var issues = d.keys.filter { k in !profileFields.contains { $0.key == k } }.sorted()
+            .map { Issue(code: "bad_profile", path: "profile.\($0)") }
+        var clean: [String: String] = [:]
+        for f in profileFields {
+            guard let v = d[f.key] else {
+                if f.required { issues.append(Issue(code: "bad_profile", path: "profile.\(f.key)")) }
+                continue
+            }
+            let text = (v as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let text, f.length.contains(text.unicodeScalars.count),
+                  !text.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }) else {
+                issues.append(Issue(code: "bad_profile", path: "profile.\(f.key)")); continue
+            }
+            clean[f.key] = text
+        }
+        guard issues.isEmpty, let ko = clean["ko"], let role = clean["role"], let tone = clean["tone"] else { return (nil, issues) }
+        return (Profile(ko: ko, role: role, tone: tone, visual: clean["visual"], weapon: clean["weapon"]), [])
     }
 
     /// JSON `true` arrives as an NSNumber that also casts to Int (and 1 casts to Bool), so ask CoreFoundation.

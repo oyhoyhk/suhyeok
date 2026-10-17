@@ -7,16 +7,16 @@ enum Hunt {
 
         var label: String {
             switch self {
-            case .low: return "하급 사냥터"
-            case .mid: return "중급 사냥터"
-            case .high: return "상급 사냥터"
+            case .low: return String(localized: "하급 사냥터")
+            case .mid: return String(localized: "중급 사냥터")
+            case .high: return String(localized: "상급 사냥터")
             }
         }
         var boss: String {
             switch self {
-            case .low: return "숲의 슬라임 왕"
-            case .mid: return "수정 동굴 골렘"
-            case .high: return "화염 용왕"
+            case .low: return String(localized: "숲의 슬라임 왕")
+            case .mid: return String(localized: "수정 동굴 골렘")
+            case .high: return String(localized: "화염 용왕")
             }
         }
         /// Crystals per 10 active minutes.

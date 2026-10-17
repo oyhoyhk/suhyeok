@@ -20,16 +20,21 @@ enum CodexSource {
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_int64(stmt, 1, Int64((Date().timeIntervalSince1970 - window) * 1000))
 
+        let running = SessionTree.codexRollouts()
         var sessions: [AgentSession] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             let id = column(stmt, 0) ?? ""
             let title = column(stmt, 3).map { oneLine($0, limit: 60) }
             let source = column(stmt, 6) ?? ""
-            let rollout = scan(path: column(stmt, 1) ?? "")
+            let rolloutPath = column(stmt, 1) ?? ""
+            let rollout = scan(path: rolloutPath)
+            // Codex's own subagents record their parent thread as JSON in `source`.
+            let spawn = ((try? JSONSerialization.jsonObject(with: Data(source.utf8))) as? [String: Any])?["subagent"]
+            let parentThread = ((spawn as? [String: Any])?["thread_spawn"] as? [String: Any])?["parent_thread_id"] as? String
             sessions.append(AgentSession(
                 id: "codex-\(id)",
                 agent: .codex,
-                name: (title?.isEmpty == false ? title! : String(id.prefix(8))) + " · \(source)",
+                name: (title?.isEmpty == false ? title! : String(id.prefix(8))) + " · " + (spawn == nil ? source : "subagent"),
                 cwd: column(stmt, 2) ?? "",
                 status: rollout.status,
                 startedAt: Date(timeIntervalSince1970: Double(sqlite3_column_int64(stmt, 4)) / 1000),
@@ -37,9 +42,13 @@ enum CodexSource {
                 lastUser: rollout.user,
                 lastAssistant: rollout.assistant,
                 estimated: true,
+                pid: running[rolloutPath] ?? (spawn == nil && source != "exec" ? SessionTree.codexProcess(
+                    cwd: column(stmt, 2) ?? "", startedAt: Date(timeIntervalSince1970: Double(sqlite3_column_int64(stmt, 4)) / 1000),
+                    excluding: Set(sessions.compactMap(\.pid)).union(running.values)) : nil),
                 action: rollout.action,
                 transcriptPath: column(stmt, 1),
-                conversationId: id
+                conversationId: id,
+                parentId: parentThread.map { "codex-\($0)" }
             ))
         }
         return sessions
@@ -68,8 +77,8 @@ enum CodexSource {
                     let args = (payload["arguments"] as? String ?? payload["input"] as? String ?? "")
                     let input = (try? JSONSerialization.jsonObject(with: Data(args.utf8))) as? [String: Any]
                     action = AgentAction.tool(payload["name"] as? String ?? "", input: input ?? ["cmd": args])
-                case "reasoning": action = AgentAction(kind: .thinking, detail: "생각하는 중")
-                case "message": action = AgentAction(kind: .replying, detail: "답변 작성 중")
+                case "reasoning": action = AgentAction(kind: .thinking, detail: String(localized: "생각하는 중"))
+                case "message": action = AgentAction(kind: .replying, detail: String(localized: "답변 작성 중"))
                 default: sawItem = false
                 }
             }

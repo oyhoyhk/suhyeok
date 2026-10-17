@@ -1,22 +1,47 @@
 import CoreImage
 import SwiftUI
 
+/// Light or dark for the whole app; set in Settings (⌘,). Screens drawn as the game world stay dark either way.
+enum AppAppearance: String, CaseIterable {
+    case system, light, dark
+    static let storageKey = "appearance"
+    var label: String {
+        [.system: String(localized: "시스템 설정 따름"), .light: String(localized: "라이트"), .dark: String(localized: "다크")][self]!
+    }
+
+    static var current: AppAppearance {
+        UserDefaults.standard.string(forKey: storageKey).flatMap(AppAppearance.init) ?? .dark
+    }
+
+    func apply() {
+        NSApplication.shared.appearance = self == .system ? nil : NSAppearance(named: self == .dark ? .darkAqua : .aqua)
+    }
+}
+
 /// How a session opens by default; set in Settings (⌘,).
 enum OpenMode: String, CaseIterable {
     case dialogue, terminal
-    var label: String { self == .dialogue ? "대화창" : "터미널" }
+    var label: String { self == .dialogue ? String(localized: "대화창") : String(localized: "터미널") }
     static let storageKey = "openMode"
 }
 
 struct SettingsView: View {
     @AppStorage(OpenMode.storageKey) private var openMode = OpenMode.dialogue.rawValue
     @AppStorage("skipPermissions") private var skipPermissions = true
+    @AppStorage(Persona.enabledKey) private var characterTone = true
+    @AppStorage(AppAppearance.storageKey) private var appearance = AppAppearance.dark.rawValue
     @EnvironmentObject private var store: SessionStore
     @State private var reopening = false
     @State private var reopenResult: String?
 
     var body: some View {
         Form {
+            Picker("화면 모드", selection: $appearance) {
+                ForEach(AppAppearance.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: appearance) { _, v in AppAppearance(rawValue: v)?.apply() }
+            Divider()
             Toggle("에이전트를 권한 확인 없이 실행", isOn: $skipPermissions)
             Text("Claude: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox\n새로 만들기·이어서 열기·클론에 적용됨. 에이전트가 묻지 않고 파일 수정·명령 실행을 하므로 믿는 폴더에서만 켤 것.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -25,7 +50,8 @@ struct SettingsView: View {
                     reopening = true
                     Task {
                         let r = await store.reopenForPermissionSetting()
-                        reopenResult = r.isEmpty ? "바꿀 세션 없음" : "\(r.filter(\.ok).count)개 다시 열림, \(r.filter { !$0.ok }.count)개 건너뜀"
+                        reopenResult = r.isEmpty ? String(localized: "바꿀 세션 없음")
+                            : String(localized: "\(r.filter(\.ok).count)개 다시 열림, \(r.filter { !$0.ok }.count)개 건너뜀")
                         reopening = false
                     }
                 }
@@ -35,11 +61,17 @@ struct SettingsView: View {
             Text("대화는 그대로 이어서 열림. 작업 중이거나 입력칸에 보내지 않은 글이 있는 세션은 건너뜀.")
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
+            Toggle("캐릭터 말투로 대답", isOn: $characterTone)
+            Text("수혁이 띄우는 세션에 캐릭터 말투 지시를 덧붙임 (Claude: --append-system-prompt · Codex: developer_instructions). 코드·커밋·파일 내용에는 쓰지 않게 지시함. 새로 만들기·이어서 열기·클론부터 적용됨.")
+                .font(.caption).foregroundStyle(.secondary)
+            Divider()
             WakeWordSettings()
             Divider()
             NotificationSettings()
             Divider()
             MobileSettings()
+            Divider()
+            FeedbackSettings()
             Divider()
             Picker("세션 여는 방식", selection: $openMode) {
                 ForEach(OpenMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
@@ -77,6 +109,13 @@ struct DialogueView: View {
     @State private var sentHere: String?
     @State private var screen: String?
     @State private var menu: TerminalMenu?
+    /// The menu last answered here; the screen keeps showing it until the TUI redraws, so it is not shown again.
+    @State private var answeredMenu: (menu: TerminalMenu, at: Date)?
+    /// Screen reads in a row that found no menu while one is shown; one bad read does not hide it.
+    @State private var menuMisses = 0
+    /// The menu's "Type something" row the user opened, and what they are typing for it.
+    @State private var freeTextRow: Int?
+    @State private var freeText = ""
     /// Sent from here but not yet in the log; shown right away so the message never seems lost.
     @State private var pending: [Pending] = []
     /// Whether the end of the conversation is on screen. While reading older messages, new ones do not
@@ -91,6 +130,10 @@ struct DialogueView: View {
     @State private var showScreen = false
     @State private var notice: String?
     @FocusState private var focused: Bool
+    /// Long pastes, images and files in the draft, as tokens.
+    @State private var attachments = Attachments()
+    @State private var usage: UsageInfo?
+    @State private var dropTargeted = false
 
     private var session: AgentSession? { store.sessions.first { $0.id == sessionId } }
 
@@ -105,12 +148,30 @@ struct DialogueView: View {
                     inputBar(s)
                 }
             }
-            .background(Color(red: 0.07, green: 0.10, blue: 0.22))
+            .background { ZStack { Color(red: 0.07, green: 0.10, blue: 0.22); Backdrop() } }
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.85, green: 0.68, blue: 0.25), lineWidth: 3))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .environment(\.colorScheme, .dark)
+            .environment(\.openURL, FileLinks.openAction)  // ⌘-click on paths anywhere in the panel
             // /clear starts a new conversation (and log file) in the same process, so key by both.
             .task(id: "\(sessionId)|\(s.conversationId ?? "")") { await poll(s) }
+            .task(id: sessionId) { await pollUsage() }
+            // Files and images dropped anywhere on the dialogue go into the draft as tokens.
+            .onDrop(of: [.fileURL, .image], isTargeted: $dropTargeted) { providers in
+                guard SessionInput.canSend(s) else { return false }
+                Attachments.dropped(providers) { add in
+                    if let token = add(&attachments) { draft += (draft.isEmpty || draft.hasSuffix(" ") ? "" : " ") + token + " " }
+                    focused = true
+                }
+                return true
+            }
+            .overlay {
+                if dropTargeted {
+                    RoundedRectangle(cornerRadius: 12).fill(Color(red: 0.85, green: 0.68, blue: 0.25).opacity(0.15))
+                        .overlay(Label("놓으면 지시에 첨부", systemImage: "paperclip").font(.title3.bold()))
+                        .allowsHitTesting(false)
+                }
+            }
             .onChange(of: dictation.text) { _, t in if dictation.listening || !t.isEmpty { draft = t } }
             .onAppear { focused = true }
         } else {
@@ -134,11 +195,66 @@ struct DialogueView: View {
             if let a = s.action, s.activity == .working {
                 Text(a.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(3).multilineTextAlignment(.center)
             }
+            let partners = store.partners(of: s)
+            if partners.count == 1 { partnerDuo(partners[0]) } else if partners.count > 1 { partnerGroup(partners) }
             Spacer()
         }
         .frame(width: large == true ? 150 : 190)
         .padding(14)
         .background(Color.black.opacity(0.25))
+    }
+
+    /// One partner: a face-to-face pair — the partner's portrait under ours, mirrored to face up at it.
+    private func partnerDuo(_ p: AgentSession) -> some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Rectangle().fill(TalkChip.tint.opacity(0.5)).frame(height: 1)
+                Image(systemName: "bubble.left.and.bubble.right.fill").font(.caption)
+                Rectangle().fill(TalkChip.tint.opacity(0.5)).frame(height: 1)
+            }
+            .foregroundStyle(TalkChip.tint)
+            .padding(.top, 10)
+            if let c = store.character(for: p), let img = Art.image("portraits/\(c.id)") ?? Art.image("sprites/\(c.id)") {
+                Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                    .scaleEffect(x: -1, y: 1)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(TalkChip.tint.opacity(0.8), lineWidth: 1.5))
+                    .padding(.horizontal, 14)
+            }
+            Text(store.agentName(for: p)).font(.callout.bold()).foregroundStyle(TalkChip.tint)
+            HStack(spacing: 5) {
+                Circle().fill(p.activity.color).frame(width: 7, height: 7)
+                Text("\(p.agent.rawValue) · \(p.activity.label)").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .help("\(store.agentName(for: p))와 대화 중")
+    }
+
+    /// Several partners: a round table of small figures instead of one face, so a group reads differently at a glance.
+    private func partnerGroup(_ ps: [AgentSession]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("\(ps.count)명과 대화 중", systemImage: "person.3.fill").font(.caption.bold()).foregroundStyle(TalkChip.tint)
+                .padding(.top, 10)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 3), spacing: 6) {
+                ForEach(ps.prefix(9)) { p in
+                    VStack(spacing: 2) {
+                        ZStack(alignment: .bottomTrailing) {
+                            if let c = store.character(for: p), let img = Art.image("sprites/\(c.id)") {
+                                Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                            }
+                            Circle().fill(p.activity.color).frame(width: 7, height: 7)
+                        }
+                        .frame(width: 36, height: 36)
+                        .padding(3)
+                        .background(TalkChip.tint.opacity(0.12), in: Circle())
+                        .overlay(Circle().stroke(TalkChip.tint.opacity(0.6), lineWidth: 1))
+                        Text(store.agentName(for: p)).font(.system(size: 9.5, weight: .semibold)).lineLimit(1)
+                    }
+                    .help("\(store.agentName(for: p)) · \(p.agent.rawValue) · \(p.activity.label)")
+                }
+            }
+            if ps.count > 9 { Text("외 \(ps.count - 9)명").font(.caption2).foregroundStyle(.secondary) }
+        }
     }
 
     private func header(_ s: AgentSession) -> some View {
@@ -262,11 +378,13 @@ struct DialogueView: View {
     @ViewBuilder private func bubble(_ item: ChatItem, _ s: AgentSession) -> some View {
         switch item.role {
         case .me:
+            if let m = AgentMail.parse(item.text) { incoming(m, s) } else {
             HStack {
                 Spacer(minLength: 60)
-                Text(FileLinks.link(AttributedString(item.text), cwd: s.cwd)).textSelection(.enabled)
+                Text(FileLinks.link(AttributedString(Self.short(item.text)), cwd: s.cwd)).textSelection(.enabled)
                     .padding(10)
                     .background(Color(red: 0.55, green: 0.42, blue: 0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
             }
         case .agent:
             VStack(alignment: .leading, spacing: 3) {
@@ -283,8 +401,36 @@ struct DialogueView: View {
         }
     }
 
-    /// Common Claude Code prompts in Korean; anything else is shown as written.
-    static func translate(_ q: String) -> String {
+    /// A message another agent sent with `--msg`: from the left with the sender's face, not as the user's own words.
+    private func incoming(_ m: AgentMail.Received, _ s: AgentSession) -> some View {
+        let sender = store.sessions.first { $0.id == m.fromId }
+        return HStack(alignment: .top, spacing: 8) {
+            Group {
+                if let p = sender, let c = store.character(for: p), let img = Art.image("sprites/\(c.id)") {
+                    Image(nsImage: img).resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                } else {
+                    Image(systemName: "person.crop.circle").resizable().foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(m.fromName).font(.caption.bold()).foregroundStyle(TalkChip.tint)
+                    Text(m.toNames.count > 1 ? "→ " + m.toNames.joined(separator: ", ") : "→ " + store.agentName(for: s))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                MarkdownView(text: Self.short(m.body), cwd: s.cwd).textSelection(.enabled)
+                    .padding(10)
+                    .background(TalkChip.tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(TalkChip.tint.opacity(0.5), lineWidth: 1))
+            }
+        }
+        .padding(.trailing, 60)
+    }
+
+    /// Common Claude Code prompts in Korean; anything else (and everything in an English UI) is shown as written.
+    nonisolated static func translate(_ q: String) -> String {
+        if L10n.english { return q }
         let known = ["Do you want to proceed?": "이대로 진행할까요?",
                      "Do you want to make this edit": "이 파일을 수정할까요?",
                      "Do you want to create": "이 파일을 만들까요?",
@@ -293,9 +439,18 @@ struct DialogueView: View {
         return q
     }
 
+    /// A pasted wall of text makes a heavy bubble; show its start and how much more there is.
+    static func short(_ text: String) -> String {
+        let limit = 1500
+        return text.count <= limit ? text : String(text.prefix(limit)) + "\n… " + String(localized: "(\(text.count - limit)자 더)")
+    }
+
     struct Pending: Identifiable, Equatable {
         let id = UUID()
+        /// As typed, with attachment tokens.
         let text: String
+        /// As sent, tokens expanded; this is what the log will hold.
+        var sent: String = ""
         var failed = false
     }
 
@@ -324,10 +479,10 @@ struct DialogueView: View {
             HStack(spacing: 6) {
                 Text(store.agentName(for: s)).font(.caption.bold()).foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
                 ProgressView().controlSize(.mini)
-                Text(l.status ?? "작업 중").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                Text(l.status ?? String(localized: "작업 중")).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(l.raw)
+                Text(FileLinks.link(AttributedString(l.raw), cwd: s.cwd))
                     .font(.system(size: 11.5, design: .monospaced))
                     .foregroundStyle(Color(white: 0.9))
                     .textSelection(.enabled)
@@ -349,7 +504,7 @@ struct DialogueView: View {
                 }
             }
             if !l.text.isEmpty {
-                (Text(markdown(l.text)) + Text(" ▍").foregroundColor(Color(red: 1, green: 0.85, blue: 0.4)))
+                (Text(FileLinks.link(markdown(l.text), cwd: s.cwd)) + Text(" ▍").foregroundColor(Color(red: 1, green: 0.85, blue: 0.4)))
                     .textSelection(.enabled)
                     .padding(10)
                     .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
@@ -362,18 +517,19 @@ struct DialogueView: View {
     /// The agent is asking to pick one option (permission prompt, question): clickable choices.
     private func menuCard(_ m: TerminalMenu, _ s: AgentSession) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(m.question.map(Self.translate) ?? "선택해 주세요", systemImage: "list.bullet.circle.fill").font(.callout.bold())
+            Label(m.question.map(Self.translate) ?? String(localized: "선택해 주세요"), systemImage: "list.bullet.circle.fill").font(.callout.bold())
                 .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
             if let c = m.context {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    Text(c).font(.system(size: 11.5, design: .monospaced)).textSelection(.enabled)
+                    Text(FileLinks.link(AttributedString(c), cwd: s.cwd)).font(.system(size: 11.5, design: .monospaced)).textSelection(.enabled)
                         .fixedSize().padding(8)
                 }
                 .background(Color.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
             }
             ForEach(Array(m.options.enumerated()), id: \.offset) { i, o in
                 Button {
-                    menu = nil
+                    if m.isFreeText(i) { freeTextRow = i; freeText = ""; return }
+                    dismiss(m)
                     Task.detached { _ = SessionInput.choose(s, menu: m, index: i) }
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
@@ -386,8 +542,17 @@ struct DialogueView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!SessionInput.canSend(s))
+                if freeTextRow == i && m.isFreeText(i) {
+                    HStack {
+                        TextField("직접 입력", text: $freeText)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit { answerFreeText(m, i, s) }
+                        Button("보내기") { answerFreeText(m, i, s) }
+                            .disabled(freeText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
             }
-            Button("취소 (Esc)") { menu = nil; Task.detached { _ = SessionInput.press(s, .escape) } }
+            Button("취소 (Esc)") { dismiss(m); Task.detached { _ = SessionInput.press(s, .escape) } }
                 .buttonStyle(.borderless).font(.caption)
         }
         .padding(10)
@@ -396,10 +561,33 @@ struct DialogueView: View {
         .padding(.trailing, 40)
     }
 
+    private func answerFreeText(_ m: TerminalMenu, _ i: Int, _ s: AgentSession) {
+        let text = freeText.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        freeTextRow = nil; freeText = ""; dismiss(m)
+        Task.detached { _ = SessionInput.answer(s, menu: m, index: i, text: text) }
+    }
+
+    private func dismiss(_ m: TerminalMenu) {
+        menu = nil; menuMisses = 0
+        answeredMenu = (m, Date())
+    }
+
+    /// The menu to show after a screen read, without flicker: the one just answered stays hidden for a few seconds
+    /// (a read in flight or a slow redraw still shows it), and a shown menu needs two empty reads to go away.
+    private func steadyMenu(_ found: TerminalMenu?) -> TerminalMenu? {
+        if let f = found, let a = answeredMenu, Date().timeIntervalSince(a.at) < 3,
+           f.options == a.menu.options, f.question == a.menu.question { return nil }
+        if found == nil, let shown = menu, menuMisses < 1 { menuMisses += 1; return shown }
+        menuMisses = 0
+        return found
+    }
+
     private var screenPreview: some View {
         ScrollView {
-            Text(screen ?? "화면을 읽을 수 없는 터미널")
+            Text(FileLinks.link(AttributedString(screen ?? String(localized: "화면을 읽을 수 없는 터미널")), cwd: session?.cwd))
                 .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)  // also what lets ⌘-hover find the link under the pointer
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
         }
@@ -410,22 +598,29 @@ struct DialogueView: View {
     private func inputBar(_ s: AgentSession) -> some View {
         let canSend = SessionInput.canSend(s)
         return VStack(alignment: .leading, spacing: 6) {
-            if let notice { Text(notice).font(.caption).foregroundStyle(.orange) }
+            if let notice { Text(LocalizedStringKey(notice)).font(.caption).foregroundStyle(.orange) }  // markdown: feedback links
             if let e = dictation.error { Text(e).font(.caption).foregroundStyle(.orange) }
             if dictation.listening {
                 Label("듣는 중… 말을 마치면 마이크를 다시 눌러 멈춤", systemImage: "waveform")
                     .font(.caption).foregroundStyle(.red)
             }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(canSend ? "\(store.agentName(for: s))에게 지시하기 (Enter로 보내기)" : "이 터미널은 입력을 보낼 수 없음 — 보기만 가능",
+                TextField(canSend ? "\(store.agentName(for: s))에게 지시하기 (Enter로 보내기 · Shift+Enter 줄바꿈)" : "이 터미널은 입력을 보낼 수 없음 — 보기만 가능",
                           text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .textFieldStyle(.plain)
                     .padding(8)
                     .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                    .background(PasteCatcher { pb in attachments.paste(pb) })
                     .focused($focused)
                     .disabled(!canSend)
                     .onSubmit { submit(s) }
+                    // Shift+Enter breaks the line at the cursor instead of sending.
+                    .onKeyPress(.return, phases: .down) { press in
+                        guard press.modifiers.contains(.shift) else { return .ignored }
+                        NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+                        return .handled
+                    }
                     // As in Claude Code and Codex: Esc stops the running turn, ↑ in an empty box brings back the
                     // last instruction to fix and send again.
                     .onKeyPress(.escape) {
@@ -442,6 +637,12 @@ struct DialogueView: View {
                         .tint(.red)
                         .disabled(!canSend)
                 }
+                Button {
+                    if let token = attachments.choose() { draft += (draft.isEmpty || draft.hasSuffix(" ") ? "" : " ") + token + " " }
+                    focused = true
+                } label: { Image(systemName: "paperclip") }
+                    .help("파일·이미지 첨부 — 붙여넣기(⌘V)나 끌어 놓기도 됨")
+                    .disabled(!canSend)
                 Button { dictation.toggle() } label: {
                     Image(systemName: dictation.listening ? "mic.fill" : "mic")
                         .foregroundStyle(dictation.listening ? Color.red : Color.primary)
@@ -452,8 +653,11 @@ struct DialogueView: View {
                 Button("보내기") { submit(s) }.disabled(!canSend || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             HStack(spacing: 4) {
-                ForEach(SessionInput.Key.allCases, id: \.self) { key in
-                    Button(key.label) { press(s, key) }.controlSize(.small).disabled(!canSend)
+                // Keys act on what the terminal shows: offer them only while a menu is up or the screen is open.
+                if menu != nil || showScreen {
+                    ForEach(SessionInput.Key.allCases, id: \.self) { key in
+                        Button(key.label) { press(s, key) }.controlSize(.small).disabled(!canSend)
+                    }
                 }
                 Spacer()
                 if s.agent == .codex {
@@ -470,6 +674,7 @@ struct DialogueView: View {
                 if speaker.speaking { Button("그만 읽기") { speaker.stop() }.controlSize(.small) }
                 Toggle("화면 보기", isOn: $showScreen).toggleStyle(.button).controlSize(.small)
             }
+            if let usage { UsageLine(info: usage) }
         }
         .padding(12)
         .background(Color.black.opacity(0.2))
@@ -486,24 +691,40 @@ struct DialogueView: View {
 
     /// Esc stops the agent's current turn, as pressing it in the agent's own terminal does.
     private func interrupt(_ s: AgentSession) {
-        notice = "중단함 — ↑로 마지막 지시를 불러와 고쳐 보낼 수 있음"
+        notice = String(localized: "중단함 — ↑로 마지막 지시를 불러와 고쳐 보낼 수 있음")
         Task.detached { _ = SessionInput.press(s, .escape) }
     }
 
     private func submit(_ s: AgentSession) {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        if let report = Feedback.command(text) {
+            guard !report.isEmpty else { notice = String(localized: "/피드백 뒤에 내용을 적어 주세요"); return }
+            draft = ""
+            notice = String(localized: "피드백 보내는 중…")
+            Task {
+                do {
+                    let url = try await Feedback.send(report, agent: s.agent).absoluteString
+                    notice = String(localized: "피드백 등록됨 — [GitHub에서 보기](\(url))")
+                }
+                catch { draft = text; notice = String(localized: "피드백 보내지 못함 — \(error.localizedDescription)") }
+            }
+            return
+        }
         draft = ""
         sentHere = text
-        let p = Pending(text: text)
+        // Slash commands (/usage, /model, /status …) answer in a panel on the terminal screen, not in the log.
+        if text.hasPrefix("/") { showScreen = true }
+        let full = attachments.expand(text)
+        let p = Pending(text: text, sent: full)
         pending.append(p)
         let blockedByMenu = menu != nil
         Task.detached {
-            let ok = SessionInput.send(s, text: text)
+            let ok = SessionInput.send(s, text: full)
             await MainActor.run {
                 if !ok, let i = pending.firstIndex(where: { $0.id == p.id }) { pending[i].failed = true }
-                notice = !ok ? "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)"
-                    : blockedByMenu ? "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것" : nil
+                notice = !ok ? String(localized: "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)")
+                    : blockedByMenu ? String(localized: "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것") : nil
             }
         }
     }
@@ -528,6 +749,8 @@ struct DialogueView: View {
             // Show the log at once on open; reading the terminal (0.1–0.2 s through cmux) follows.
             if loaded == nil, let path = s.transcriptPath {
                 loaded = await Task.detached { TranscriptRenderer.items(path: path, agent: s.agent) }.value
+            } else if loaded == nil {
+                loaded = []  // a new session has no log file until its first message: nothing to load
             }
             let status = store.sessions.first { $0.id == sessionId }?.status
             let busy = status == .busy
@@ -566,13 +789,31 @@ struct DialogueView: View {
                 lastSpokenCount = newItems.filter { $0.role == .agent }.count
             }
             // A pending message is done once the log has it (as a prompt or a queued command).
-            let mine = Set(newItems.filter { $0.role == .me }.suffix(30).map { $0.text.filter { !$0.isWhitespace } })
-            pending.removeAll { !$0.failed && mine.contains($0.text.filter { !$0.isWhitespace }) }
+            // Attached files may be logged differently (Claude Code turns an image path into "[Image #1]"),
+            // so a message whose start matches counts too.
+            let mine = newItems.filter { $0.role == .me }.suffix(30).map { $0.text.filter { !$0.isWhitespace } }
+            pending.removeAll { p in
+                guard !p.failed else { return false }
+                let sent = p.sent.filter { !$0.isWhitespace }, typed = p.text.filter { !$0.isWhitespace }
+                return mine.contains { $0 == sent || $0 == typed || (sent.count > 30 && $0.hasPrefix(sent.prefix(30))) }
+            }
             screen = newScreen
-            if newMenu != menu { menu = newMenu }
+            let steady = readScreen ? steadyMenu(newMenu) : newMenu
+            if steady != menu { menu = steady }
             if newLive != live { live = newLive }
             // Fast while something is happening, so the reply appears as it is typed.
             try? await Task.sleep(for: .seconds(busy || newMenu != nil ? 0.5 : 1.5))
+        }
+    }
+
+    /// Model, context and rate limits change once per turn at most; a slow poll is enough.
+    private func pollUsage() async {
+        while !Task.isCancelled {
+            if let s = session {
+                let u = await Task.detached { UsageInfo.load(s) }.value
+                if u != usage { usage = u }
+            }
+            try? await Task.sleep(for: .seconds(5))
         }
     }
 
@@ -615,7 +856,7 @@ struct MobileSettings: View {
                             .overlay(Image(systemName: "qrcode").font(.largeTitle).foregroundStyle(.secondary))
                     }
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(tunnel.url ?? "주소 만드는 중…").font(.caption.monospaced()).textSelection(.enabled)
+                        Text(tunnel.url ?? String(localized: "주소 만드는 중…")).font(.caption.monospaced()).textSelection(.enabled)
                         HStack {
                             Button(server.pairingSecret == nil ? "연결 시작 (QR 60초 표시)" : "QR 숨기기") {
                                 server.pairingSecret == nil ? server.beginPairing() : server.cancelPairing()

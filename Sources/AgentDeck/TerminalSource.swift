@@ -34,17 +34,17 @@ enum TerminalSource {
             let socket = String(tmux.split(separator: ",").first ?? "")
             found = Host(name: "tmux", tool: bin,
                          args: ["-S", socket, "capture-pane", "-p", "-J", "-t", pane, "-S", "-\(lines)"],
-                         deniedHint: "tmux 서버(\(socket))에 접근하지 못함")
+                         deniedHint: String(localized: "tmux 서버(\(socket))에 접근하지 못함"))
         } else if let handle = env["ORCA_TERMINAL_HANDLE"] {
             let bin = "/Applications/Orca.app/Contents/Resources/bin/orca"
             found = Host(name: "Orca", tool: bin,
                          args: ["terminal", "read", "--terminal", handle, "--limit", String(lines)],
-                         deniedHint: "Orca 런타임에 연결하지 못함 (Orca 실행 여부 확인: orca status)")
+                         deniedHint: String(localized: "Orca 런타임에 연결하지 못함 (Orca 실행 여부 확인: orca status)"))
         } else if let ws = env["CMUX_WORKSPACE_ID"], let sf = env["CMUX_SURFACE_ID"] {
             let bin = "/Applications/cmux.app/Contents/Resources/bin/cmux"
             found = Host(name: "cmux", tool: bin,
                          args: ["read-screen", "--workspace", ws, "--surface", sf, "--scrollback", "--lines", String(lines)],
-                         deniedHint: "cmux 소켓 접근 거부됨 — settings.json의 automation.socketControlMode를 password로 두고 cmux를 한 번 재시작해야 함")
+                         deniedHint: String(localized: "cmux 소켓 접근 거부됨 — settings.json의 automation.socketControlMode를 password로 두고 cmux를 한 번 재시작해야 함"))
         }
         if let f = found, !FileManager.default.isExecutableFile(atPath: f.tool) { found = nil }
         cache[pid] = found

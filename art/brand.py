@@ -16,6 +16,11 @@ def main(hero_v, icon_v):
     hero = Image.open(ROOT / f"raw/hero_{hero_v}_{MODEL}.webp").convert("RGB")
     hero.thumbnail((1600, 1600), Image.LANCZOS)
     hero.save(assets / "hero.jpg", quality=86)
+    # Faint screen backdrop (Mac dialogue/list, Android app): shown at low opacity, so a small file is enough.
+    small = hero.copy()
+    small.thumbnail((1280, 1280), Image.LANCZOS)
+    small.save(out / "backdrop.jpg", quality=72)
+    small.save(ROOT.parent / "android/app/src/main/res/drawable-nodpi/backdrop.jpg", quality=72)
 
     # Icon: drop the white surround, then sit the rounded square on macOS's 824/1024 grid.
     raw = Image.open(ROOT / f"raw/icon_{icon_v}_{MODEL}.webp").convert("RGB")

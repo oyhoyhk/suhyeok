@@ -428,7 +428,7 @@ struct WorldView: View {
         return ids.split(separator: ",").enumerated().compactMap { k, id in
             guard let c = Art.roster.first(where: { $0.id == String(id) }) else { return nil }
             let stop: Hunt.Tier? = [Hunt.Tier.low, .mid, .high, nil][(tick + k) % 4]
-            let s = AgentSession(id: "demo-\(id)", agent: .claude, name: "시연 · \(c.name)", cwd: "/demo",
+            let s = AgentSession(id: "demo-\(id)", agent: .claude, name: String(localized: "시연 · \(c.displayName)"), cwd: "/demo",
                                  status: stop == nil ? .idle : .busy, startedAt: Date(), updatedAt: Date(),
                                  lastUser: nil, lastAssistant: nil, estimated: true)
             let spots = stop.map(World.attackSpots) ?? World.campSpots
@@ -727,9 +727,9 @@ struct Avatar: View {
 extension Activity {
     var zoneName: String {
         switch self {
-        case .working: return "작업대 홀"
-        case .waiting: return "선술집"
-        case .resting: return "라운지"
+        case .working: return String(localized: "작업대 홀")
+        case .waiting: return String(localized: "선술집")
+        case .resting: return String(localized: "라운지")
         }
     }
 }
@@ -852,7 +852,7 @@ struct StatusCounts: View {
         HStack(spacing: 10) {
             cell("대기소", grounds.filter { $0 == nil }.count, .gray)
             ForEach(Hunt.Tier.allCases, id: \.self) { t in
-                cell(["하", "중", "상"][t.rawValue], grounds.filter { $0 == t }.count, [Color.green, .cyan, .orange][t.rawValue])
+                cell([LocalizedStringKey("하"), "중", "상"][t.rawValue], grounds.filter { $0 == t }.count, [Color.green, .cyan, .orange][t.rawValue])
             }
             HStack(spacing: 3) {
                 Image(systemName: "diamond.fill").font(.caption2).foregroundStyle(.cyan)
@@ -865,7 +865,7 @@ struct StatusCounts: View {
         .allowsHitTesting(false)
     }
 
-    private func cell(_ label: String, _ n: Int, _ color: Color) -> some View {
+    private func cell(_ label: LocalizedStringKey, _ n: Int, _ color: Color) -> some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label).font(.caption2).foregroundStyle(.white.opacity(0.75)).fixedSize()
@@ -1112,7 +1112,7 @@ struct BossView: View {
 
     private var hpBar: some View {
         VStack(spacing: 2) {
-            Text(enraged ? tier.boss + " · 분노" : tier.boss).font(.system(size: max(9, size.height * 0.12), weight: .bold)).foregroundStyle(.white)
+            Text(enraged ? String(localized: "\(tier.boss) · 분노") : tier.boss).font(.system(size: max(9, size.height * 0.12), weight: .bold)).foregroundStyle(.white)
                 .shadow(color: .black, radius: 2)
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.black.opacity(0.6))

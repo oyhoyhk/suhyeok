@@ -12,11 +12,11 @@ enum SessionStatus: String {
 
     var label: String {
         switch self {
-        case .busy: return "작업 중"
-        case .waiting: return "선택 기다리는 중"
-        case .shell: return "셸 실행"
-        case .idle: return "대기"
-        case .unknown: return "알 수 없음"
+        case .busy: return String(localized: "작업 중")
+        case .waiting: return String(localized: "선택 기다리는 중")
+        case .shell: return String(localized: "셸 실행")
+        case .idle: return String(localized: "대기")
+        case .unknown: return String(localized: "알 수 없음")
         }
     }
 
@@ -55,6 +55,8 @@ struct AgentSession: Identifiable {
     var hostedName: String? = nil
     /// Claude conversation id, used to resume the conversation elsewhere.
     var conversationId: String? = nil
+    /// Live session whose process launched this one, e.g. a `claude -p` run from that session's script.
+    var parentId: String? = nil
 
     var project: String { (cwd as NSString).lastPathComponent }
 }
@@ -95,9 +97,9 @@ enum Activity: CaseIterable {
 
     var label: String {
         switch self {
-        case .working: return "작업 중"
-        case .waiting: return "대기 중"
-        case .resting: return "휴식 중"
+        case .working: return String(localized: "작업 중")
+        case .waiting: return String(localized: "대기 중")
+        case .resting: return String(localized: "휴식 중")
         }
     }
 
@@ -168,9 +170,9 @@ struct AgentAction: Equatable {
         case "tool_use":
             return tool(last["name"] as? String ?? "", input: last["input"] as? [String: Any] ?? [:])
         case "thinking", "redacted_thinking":
-            return AgentAction(kind: .thinking, detail: "생각하는 중")
+            return AgentAction(kind: .thinking, detail: String(localized: "생각하는 중"))
         case "text":
-            return AgentAction(kind: .replying, detail: "답변 작성 중")
+            return AgentAction(kind: .replying, detail: String(localized: "답변 작성 중"))
         default:
             return nil
         }

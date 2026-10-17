@@ -4,7 +4,7 @@ import XCTest
 
 final class RecruitTests: XCTestCase {
     private var ledger: Ledger!
-    private let roster = (0..<12).map { "hero\($0)" }
+    private let roster = (0..<(Recruit.freeCount + 4)).map { "hero\($0)" }
 
     override func setUpWithError() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("recruit-\(UUID().uuidString).jsonl")
@@ -19,23 +19,23 @@ final class RecruitTests: XCTestCase {
 
     func testRecruitSpendsAndUnlocks() async throws {
         try fund(Recruit.price(recruited: 0) * 2)
-        try await Recruit.hire("hero8", roster: roster, ledger: ledger)
+        try await Recruit.hire("hero\(Recruit.freeCount)", roster: roster, ledger: ledger)
         XCTAssertEqual(ledger.balance, Recruit.price(recruited: 0))
         XCTAssertEqual(Recruit.unlocked(roster: roster, ledger: ledger).count, Recruit.freeCount + 1)
-        XCTAssertTrue(Recruit.unlocked(roster: roster, ledger: ledger).contains(8))
+        XCTAssertTrue(Recruit.unlocked(roster: roster, ledger: ledger).contains(Recruit.freeCount))
     }
 
     func testPriceRisesWithEachHire() async throws {
         try fund(10_000)
-        try await Recruit.hire("hero8", roster: roster, ledger: ledger)
+        try await Recruit.hire("hero\(Recruit.freeCount)", roster: roster, ledger: ledger)
         XCTAssertEqual(Recruit.nextPrice(roster: roster, ledger: ledger), Recruit.price(recruited: 1))
         XCTAssertGreaterThan(Recruit.price(recruited: 1), Recruit.price(recruited: 0))
     }
 
     func testCannotHireTwiceOrHireFreeOrUnknown() async throws {
         try fund(10_000)
-        try await Recruit.hire("hero8", roster: roster, ledger: ledger)
-        await assertThrows(try await Recruit.hire("hero8", roster: roster, ledger: ledger)) { XCTAssertEqual($0 as? Recruit.Failure, .alreadyHired) }
+        try await Recruit.hire("hero\(Recruit.freeCount)", roster: roster, ledger: ledger)
+        await assertThrows(try await Recruit.hire("hero\(Recruit.freeCount)", roster: roster, ledger: ledger)) { XCTAssertEqual($0 as? Recruit.Failure, .alreadyHired) }
         await assertThrows(try await Recruit.hire("hero0", roster: roster, ledger: ledger)) { XCTAssertEqual($0 as? Recruit.Failure, .alreadyHired) }
         await assertThrows(try await Recruit.hire("nobody", roster: roster, ledger: ledger)) { XCTAssertEqual($0 as? Recruit.Failure, .unknown) }
     }
@@ -43,7 +43,7 @@ final class RecruitTests: XCTestCase {
     func testNotEnoughCrystalsLeavesLedgerUntouched() async throws {
         try fund(Recruit.price(recruited: 0) - 1)
         let before = ledger.entries.count
-        await assertThrows(try await Recruit.hire("hero8", roster: roster, ledger: ledger)) { XCTAssertEqual($0 as? Ledger.Failure, .insufficient) }
+        await assertThrows(try await Recruit.hire("hero\(Recruit.freeCount)", roster: roster, ledger: ledger)) { XCTAssertEqual($0 as? Ledger.Failure, .insufficient) }
         XCTAssertEqual(ledger.entries.count, before)
     }
 
@@ -51,12 +51,12 @@ final class RecruitTests: XCTestCase {
         try fund(10_000)
         struct Offline: Error {}
         let before = ledger.entries.count
-        await assertThrows(try await Recruit.hire("hero8", roster: roster, ledger: ledger, confirm: { _, _ in throw Offline() }))
+        await assertThrows(try await Recruit.hire("hero\(Recruit.freeCount)", roster: roster, ledger: ledger, confirm: { _, _ in throw Offline() }))
         XCTAssertEqual(ledger.entries.count, before)
 
         var asked: (String, Int)?
-        try await Recruit.hire("hero8", roster: roster, ledger: ledger, confirm: { asked = ($0, $1) })
-        XCTAssertEqual(asked?.0, "hero8")
+        try await Recruit.hire("hero\(Recruit.freeCount)", roster: roster, ledger: ledger, confirm: { asked = ($0, $1) })
+        XCTAssertEqual(asked?.0, "hero\(Recruit.freeCount)")
         XCTAssertEqual(asked?.1, Recruit.price(recruited: 0))
     }
 
@@ -64,7 +64,7 @@ final class RecruitTests: XCTestCase {
         try fund(10_000)
         let ledger = ledger!
         // Another click finished the same hire while this one waited on the server.
-        await assertThrows(try await Recruit.hire("hero8", roster: roster, ledger: ledger, confirm: { id, cost in
+        await assertThrows(try await Recruit.hire("hero\(Recruit.freeCount)", roster: roster, ledger: ledger, confirm: { id, cost in
             try ledger.append(kind: .spend, source: id, amount: -cost, rule: 1, note: "영입")
         })) { XCTAssertEqual($0 as? Recruit.Failure, .alreadyHired) }
         XCTAssertEqual(ledger.entries.filter { $0.kind == "spend" }.count, 1)
@@ -76,8 +76,8 @@ final class RecruitTests: XCTestCase {
             AgentSession(id: "s\($0)", agent: .claude, name: "", cwd: "/", status: .busy, startedAt: Date(timeIntervalSince1970: Double($0)),
                          updatedAt: nil, lastUser: nil, lastAssistant: nil, estimated: false)
         }
-        let allowed = Set(0..<Recruit.freeCount)
-        let picks = assigner.update(sessions, allowed: allowed, rosterCount: 32)
+        let allowed = Set(0..<8)
+        let picks = assigner.update(sessions, allowed: allowed, rosterCount: Recruit.freeCount + 4)
         XCTAssertEqual(picks.count, 10)
         XCTAssertTrue(picks.values.allSatisfy(allowed.contains))
     }

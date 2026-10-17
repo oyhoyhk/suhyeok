@@ -81,7 +81,7 @@ enum TranscriptRenderer {
     private static func claude(_ lines: [[String: Any]]) -> [(ChatItem.Role, String)] {
         var out: [(ChatItem.Role, String)] = []
         for line in lines {
-            if line["type"] as? String == "huge" { out.append((.result, "  ⎿ (이미지 등 큰 결과)")); continue }
+            if line["type"] as? String == "huge" { out.append((.result, "  ⎿ " + String(localized: "(이미지 등 큰 결과)"))); continue }
             // A message typed while the agent is busy is logged at once as a queue "enqueue", and again as a
             // queued_command attachment when the agent picks it up; show the first, skip the repeat below.
             if line["type"] as? String == "queue-operation", line["operation"] as? String == "enqueue",
@@ -104,7 +104,7 @@ enum TranscriptRenderer {
                 else if type == "user", let c = tag("bash-input", in: s) { out.append((.me, "! " + c)) }
                 else if type == "user", let o = tag("bash-stdout", in: s) {
                     let all = [o, tag("bash-stderr", in: s) ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
-                    out.append((.result, all.isEmpty ? "(출력 없음)" : all))
+                    out.append((.result, all.isEmpty ? String(localized: "(출력 없음)") : all))
                 }
                 continue
             }
@@ -175,10 +175,10 @@ enum TranscriptRenderer {
         if let s = content as? String { text = s }
         else if let items = content as? [[String: Any]] {
             text = items.compactMap { $0["text"] as? String }.joined(separator: "\n")
-            if text.isEmpty, !items.isEmpty { text = "(이미지 등 \(items.count)개 항목)" }
+            if text.isEmpty, !items.isEmpty { text = String(localized: "(이미지 등 \(items.count)개 항목)") }
         } else if let d = content as? [String: Any], let s = d["output"] as? String { text = s }
         let rows = text.split(separator: "\n", omittingEmptySubsequences: false)
         let shown = rows.prefix(6).map { "  ⎿ " + $0 }.joined(separator: "\n")
-        return rows.count > 6 ? shown + "\n  ⎿ … +\(rows.count - 6)줄" : shown
+        return rows.count > 6 ? shown + "\n  ⎿ … " + String(localized: "+\(rows.count - 6)줄") : shown
     }
 }

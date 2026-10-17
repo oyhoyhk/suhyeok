@@ -9,7 +9,7 @@ enum ClaudeSource {
     static func load() -> [AgentSession] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return [] }
-        return files.filter { $0.hasSuffix(".json") }.compactMap { file in
+        let sessions: [AgentSession] = files.filter { $0.hasSuffix(".json") }.compactMap { file in
             guard let data = fm.contents(atPath: sessionsDir + "/" + file),
                   let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   let pid = obj["pid"] as? Int32, kill(pid, 0) == 0,
@@ -39,6 +39,7 @@ enum ClaudeSource {
                 conversationId: sessionId
             )
         }
+        return sessions
     }
 
     private static var paneSessions: [String: String] = [:]
