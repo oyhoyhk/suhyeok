@@ -83,7 +83,8 @@ fun FilesTab(api: Api, dir: String?, onDir: (String?) -> Unit, onFile: (String) 
             when {
                 r == null -> Note(stringResource(if (failed) R.string.files_unavailable else R.string.loading))
                 else -> LazyColumn(Modifier.fillMaxSize()) {
-                    items(r.second + r.first, key = { it }) { f ->
+                    // Home is listed last, once, even when an agent works there (duplicate keys crash LazyColumn).
+                    items((r.second + r.first).distinct(), key = { it }) { f ->
                         Line(Icons.Filled.Folder, projectColor(f), f.trimEnd('/').substringAfterLast('/').ifEmpty { f }, short(f)) { onDir(f) }
                     }
                 }
