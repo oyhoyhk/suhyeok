@@ -70,12 +70,22 @@ h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
 .voice figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .voice p { color: var(--muted); font-size: 15px; margin: 16px 0 0; }
 
-.videos { max-width: 320px; }
-.videos figure { margin: 0; }
-.videos figure[data-lang="en"], .videos.en figure[data-lang="ko"] { display: none; }
-.videos.en figure[data-lang="en"] { display: block; }
-.videos iframe { display: block; width: 100%; aspect-ratio: 9 / 16; border: 1px solid var(--line); border-radius: 6px; background: #0d0907; }
-.videos figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
+.vid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 40px; align-items: start; }
+.videos .vid[data-lang="en"], .videos.en .vid[data-lang="ko"] { display: none; }
+.videos.en .vid[data-lang="en"] { display: grid; }
+.vid figure { margin: 0; }
+.vid iframe { display: block; width: 100%; aspect-ratio: 9 / 16; border: 1px solid var(--line); border-radius: 6px; background: #0d0907; }
+.vid figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
+.chapters h3 { margin: 0 0 4px; font-size: 18px; }
+.chapters > p { margin: 0 0 14px; font-size: 14px; color: var(--muted); }
+.chapters ol { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.chapters button { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid; grid-template-columns: 32px 44px minmax(0, 1fr); gap: 12px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line); border-radius: 4px; }
+.chapters button:hover, .chapters button:focus-visible { background: var(--panel); }
+.chapters img { width: 32px; height: 32px; }
+.chapters img.photo { object-fit: cover; border-radius: 6px; }
+.chapters .t { font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--gold); }
+.chapters b { font-weight: 700; }
+.chapters span.d { display: block; font-size: 14px; color: var(--muted); line-height: 1.5; }
 .zones { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 15px; }
 .zones th, .zones td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .zones th { color: var(--muted); font-weight: 600; font-size: 13px; }
@@ -102,6 +112,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 @media (max-width: 760px) {
   header nav { display: none; }
   .features, .install, .voice { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .vid, .videos.en .vid[data-lang="en"] { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .vid figure { max-width: 320px; }
   .roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   section { padding-top: 52px; }
 }
@@ -138,14 +150,47 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   <h2>영상으로 보기</h2>
   <p class="section-note">세션 소환부터 폰으로 지휘하기까지 1분 안에 봅니다.</p>
   <div class="videos">
-    <figure data-lang="ko">
-      <iframe src="https://www.youtube-nocookie.com/embed/ZSC_6TE9jQU" title="수혁 소개 영상 (한국어)" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-      <figcaption>한국어 · 60초 · <a href="https://youtube.com/shorts/ZSC_6TE9jQU">YouTube에서 보기</a> · <a href="#video" data-show="en" lang="en">English version</a><br>데모 환경에서 녹화했습니다. 화면 속 마켓 상품·결정·테스트 수치는 예시입니다.</figcaption>
-    </figure>
-    <figure data-lang="en" lang="en">
-      <iframe src="https://www.youtube-nocookie.com/embed/-Ti-XLDi4MY" title="Suhyeok intro video (English)" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-      <figcaption>English · 50s · <a href="https://youtube.com/shorts/-Ti-XLDi4MY">Watch on YouTube</a> · <a href="#video" data-show="ko" lang="ko">한국어 영상</a><br>Recorded in a demo environment. Market items, crystals and test numbers on screen are examples.</figcaption>
-    </figure>
+    <div class="vid" data-lang="ko">
+      <figure>
+        <iframe src="https://www.youtube-nocookie.com/embed/ZSC_6TE9jQU" title="수혁 소개 영상 (한국어)" loading="lazy" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        <figcaption>한국어 · 60초 · <a href="https://youtube.com/shorts/ZSC_6TE9jQU">YouTube에서 보기</a> · <a href="#video" data-show="en" lang="en">English version</a><br>데모 환경에서 녹화했습니다. 화면 속 마켓 상품·결정·테스트 수치는 예시입니다.</figcaption>
+      </figure>
+      <div class="chapters">
+      <h3>영상 속 퀘스트</h3>
+      <p>누르면 그 장면부터 재생합니다.</p>
+      <ol>
+        <li><button type="button" data-t="0"><img class="pixel" src="img/i/session.png" alt=""><span class="t">0:00</span><span><b>퀘스트 1 · 소환</b><span class="d">세션을 열면 월드에 에이전트가 소환됩니다</span></span></button></li>
+        <li><button type="button" data-t="6"><img class="pixel" src="img/i/crystal.png" alt=""><span class="t">0:06</span><span><b>퀘스트 2 · 사냥</b><span class="d">일하는 동안 보스를 공격해 결정을 모읍니다</span></span></button></li>
+        <li><button type="button" data-t="11"><img class="photo" src="img/p/archer.jpg" alt=""><span class="t">0:11</span><span><b>퀘스트 3 · 영입</b><span class="d">모은 결정으로 캐릭터 마켓에서 새 캐릭터를 삽니다</span></span></button></li>
+        <li><button type="button" data-t="16"><img class="pixel" src="img/i/world.png" alt=""><span class="t">0:16</span><span><b>퀘스트 4 · 목록</b><span class="d">모든 세션을 한 목록에서 봅니다</span></span></button></li>
+        <li><button type="button" data-t="20"><img class="pixel" src="img/i/terminal.png" alt=""><span class="t">0:20</span><span><b>퀘스트 5 · 지시</b><span class="d">대화창에서 바로 명령을 보냅니다</span></span></button></li>
+        <li><button type="button" data-t="26"><img class="photo" src="img/p/cat.jpg" alt=""><span class="t">0:26</span><span><b>퀘스트 6 · 말투</b><span class="d">캐릭터마다 다른 말투로 답합니다</span></span></button></li>
+        <li><button type="button" data-t="35"><img class="pixel" src="img/i/dialogue.png" alt=""><span class="t">0:35</span><span><b>퀘스트 7 · 대화</b><span class="d">에이전트끼리 묻고 답합니다</span></span></button></li>
+        <li><button type="button" data-t="41"><img class="pixel" src="img/i/voice.png" alt=""><span class="t">0:41</span><span><b>퀘스트 8 · 음성</b><span class="d">말로 지시하고 음성으로 답을 듣습니다</span></span></button></li>
+        <li><button type="button" data-t="52"><img class="pixel" src="img/i/phone.png" alt=""><span class="t">0:52</span><span><b>퀘스트 9 · 모바일</b><span class="d">밖에서도 폰으로 지휘합니다</span></span></button></li>
+      </ol>
+      </div>
+    </div>
+    <div class="vid" data-lang="en" lang="en">
+      <figure>
+        <iframe src="https://www.youtube-nocookie.com/embed/-Ti-XLDi4MY" title="Suhyeok intro video (English)" loading="lazy" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        <figcaption>English · 50s · <a href="https://youtube.com/shorts/-Ti-XLDi4MY">Watch on YouTube</a> · <a href="#video" data-show="ko" lang="ko">한국어 영상</a><br>Recorded in a demo environment. Market items, crystals and test numbers on screen are examples.</figcaption>
+      </figure>
+      <div class="chapters">
+      <h3>Quests in the video</h3>
+      <p>Click one to play from that scene.</p>
+      <ol>
+        <li><button type="button" data-t="0"><img class="pixel" src="img/i/session.png" alt=""><span class="t">0:00</span><span><b>Quest 1 · Summon</b><span class="d">Open a session and an agent appears in the world</span></span></button></li>
+        <li><button type="button" data-t="6"><img class="pixel" src="img/i/crystal.png" alt=""><span class="t">0:06</span><span><b>Quest 2 · Hunt</b><span class="d">While it works, it fights bosses and earns crystals</span></span></button></li>
+        <li><button type="button" data-t="11"><img class="photo" src="img/p/archer.jpg" alt=""><span class="t">0:11</span><span><b>Quest 3 · Recruit</b><span class="d">Spend crystals on new heroes in the character market</span></span></button></li>
+        <li><button type="button" data-t="16"><img class="pixel" src="img/i/world.png" alt=""><span class="t">0:16</span><span><b>Quest 4 · Sessions</b><span class="d">Every session in one list</span></span></button></li>
+        <li><button type="button" data-t="20"><img class="pixel" src="img/i/terminal.png" alt=""><span class="t">0:20</span><span><b>Quest 5 · Command</b><span class="d">Send instructions right from the chat</span></span></button></li>
+        <li><button type="button" data-t="26"><img class="photo" src="img/p/cat.jpg" alt=""><span class="t">0:26</span><span><b>Quest 6 · Voices</b><span class="d">Each agent replies in its own voice</span></span></button></li>
+        <li><button type="button" data-t="36"><img class="pixel" src="img/i/dialogue.png" alt=""><span class="t">0:36</span><span><b>Quest 7 · Teamwork</b><span class="d">Agents ask each other for help</span></span></button></li>
+        <li><button type="button" data-t="42"><img class="pixel" src="img/i/phone.png" alt=""><span class="t">0:42</span><span><b>Quest 8 · Mobile</b><span class="d">Away from your desk? Lead from your phone</span></span></button></li>
+      </ol>
+      </div>
+    </div>
   </div>
   <script>
   // Korean video for browsers whose first language is Korean, English video for everyone else.
@@ -154,6 +199,12 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
     var lang = ((navigator.languages && navigator.languages[0]) || navigator.language || 'ko').toLowerCase();
     if (lang.indexOf('ko') !== 0) box.classList.add('en');
     box.addEventListener('click', function (e) {
+      var c = e.target.closest('[data-t]');
+      if (c) {
+        var f = c.closest('.vid').querySelector('iframe');
+        f.src = f.src.split('?')[0] + '?start=' + c.getAttribute('data-t') + '&autoplay=1';
+        return;
+      }
       var a = e.target.closest('[data-show]');
       if (!a) return;
       e.preventDefault();
