@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Installs updates downloaded from the Mac (Android asks the owner to allow this once). Not in the Play build. -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+  <!-- Agent notifications from a background service that asks the Mac for state. Not in the Play build: Play asks
+       for a video and the dataSync type is for transfers, not watching; Play users see state while the app is open. -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <application>
+    <service android:name=".NotifyService" android:exported="false" android:foregroundServiceType="dataSync" />
+    <!-- Hands the downloaded update to the system installer. -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.files"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
+    </provider>
+  </application>
+</manifest>

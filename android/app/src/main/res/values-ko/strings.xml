@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Korean. Same keys as values/strings.xml (English default). -->
+<resources>
+  <string name="app_name">수혁</string>
+
+  <!-- Shared -->
+  <string name="loading">불러오는 중…</string>
+  <string name="cancel">취소</string>
+  <string name="needs_choice">선택 필요</string>
+  <string name="working">작업 중</string>
+  <string name="work_done">작업 완료</string>
+  <string name="send_failed">보내지 못함</string>
+
+  <!-- Pairing -->
+  <string name="pair_instructions">Mac의 수혁 설정(⌘,)에서 \'모바일 접속\'을 켜고 \'연결 시작\'을 누른 뒤, 화면의 QR을 찍어 주세요.</string>
+  <string name="pair_previous">이전 주소: %1$s</string>
+  <string name="pair_scan">QR 찍기</string>
+  <string name="pair_scan_prompt">수혁 연결 QR</string>
+  <string name="pair_demo">Mac 없이 둘러보기 (체험 모드)</string>
+  <string name="pair_not_qr">수혁의 연결 QR이 아님</string>
+  <string name="pair_allow_on_mac">Mac에서 이 폰을 허용해 주세요</string>
+  <string name="pair_expired">시간이 지나 만료됨 — 다시 시도</string>
+  <string name="pair_failed">연결 실패</string>
+
+  <!-- Agents list -->
+  <string name="agents_unreachable">Mac에 연결할 수 없음 — 수혁이 켜져 있고 \'모바일 접속\'이 켜져 있는지 확인</string>
+  <string name="demo_subtitle">체험 모드 — 예시 세션</string>
+  <string name="menu">메뉴</string>
+  <string name="demo_end">체험 모드 끝내기</string>
+  <string name="unpair_menu">다른 Mac에 연결 / 연결 끊기</string>
+  <string name="unpair_title">연결을 끊을까요?</string>
+  <string name="unpair_text">이 폰의 연결 정보를 지움. 다시 쓰려면 Mac에서 QR을 찍고 허용해야 함.</string>
+  <string name="unpair_confirm">끊기</string>
+  <string name="group_waiting">다음 지시 대기</string>
+  <string name="group_resting">휴식 중</string>
+  <string name="agent_asking">선택지에서 멈춤 — 눌러서 답하기</string>
+  <string name="ago_now">방금</string>
+  <plurals name="ago_minutes">
+    <item quantity="other">%d분 전</item>
+  </plurals>
+  <plurals name="ago_hours">
+    <item quantity="other">%d시간 전</item>
+  </plurals>
+  <plurals name="ago_days">
+    <item quantity="other">%d일 전</item>
+  </plurals>
+
+  <!-- App update banner (direct builds) -->
+  <string name="update_new">새 버전 %1$s</string>
+  <string name="update_downloading">받는 중 %1$d%%</string>
+  <string name="update_tap">눌러서 업데이트</string>
+  <string name="update_button">업데이트</string>
+  <string name="update_allow_source">\'이 출처 허용\'을 켠 뒤 다시 누르기</string>
+
+  <!-- Background notifications -->
+  <string name="notify_turn_off">백그라운드 알림 끄기</string>
+  <string name="notify_turn_on">백그라운드 알림 켜기</string>
+  <string name="notify_kind_asking">알림: 선택 필요</string>
+  <string name="notify_kind_done">알림: 작업 완료</string>
+  <string name="notify_service_title">수혁 알림 켜짐</string>
+  <string name="notify_service_text">에이전트가 선택을 기다리거나 일을 마치면 알려 줌</string>
+  <string name="notify_asking">%1$s · 선택 필요</string>
+  <string name="notify_done">%1$s · 작업 완료</string>
+  <string name="channel_asking_desc">에이전트가 권한 확인·질문 선택지에서 멈춤</string>
+  <string name="channel_done_desc">에이전트가 한 차례 작업을 마침</string>
+  <string name="channel_service">알림 서비스</string>
+  <string name="channel_service_desc">백그라운드에서 상태를 확인하는 동안 표시</string>
+
+  <!-- Chat -->
+  <string name="chat_unreachable">Mac에 연결할 수 없음</string>
+  <string name="chat_asking">선택 필요 — 아래에서 골라 주세요</string>
+  <string name="chat_empty">아직 주고받은 대화가 없음</string>
+  <string name="chat_queued">작업이 끝나면 읽을 거예요</string>
+  <string name="chat_choose_failed">선택하지 못함</string>
+  <string name="chat_stopped">중단함 — \'마지막 지시 불러오기\'로 고쳐 보낼 수 있음</string>
+  <string name="chat_stop">■ 중단</string>
+  <string name="chat_recall">↑ 마지막 지시 불러오기</string>
+  <string name="chat_placeholder">%1$s에게 지시하기</string>
+  <string name="chat_dictate_prompt">%1$s에게 말하기</string>
+  <string name="chat_menu_title">선택이 필요해요</string>
+  <string name="chat_live_title">작업 중 화면 (마지막 14줄)</string>
+  <string name="back">뒤로</string>
+  <string name="read_aloud">답변 읽어 주기</string>
+  <string name="dictate">말로 지시</string>
+  <string name="quick_keys">빠른 키</string>
+  <string name="attach">사진·파일 첨부</string>
+  <string name="attach_remove">빼기</string>
+  <string name="attach_uploading">Mac으로 %1$d개 보내는 중…</string>
+  <string name="attach_too_big">%1$s 파일이 25MB를 넘음</string>
+  <string name="attach_unreadable">파일을 읽을 수 없음</string>
+  <string name="attach_failed">%1$s 보내기 실패 — %2$s</string>
+  <string name="send">보내기</string>
+
+  <!-- Feedback (/피드백 posts a public GitHub issue) -->
+  <string name="feedback_empty">/피드백 뒤에 내용을 적어 주세요</string>
+  <string name="feedback_sending">피드백 보내는 중…</string>
+  <string name="feedback_sent">피드백 등록됨 — %1$s</string>
+  <string name="feedback_failed">피드백 보내지 못함 — %1$s</string>
+
+  <!-- Session menu (long press) -->
+  <string name="session_chat">대화하기</string>
+  <string name="session_rename">세션 이름 수정…</string>
+  <string name="session_clone">클론으로 새 에이전트 만들기</string>
+  <string name="session_clear">대화 새로 시작 (/clear)</string>
+  <string name="session_migrate">수혁으로 옮기기</string>
+  <string name="session_end">세션 종료…</string>
+  <string name="session_clear_question">%1$s의 대화를 비우고 새로 시작할까요? 이전 대화는 Mac의 \'최근 대화\'에서 다시 열 수 있어요.</string>
+  <string name="session_migrate_question">%1$s을(를) 수혁 터미널로 옮길까요? 원래 터미널의 세션은 종료돼요.</string>
+  <string name="session_end_question">%1$s의 세션을 종료할까요?</string>
+  <string name="session_end_confirm">종료</string>
+  <string name="ok">확인</string>
+  <string name="rename_title">세션 이름 수정</string>
+  <string name="rename_placeholder">비우면 원래 제목으로</string>
+  <string name="save">저장</string>
+  <string name="done_clone">클론을 만드는 중</string>
+  <string name="done_clear">새 대화를 시작함</string>
+  <string name="done_migrate">옮기는 중</string>
+  <string name="done_end">종료함</string>
+  <string name="done_rename">이름을 바꿈</string>
+  <string name="done_generic">완료</string>
+  <string name="action_failed">실패</string>
+  <string name="action_not_done">하지 못함</string>
+
+  <!-- Errors from the phone itself -->
+  <string name="error_code">오류 %1$d</string>
+  <string name="error_unreadable">응답을 읽지 못함 (%1$d)</string>
+  <string name="error_pair_code">연결 실패 (%1$d)</string>
+  <string name="error_no_token">토큰을 받지 못함</string>
+  <string name="error_update_download">업데이트 파일을 받지 못함 (%1$d)</string>
+  <string name="error_update_corrupt">받은 파일이 손상됨 — 다시 시도</string>
+  <!-- 하단 탭 -->
+  <string name="tab_world">월드</string>
+  <string name="tab_sessions">세션</string>
+  <string name="tab_terminal">터미널</string>
+  <string name="tab_settings">설정</string>
+  <string name="agents_empty">세션이 없어요 — ＋를 눌러 시작하세요</string>
+  <string name="world_camp">대기소</string>
+  <string name="world_low">하급</string>
+  <string name="world_mid">중급</string>
+  <string name="world_high">상급</string>
+  <string name="world_demo">월드는 Mac과 연결해야 볼 수 있어요 — Mac의 수혁과 연결하면 에이전트가 여기 나타나요</string>
+  <string name="world_none">Mac이 월드 지도를 보내지 않았어요 — Mac의 수혁을 업데이트하세요</string>
+  <string name="term_subtitle">Mac의 수혁에서 실행 중인 터미널</string>
+  <string name="term_new">새 셸</string>
+  <string name="term_demo">터미널은 Mac과 연결해야 쓸 수 있어요 — Mac의 수혁과 연결하세요</string>
+  <string name="term_unavailable">터미널을 불러오지 못했어요 — Mac의 수혁을 업데이트하세요</string>
+  <string name="term_empty">터미널이 없어요 — ＋를 눌러 새 셸을 여세요</string>
+  <string name="term_gone">종료됨</string>
+  <string name="term_placeholder">명령</string>
+  <string name="settings_connection">연결</string>
+  <string name="settings_mac">Mac</string>
+  <string name="settings_notify">알림</string>
+  <string name="settings_notify_background">백그라운드 알림</string>
+  <string name="settings_app">앱</string>
+  <string name="settings_version">버전</string>
+  <string name="new_session">새 세션</string>
+  <string name="new_session_folder">Mac의 작업 폴더</string>
+  <string name="new_session_recent">최근 폴더</string>
+  <string name="new_session_prompt">첫 지시 (비워 두면 빈 세션)</string>
+  <string name="new_session_start">시작</string>
+  <string name="new_session_started">새 세션을 시작했어요</string>
+  <string name="new_session_failed">시작하지 못했어요 — Mac의 수혁을 업데이트하세요</string>
+  <string name="new_session_demo">체험 모드에서는 쓸 수 없어요</string>
+</resources>

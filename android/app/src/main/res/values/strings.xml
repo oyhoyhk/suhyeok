@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English (default). Korean: values-ko/strings.xml, same keys. Text from the Mac (agent names, statuses, replies)
+     arrives in the Mac's language and is not translated here. -->
+<resources>
+  <string name="app_name">Suhyeok</string>
+
+  <!-- Shared -->
+  <string name="loading">Loading…</string>
+  <string name="cancel">Cancel</string>
+  <string name="needs_choice">Needs a choice</string>
+  <string name="working">Working</string>
+  <string name="work_done">Work done</string>
+  <string name="send_failed">Couldn\'t send</string>
+
+  <!-- Pairing -->
+  <string name="pair_instructions">In Suhyeok on your Mac, open Settings (⌘,), turn on Mobile access and click Start pairing, then scan the QR code on the screen.</string>
+  <string name="pair_previous">Previous address: %1$s</string>
+  <string name="pair_scan">Scan QR</string>
+  <string name="pair_scan_prompt">Suhyeok pairing QR</string>
+  <string name="pair_demo">Try without a Mac (demo mode)</string>
+  <string name="pair_not_qr">Not a Suhyeok pairing QR code</string>
+  <string name="pair_allow_on_mac">Allow this phone on your Mac</string>
+  <string name="pair_expired">Timed out — try again</string>
+  <string name="pair_failed">Couldn\'t connect</string>
+
+  <!-- Agents list -->
+  <string name="agents_unreachable">Can\'t reach your Mac — check that Suhyeok is running and Mobile access is on</string>
+  <string name="demo_subtitle">Demo mode — sample sessions</string>
+  <string name="menu">Menu</string>
+  <string name="demo_end">End demo mode</string>
+  <string name="unpair_menu">Connect another Mac / Disconnect</string>
+  <string name="unpair_title">Disconnect?</string>
+  <string name="unpair_text">This clears the pairing on this phone. To use it again, scan the QR on your Mac and allow the phone.</string>
+  <string name="unpair_confirm">Disconnect</string>
+  <string name="group_waiting">Waiting for instructions</string>
+  <string name="group_resting">Resting</string>
+  <string name="agent_asking">Stopped on a choice — tap to answer</string>
+  <string name="ago_now">Just now</string>
+  <plurals name="ago_minutes">
+    <item quantity="one">%d min ago</item>
+    <item quantity="other">%d min ago</item>
+  </plurals>
+  <plurals name="ago_hours">
+    <item quantity="one">%d hour ago</item>
+    <item quantity="other">%d hours ago</item>
+  </plurals>
+  <plurals name="ago_days">
+    <item quantity="one">%d day ago</item>
+    <item quantity="other">%d days ago</item>
+  </plurals>
+
+  <!-- App update banner (direct builds) -->
+  <string name="update_new">New version %1$s</string>
+  <string name="update_downloading">Downloading %1$d%%</string>
+  <string name="update_tap">Tap to update</string>
+  <string name="update_button">Update</string>
+  <string name="update_allow_source">Turn on \'Allow from this source\', then tap again</string>
+
+  <!-- Background notifications -->
+  <string name="notify_turn_off">Turn off background notifications</string>
+  <string name="notify_turn_on">Turn on background notifications</string>
+  <string name="notify_kind_asking">Notify: needs a choice</string>
+  <string name="notify_kind_done">Notify: work done</string>
+  <string name="notify_service_title">Suhyeok notifications on</string>
+  <string name="notify_service_text">Alerts you when an agent is waiting for a choice or finishes its work</string>
+  <string name="notify_asking">%1$s · Needs a choice</string>
+  <string name="notify_done">%1$s · Work done</string>
+  <string name="channel_asking_desc">An agent stopped on a permission check or a question</string>
+  <string name="channel_done_desc">An agent finished a turn</string>
+  <string name="channel_service">Notification service</string>
+  <string name="channel_service_desc">Shown while status is checked in the background</string>
+
+  <!-- Chat -->
+  <string name="chat_unreachable">Can\'t reach your Mac</string>
+  <string name="chat_asking">Needs a choice — pick one below</string>
+  <string name="chat_empty">No messages yet</string>
+  <string name="chat_queued">It will read this when it finishes</string>
+  <string name="chat_choose_failed">Couldn\'t choose</string>
+  <string name="chat_stopped">Stopped — tap \'Recall last instruction\' to edit and resend</string>
+  <string name="chat_stop">■ Stop</string>
+  <string name="chat_recall">↑ Recall last instruction</string>
+  <string name="chat_placeholder">Tell %1$s what to do</string>
+  <string name="chat_dictate_prompt">Speak to %1$s</string>
+  <string name="chat_menu_title">A choice is needed</string>
+  <string name="chat_live_title">Live screen (last 14 lines)</string>
+  <string name="back">Back</string>
+  <string name="read_aloud">Read replies aloud</string>
+  <string name="dictate">Speak an instruction</string>
+  <string name="quick_keys">Quick keys</string>
+  <string name="attach">Attach a photo or file</string>
+  <string name="attach_remove">Leave out</string>
+  <string name="attach_uploading">Sending %1$d to your Mac…</string>
+  <string name="attach_too_big">%1$s is over 25 MB</string>
+  <string name="attach_unreadable">Couldn\'t read the file</string>
+  <string name="attach_failed">Couldn\'t send %1$s — %2$s</string>
+  <string name="send">Send</string>
+
+  <!-- Feedback (/feedback posts a public GitHub issue) -->
+  <string name="feedback_empty">Write your feedback after /feedback</string>
+  <string name="feedback_sending">Sending feedback…</string>
+  <string name="feedback_sent">Feedback posted — %1$s</string>
+  <string name="feedback_failed">Couldn\'t send feedback — %1$s</string>
+
+  <!-- Session menu (long press) -->
+  <string name="session_chat">Chat</string>
+  <string name="session_rename">Rename session…</string>
+  <string name="session_clone">Clone into a new agent</string>
+  <string name="session_clear">Start a new chat (/clear)</string>
+  <string name="session_migrate">Move into Suhyeok</string>
+  <string name="session_end">End session…</string>
+  <string name="session_clear_question">Clear %1$s\'s chat and start over? You can reopen the old chat from Recent chats on the Mac.</string>
+  <string name="session_migrate_question">Move %1$s into Suhyeok\'s terminal? The session in the original terminal will end.</string>
+  <string name="session_end_question">End %1$s\'s session?</string>
+  <string name="session_end_confirm">End</string>
+  <string name="ok">OK</string>
+  <string name="rename_title">Rename session</string>
+  <string name="rename_placeholder">Leave empty for the original title</string>
+  <string name="save">Save</string>
+  <string name="done_clone">Creating the clone</string>
+  <string name="done_clear">Started a new chat</string>
+  <string name="done_migrate">Moving</string>
+  <string name="done_end">Ended</string>
+  <string name="done_rename">Renamed</string>
+  <string name="done_generic">Done</string>
+  <string name="action_failed">Failed</string>
+  <string name="action_not_done">Couldn\'t do that</string>
+
+  <!-- Errors from the phone itself (the Mac's own error messages are shown as it sends them) -->
+  <string name="error_code">Error %1$d</string>
+  <string name="error_unreadable">Couldn\'t read the response (%1$d)</string>
+  <string name="error_pair_code">Couldn\'t connect (%1$d)</string>
+  <string name="error_no_token">Didn\'t receive a token</string>
+  <string name="error_update_download">Couldn\'t download the update (%1$d)</string>
+  <string name="error_update_corrupt">The downloaded file is damaged — try again</string>
+  <!-- Bottom tabs -->
+  <string name="tab_world">World</string>
+  <string name="tab_sessions">Sessions</string>
+  <string name="tab_terminal">Terminal</string>
+  <string name="tab_settings">Settings</string>
+  <string name="agents_empty">No sessions yet — tap ＋ to start one</string>
+  <string name="world_camp">Camp</string>
+  <string name="world_low">Low</string>
+  <string name="world_mid">Mid</string>
+  <string name="world_high">High</string>
+  <string name="world_demo">The world needs your Mac — pair with Suhyeok on your Mac to see your agents here</string>
+  <string name="world_none">Your Mac did not send the world map — update Suhyeok on your Mac</string>
+  <string name="term_subtitle">Terminals running in Suhyeok on your Mac</string>
+  <string name="term_new">New shell</string>
+  <string name="term_demo">Terminals need your Mac — pair with Suhyeok on your Mac to use them</string>
+  <string name="term_unavailable">Can\'t load terminals — update Suhyeok on your Mac</string>
+  <string name="term_empty">No terminals — tap ＋ for a new shell</string>
+  <string name="term_gone">Ended</string>
+  <string name="term_placeholder">Command</string>
+  <string name="settings_connection">Connection</string>
+  <string name="settings_mac">Mac</string>
+  <string name="settings_notify">Notifications</string>
+  <string name="settings_notify_background">Background notifications</string>
+  <string name="settings_app">App</string>
+  <string name="settings_version">Version</string>
+  <string name="new_session">New session</string>
+  <string name="new_session_folder">Working folder on your Mac</string>
+  <string name="new_session_recent">Recent folders</string>
+  <string name="new_session_prompt">First instruction (optional)</string>
+  <string name="new_session_start">Start</string>
+  <string name="new_session_started">Started a new session</string>
+  <string name="new_session_failed">Couldn\'t start — update Suhyeok on your Mac</string>
+  <string name="new_session_demo">Not available in demo mode</string>
+</resources>

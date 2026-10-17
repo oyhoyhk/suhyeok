@@ -69,7 +69,7 @@ fun projectColor(cwd: String): Color {
 fun statusColor(status: String, activity: String): Color = when {
     status == "waiting" -> Color(0xFFFF6B6B)
     status == "busy" -> Color(0xFF66BB6A)
-    activity == "대기 중" -> Color(0xFFFFA726)
+    isWaitingActivity(activity) -> Color(0xFFFFA726)
     else -> Color.Gray
 }
 

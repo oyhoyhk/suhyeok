@@ -33,8 +33,8 @@ class NotifyService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         channels(this)
         val ongoing = NotificationCompat.Builder(this, CH_SERVICE)
-            .setSmallIcon(R.drawable.ic_stat).setContentTitle("수혁 알림 켜짐")
-            .setContentText("에이전트가 선택을 기다리거나 일을 마치면 알려 줌")
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle(getString(R.string.notify_service_title))
+            .setContentText(getString(R.string.notify_service_text))
             .setContentIntent(openApp(this, null)).setOngoing(true).build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(ID_SERVICE, ongoing, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         else startForeground(ID_SERVICE, ongoing)
@@ -52,8 +52,8 @@ class NotifyService : Service() {
             try {
                 val e = Api(base, token).events(boot, after)
                 for (ev in e.events) when {
-                    ev.kind == "asking" && prefs.notifyAsking -> notify(ev, "${ev.name} · 선택 필요", ev.text, CH_ASKING)
-                    ev.kind == "done" && prefs.notifyDone -> notify(ev, "${ev.name} · 작업 완료", ev.text, CH_DONE)
+                    ev.kind == "asking" && prefs.notifyAsking -> notify(ev, getString(R.string.notify_asking, ev.name), ev.text, CH_ASKING)
+                    ev.kind == "done" && prefs.notifyDone -> notify(ev, getString(R.string.notify_done, ev.name), ev.text, CH_DONE)
                 }
                 boot = e.boot; after = e.seq
             } catch (e: Unpaired) {
@@ -78,6 +78,10 @@ class NotifyService : Service() {
 
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
 
+    // Android 15+ caps dataSync services at 6 h a day; stop when told, or the system crashes the app.
+    // Opening the app starts the service again (MainActivity).
+    override fun onTimeout(startId: Int, fgsType: Int) { stopSelf() }
+
     companion object {
         const val CH_SERVICE = "service"
         const val CH_ASKING = "asking"
@@ -90,12 +94,12 @@ class NotifyService : Service() {
 
         fun channels(context: Context) {
             val m = context.getSystemService(NotificationManager::class.java)
-            m.createNotificationChannel(NotificationChannel(CH_ASKING, "선택 필요", NotificationManager.IMPORTANCE_HIGH)
-                .apply { description = "에이전트가 권한 확인·질문 선택지에서 멈춤" })
-            m.createNotificationChannel(NotificationChannel(CH_DONE, "작업 완료", NotificationManager.IMPORTANCE_DEFAULT)
-                .apply { description = "에이전트가 한 차례 작업을 마침" })
-            m.createNotificationChannel(NotificationChannel(CH_SERVICE, "알림 서비스", NotificationManager.IMPORTANCE_MIN)
-                .apply { description = "백그라운드에서 상태를 확인하는 동안 표시" })
+            m.createNotificationChannel(NotificationChannel(CH_ASKING, context.getString(R.string.needs_choice), NotificationManager.IMPORTANCE_HIGH)
+                .apply { description = context.getString(R.string.channel_asking_desc) })
+            m.createNotificationChannel(NotificationChannel(CH_DONE, context.getString(R.string.work_done), NotificationManager.IMPORTANCE_DEFAULT)
+                .apply { description = context.getString(R.string.channel_done_desc) })
+            m.createNotificationChannel(NotificationChannel(CH_SERVICE, context.getString(R.string.channel_service), NotificationManager.IMPORTANCE_MIN)
+                .apply { description = context.getString(R.string.channel_service_desc) })
         }
 
         /** Opens the app, on the given agent's conversation when there is one. */

@@ -1,0 +1,20 @@
+Suhyeok is for developers who run several AI coding agents (Claude Code, Codex) at once on their Mac. This phone app connects to the Suhyeok app on your Mac, so you can check your agent sessions and keep them working while you are away from your desk.
+
+■ When to use it
+· An agent stopped on a permission check or a choice: pick the answer on your phone and let it continue
+· Get a notification when work finishes or a session needs a choice
+· Type or speak the next instruction for each session
+· Have agent replies read aloud
+
+■ All sessions at a glance
+Sessions are grouped into needs a choice, working, waiting for the next instruction, and resting. Each session has its own character portrait and name, so you can tell the work apart quickly.
+
+■ How to connect
+1. Install Suhyeok on your Mac and turn on "Mobile access" in Settings.
+2. Press "Start pairing" and scan the QR code with this app.
+3. Allow this phone on your Mac, and you are connected.
+
+No Mac? Tap "Try without a Mac (demo mode)" on the first screen to explore sample sessions.
+
+■ Privacy
+Session content goes directly from your Mac to your phone and is never stored on the developer's servers. No ads, no tracking.

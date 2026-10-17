@@ -1,0 +1,1 @@
+Mac에서 돌아가는 Claude Code·Codex 세션을 폰에서 보고, 답하고, 지시함
