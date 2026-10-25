@@ -3,6 +3,7 @@ package com.pickuma.suhyeok
 import android.content.Context
 import androidx.annotation.StringRes
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -230,7 +231,7 @@ class Api(val base: String, private val token: String?) {
         })
     }
 
-    /** Where the player streams a file from; it sends [headers] itself. */
+    /** Where the image viewer loads a file from; it sends [headers] itself. */
     fun fileUrl(path: String) = "$base/api/file?path=" + enc(path)
     val headers: Map<String, String> get() = token?.let { mapOf("Cookie" to "sh=$it") }.orEmpty()
 
@@ -245,7 +246,11 @@ class Api(val base: String, private val token: String?) {
         c.inputStream.use { String(it.readBytes(), Charsets.UTF_8) }  // the Range header keeps it within limit
     }
 
-    /** Copies a file from the Mac into [file] (for another app to open). */
+    /**
+     * Copies a file from the Mac into [file] (for another app, or the video viewer, to open).
+     * Cancelling stops at the next chunk and closes the connection: a response left open but unread
+     * holds the tunnel's flow-control window and stalls every other request to the Mac.
+     */
     suspend fun download(path: String, file: java.io.File, progress: (Float) -> Unit) = withContext(Dispatchers.IO) {
         if (demo) throw Failure(R.string.files_demo)
         val c = open("GET", "/api/file?path=" + enc(path))
@@ -256,20 +261,26 @@ class Api(val base: String, private val token: String?) {
         val total = c.contentLengthLong.coerceAtLeast(1)
         file.parentFile?.mkdirs()
         val part = java.io.File(file.path + ".part")
-        c.inputStream.use { input ->
-            part.outputStream().use { out ->
-                val buf = ByteArray(64 * 1024)
-                var done = 0L
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    out.write(buf, 0, n)
-                    done += n
-                    progress(done.toFloat() / total)
+        try {
+            c.inputStream.use { input ->
+                part.outputStream().use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    var done = 0L
+                    while (true) {
+                        ensureActive()
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        done += n
+                        progress(done.toFloat() / total)
+                    }
                 }
             }
+            part.renameTo(file)
+        } finally {
+            c.disconnect()
+            part.delete()
         }
-        part.renameTo(file)
     }
 
     /** The server decodes %XX only, so spaces must not become "+". */

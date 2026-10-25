@@ -96,6 +96,7 @@ struct WorkspaceView: View {
     @ObservedObject private var updater = Updater.shared
     @State private var showNew = false
     @State private var showMigrate = false
+    @State private var showWorktrees = false
     @State private var confirmUpdate = false
     @State private var ending: AgentSession?
     @State private var migrating: AgentSession?
@@ -109,12 +110,18 @@ struct WorkspaceView: View {
                     Label("길드 · 결정", systemImage: "diamond").tag(Pane.guild)
                     Label("캐릭터 마켓", systemImage: "bag").tag(Pane.market)
                 }
-                Section("수혁 세션") {
+                Section {
                     let agents = store.hosted.filter { $0.agent != nil }
                     if agents.isEmpty {
                         Text("＋ 버튼으로 새 세션 시작").font(.caption).foregroundStyle(.secondary)
                     }
                     sortedRows(agents.map(hostedItem))
+                } header: {
+                    HStack {
+                        Text("수혁 세션")
+                        Spacer()
+                        Button("워크트리…") { showWorktrees = true }.buttonStyle(.borderless).font(.caption)
+                    }
                 }
                 let shells = store.hosted.filter { $0.agent == nil && $0.name != TmuxEngine.panelName }
                 if !shells.isEmpty {
@@ -169,6 +176,7 @@ struct WorkspaceView: View {
         .toolbar { ToolbarItem(placement: .principal) { TalkModeToggle(store: store) } }
         .sheet(isPresented: $showNew) { NewSessionSheet(store: store) }
         .sheet(isPresented: $showMigrate) { MigrationSheet(store: store) }
+        .sheet(isPresented: $showWorktrees) { WorktreesSheet(store: store) }
         .endSessionDialog(store: store, ending: $ending, migrating: $migrating)
         .onAppear { updater.start(); TerminalPanelKey.install(store) }
         // `exit` in the panel ends its shell; hide the panel instead of showing a dead terminal.
@@ -216,6 +224,12 @@ struct WorkspaceView: View {
                             AgentMenu(store: store, session: s, ending: $ending, migrating: $migrating)
                         } else if let h = item.hosted {
                             Button("세션 종료", role: .destructive) { store.kill(h.name) }
+                            if Worktree.isManaged(h.cwd) {
+                                Button("종료하고 워크트리 정리", role: .destructive) {
+                                    store.kill(h.name)
+                                    Task { await removeWorktree(h.cwd) }
+                                }
+                            }
                         }
                     }
                 // Sessions this agent started (e.g. `claude -p` from its scripts), nested under it.
@@ -399,6 +413,12 @@ struct HostedSessionView: View {
         }
         .confirmationDialog("이 세션을 종료할까요?", isPresented: $confirmKill) {
             Button("종료", role: .destructive) { store.kill(name) }
+            if let path = h?.cwd, Worktree.isManaged(path) {
+                Button("종료하고 워크트리 정리", role: .destructive) {
+                    store.kill(name)
+                    Task { await removeWorktree(path) }
+                }
+            }
         } message: {
             Text(store.hosted.first { $0.name == name }?.agent == nil
                  ? "셸과 그 안에서 실행 중인 명령이 끝남."
@@ -459,6 +479,14 @@ struct NewSessionSheet: View {
     @State private var agent: Agent = .claude
     @State private var cwd = FileManager.default.homeDirectoryForCurrentUser.path
     @State private var prompt = ""
+    /// Repo containing `cwd`, looked up when the folder changes; the worktree option shows only inside a repo.
+    @State private var repo: String?
+    @State private var useWorktree = false
+    @State private var branch = Worktree.defaultBranch()
+    /// Once the user types a branch name, the prompt no longer renames it.
+    @State private var branchEdited = false
+    @State private var creating = false
+    @State private var failure: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -478,6 +506,19 @@ struct NewSessionSheet: View {
                 .fixedSize()
                 Button("선택…") { pickFolder() }
             }
+            if repo != nil {
+                HStack {
+                    Toggle("새 워크트리에서 시작", isOn: $useWorktree).font(.caption)
+                    if useWorktree {
+                        TextField("브랜치", text: Binding(get: { branch }, set: { branch = $0; branchEdited = true }))
+                            .font(.caption.monospaced())
+                    }
+                }
+                if useWorktree {
+                    Text("~/.suhyeok/worktrees 에 새 브랜치로 체크아웃함. .worktreeinclude 에 적힌 파일은 복사됨.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             Toggle("권한 확인 없이 실행", isOn: Binding(
                 get: { UserDefaults.standard.object(forKey: "skipPermissions") as? Bool ?? true },
                 set: { UserDefaults.standard.set($0, forKey: "skipPermissions") }))
@@ -488,18 +529,41 @@ struct NewSessionSheet: View {
                 .frame(minHeight: 90)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
             HStack {
+                if let failure { Text(failure).font(.caption).foregroundStyle(.red).lineLimit(3) }
                 Spacer()
                 Button("취소") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("시작") {
-                    store.start(agent: agent, cwd: cwd, prompt: prompt)
-                    dismiss()
-                }
+                Button(creating ? "워크트리 만드는 중…" : "시작") { begin() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!folderExists)
+                .disabled(!folderExists || creating)
             }
         }
         .padding(20)
         .frame(width: 520)
+        .task(id: cwd) {
+            let dir = cwd
+            repo = await Task.detached { Worktree.repoRoot(of: dir) }.value
+        }
+        .onChange(of: prompt) { if !branchEdited { branch = Worktree.defaultBranch(for: prompt) } }
+    }
+
+    private func begin() {
+        guard useWorktree, repo != nil else {
+            store.start(agent: agent, cwd: cwd, prompt: prompt)
+            dismiss(); return
+        }
+        creating = true
+        failure = nil
+        let (dir, name) = (cwd, branch.trimmingCharacters(in: .whitespaces))
+        Task {
+            switch await Task.detached(operation: { Worktree.create(from: dir, branch: name) }).value {
+            case .success(let path):
+                store.start(agent: agent, cwd: path, prompt: prompt)
+                dismiss()
+            case .failure(let f):
+                failure = f.message
+                creating = false
+            }
+        }
     }
 
     private var folderExists: Bool {
@@ -513,6 +577,82 @@ struct NewSessionSheet: View {
         panel.canChooseFiles = false
         panel.directoryURL = URL(fileURLWithPath: cwd)
         if panel.runModal() == .OK, let url = panel.url { cwd = url.path }
+    }
+}
+
+/// Removes the managed checkout `path` is in; when git refuses (uncommitted changes), says so and keeps it.
+/// Returns true when it was removed.
+@MainActor @discardableResult
+func removeWorktree(_ path: String) async -> Bool {
+    guard let f = await Task.detached(operation: { Worktree.remove(path) }).value else { return true }
+    let alert = NSAlert()
+    alert.messageText = String(localized: "워크트리를 남겨 둠")
+    alert.informativeText = String(localized: "커밋하지 않은 변경이 있으면 git이 지우지 않음. 브랜치는 그대로 남음.") + "\n\n" + f.message
+    alert.runModal()
+    return false
+}
+
+/// Checkouts under ~/.suhyeok/worktrees, with their branch and changes; ones no session uses can be removed.
+struct WorktreesSheet: View {
+    @ObservedObject var store: SessionStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var entries: [Worktree.Entry]?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("워크트리").font(.title2.bold())
+            Text("삭제는 체크아웃 폴더만 지움. 브랜치와 커밋은 원본 저장소에 남음.").font(.caption).foregroundStyle(.secondary)
+            if let entries {
+                if entries.isEmpty {
+                    Text("수혁이 만든 워크트리가 없음").foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 80)
+                } else {
+                    List {
+                        ForEach(Dictionary(grouping: entries, by: \.repo).sorted { $0.key < $1.key }, id: \.key) { repo, items in
+                            Section(repo) { ForEach(items) { row($0) } }
+                        }
+                    }
+                    .frame(minHeight: 240)
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 80)
+            }
+            HStack {
+                Spacer()
+                Button("닫기") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+        .task { await reload() }
+    }
+
+    private func row(_ e: Worktree.Entry) -> some View {
+        let inUse = isInUse(e)
+        return HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(e.branch ?? e.name).font(.body.monospaced())
+                Text(e.branch == nil ? String(localized: "git 체크아웃이 아님")
+                     : e.changes == 0 ? String(localized: "변경 없음") : String(localized: "커밋 안 된 변경 \(e.changes)개"))
+                    .font(.caption).foregroundStyle(e.changes == 0 && e.branch != nil ? Color.secondary : Color.orange)
+            }
+            Spacer()
+            if inUse { Text("사용 중").font(.caption).foregroundStyle(.secondary) }
+            Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: e.path)]) } label: { Image(systemName: "folder") }
+                .buttonStyle(.borderless).help("Finder에서 보기")
+            Button(role: .destructive) {
+                Task { await removeWorktree(e.path); await reload() }
+            } label: { Image(systemName: "trash") }
+                .buttonStyle(.borderless).help(inUse ? String(localized: "세션을 먼저 종료") : String(localized: "워크트리 삭제"))
+                .disabled(inUse || e.branch == nil)
+        }
+    }
+
+    private func isInUse(_ e: Worktree.Entry) -> Bool {
+        (store.hosted.map(\.cwd) + store.sessions.map(\.cwd)).contains { Worktree.checkout(containing: $0) == e.path }
+    }
+
+    private func reload() async {
+        entries = await Task.detached { Worktree.all() }.value
     }
 }
 
@@ -639,6 +779,14 @@ struct EndSessionDialog: ViewModifier {
                                 presenting: ending) { s in
                 Button("종료", role: .destructive) {
                     Task { failure = await store.end(s) }
+                }
+                if Worktree.isManaged(s.cwd) {
+                    Button("종료하고 워크트리 정리", role: .destructive) {
+                        Task {
+                            failure = await store.end(s)
+                            if failure == nil { await removeWorktree(s.cwd) }
+                        }
+                    }
                 }
             } message: { s in
                 Text("\(s.name)\n에이전트에 \(s.agent == .claude ? "/exit" : "/quit")를 보내 정상 종료함. 대화 기록은 남아 '최근 대화'에서 이어서 열 수 있음.")

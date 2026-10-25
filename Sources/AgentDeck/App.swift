@@ -370,7 +370,11 @@ final class SessionStore: ObservableObject {
         if UserDefaults.standard.bool(forKey: "mobileEnabled"), !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }) {
             Task { @MainActor in MobileServer.shared.start(store: self); MobileTunnel.shared.start() }
         }
-        if !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }) { CrystalBank.shared.start() }
+        // SUHYEOK_NO_KEYCHAIN=1: launch without reading the ledger key, for when a keychain prompt nobody can answer
+        // (Mac locked, user away) would block launch. The ledger stays read-only, so crystals pause until a normal launch.
+        let noKeychain = ProcessInfo.processInfo.environment["SUHYEOK_NO_KEYCHAIN"] == "1"
+        if noKeychain { CrystalBank.preview = true }
+        if !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }), !noKeychain { CrystalBank.shared.start() }
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }

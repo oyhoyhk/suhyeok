@@ -72,21 +72,44 @@ enum MobileFiles {
 
 /// Sends `length` bytes of an open file after `head`, one chunk each time the connection has taken the last one.
 /// Runs on the connection's queue; it holds the only references to the handle and the count.
+/// A reader that stops taking bytes for `stallLimit` seconds is dropped: through the Cloudflare tunnel an open but
+/// unread response holds the tunnel's flow-control window and stalls every other request to this Mac.
 final class FileSender: @unchecked Sendable {
-    private let c: NWConnection, handle: FileHandle
+    private let c: NWConnection, handle: FileHandle, stallLimit: TimeInterval
     private var left: Int64
+    private var lastProgress = Date()
+    private var finished = false
 
-    init(_ c: NWConnection, _ handle: FileHandle, _ length: Int64) { self.c = c; self.handle = handle; left = length }
+    init(_ c: NWConnection, _ handle: FileHandle, _ length: Int64, stallLimit: TimeInterval = 20) {
+        self.c = c; self.handle = handle; left = length; self.stallLimit = stallLimit
+    }
 
-    func start(_ head: Data) { c.send(content: head, completion: .contentProcessed(next)) }
+    func start(_ head: Data) {
+        c.send(content: head, completion: .contentProcessed(next))
+        watch()
+    }
 
     private func next(_ error: NWError?) {
         guard error == nil, left > 0, let chunk = try? handle.read(upToCount: Int(min(left, 256 * 1024))), !chunk.isEmpty else {
-            try? handle.close()
-            c.cancel()
-            return
+            return finish()
         }
+        lastProgress = Date()
         left -= Int64(chunk.count)
         c.send(content: chunk, completion: .contentProcessed(next))
+    }
+
+    private func watch() {
+        (c.queue ?? .main).asyncAfter(deadline: .now() + min(5, stallLimit / 2)) { [self] in
+            guard !finished else { return }
+            if Date().timeIntervalSince(lastProgress) > stallLimit { return finish() }
+            watch()
+        }
+    }
+
+    private func finish() {
+        guard !finished else { return }
+        finished = true
+        try? handle.close()
+        c.cancel()
     }
 }

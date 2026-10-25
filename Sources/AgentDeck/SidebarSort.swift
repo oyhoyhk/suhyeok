@@ -76,7 +76,7 @@ extension SessionStore {
         let newestFirst: (SidebarItem, SidebarItem) -> Bool = { last($0) > last($1) }
         switch sort {
         case .folder:
-            let groups = Dictionary(grouping: items) { ($0.cwd as NSString).lastPathComponent }
+            let groups = Dictionary(grouping: items) { Worktree.project(of: $0.cwd) }
             let folders = groups.keys.sorted { ascending ? $0.localizedStandardCompare($1) == .orderedAscending
                                                          : $0.localizedStandardCompare($1) == .orderedDescending }
             return folders.map { ($0, groups[$0]!.sorted(by: newestFirst)) }

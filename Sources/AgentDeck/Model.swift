@@ -58,7 +58,7 @@ struct AgentSession: Identifiable {
     /// Live session whose process launched this one, e.g. a `claude -p` run from that session's script.
     var parentId: String? = nil
 
-    var project: String { (cwd as NSString).lastPathComponent }
+    var project: String { Worktree.project(of: cwd) }
 }
 
 /// Reads the trailing JSONL lines of a file without loading the whole transcript.

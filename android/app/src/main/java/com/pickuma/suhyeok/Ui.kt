@@ -189,10 +189,23 @@ fun inline(s: String, linkColor: Color = Gold, files: Map<String, String> = empt
                 val code = s.substring(i + 1, end)
                 // Replies often quote addresses as code (`https://…`): still a link.
                 if (Regex("""https?://\S+""").matches(code)) withLink(LinkAnnotation.Url(code, linkStyle)) { append(code) }
-                else if (code in files) withLink(LinkAnnotation.Url(fileLink(files.getValue(code)), linkStyle)) {
-                    withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(code) }
+                // Paths inside the code (`open "/x/a.mp4"`, the whole span, …) are links; the rest stays code.
+                else {
+                    var j = 0
+                    while (j < code.length) {
+                        val f = fileAt(code, j, files)
+                        if (f != null) {
+                            withLink(LinkAnnotation.Url(fileLink(files.getValue(f)), linkStyle)) {
+                                withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(f) }
+                            }
+                            j += f.length
+                        } else {
+                            val next = (j + 1 until code.length).firstOrNull { fileAt(code, it, files) != null } ?: code.length
+                            withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = Color(0xFFFFE082))) { append(code.substring(j, next)) }
+                            j = next
+                        }
+                    }
                 }
-                else withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = Color(0xFFFFE082))) { append(code) }
                 i = end + 1
             }
             else -> { append(s[i]); i++ }

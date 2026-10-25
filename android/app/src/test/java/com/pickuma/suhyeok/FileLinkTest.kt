@@ -19,6 +19,18 @@ class FileLinkTest {
         assertEquals(listOf("out/demo.mp4" to "/Users/me/p/out/demo.mp4", "~/p/dist" to "/Users/me/p/dist/"), links(a))
     }
 
+    @Test fun pathInsideLongerCodeLinksOnlyThePath() {
+        val files = mapOf("/Users/me/p/out/demo.mp4" to "/Users/me/p/out/demo.mp4")
+        val a = inline("터미널에서 `open \"/Users/me/p/out/demo.mp4\"` 실행", files = files)
+        assertEquals("터미널에서 open \"/Users/me/p/out/demo.mp4\" 실행", a.text)
+        assertEquals(listOf("/Users/me/p/out/demo.mp4" to "/Users/me/p/out/demo.mp4"), links(a))
+    }
+
+    @Test fun pathGluedInsideCodeDoesNotLink() {
+        val a = inline("`xout/demo.mp4`", files = mapOf("out/demo.mp4" to "/x"))
+        assertEquals(emptyList<Any>(), links(a))
+    }
+
     @Test fun pathInsideALongerWordDoesNotLink() {
         val a = inline("see xout/demo.mp4", files = mapOf("out/demo.mp4" to "/x"))
         assertEquals(emptyList<Any>(), links(a))

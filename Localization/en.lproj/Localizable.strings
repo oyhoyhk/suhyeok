@@ -462,6 +462,29 @@
 "자동 제목으로 되돌리기" = "Revert to generated title";
 "저장" = "Save";
 "닫기 (⌘`)" = "Close (⌘`)";
+"새 워크트리에서 시작" = "Start in a new worktree";
+"브랜치" = "Branch";
+"~/.suhyeok/worktrees 에 새 브랜치로 체크아웃함. .worktreeinclude 에 적힌 파일은 복사됨." = "Checks out a new branch under ~/.suhyeok/worktrees. Files listed in .worktreeinclude are copied.";
+"워크트리 만드는 중…" = "Creating worktree…";
+"종료하고 워크트리 정리" = "End and remove worktree";
+"워크트리…" = "Worktrees…";
+"워크트리" = "Worktrees";
+"삭제는 체크아웃 폴더만 지움. 브랜치와 커밋은 원본 저장소에 남음." = "Deleting removes only the checkout folder. The branch and its commits stay in the original repository.";
+"수혁이 만든 워크트리가 없음" = "No worktrees created by Suhyeok";
+"git 체크아웃이 아님" = "Not a git checkout";
+"변경 없음" = "No changes";
+"커밋 안 된 변경 %lld개" = "%lld uncommitted changes";
+"사용 중" = "In use";
+"Finder에서 보기" = "Show in Finder";
+"세션을 먼저 종료" = "End the session first";
+"워크트리 삭제" = "Delete worktree";
+"워크트리를 남겨 둠" = "Worktree kept";
+"커밋하지 않은 변경이 있으면 git이 지우지 않음. 브랜치는 그대로 남음." = "Git does not remove a worktree with uncommitted changes. The branch is kept.";
+/* Worktree.swift */
+"git 저장소가 아님" = "Not a git repository";
+"수혁이 만든 워크트리가 아님" = "Not a worktree created by Suhyeok";
+"워크트리를 찾지 못함" = "Worktree not found";
+
 /* WorldView.swift */
 "전체 보기" = "Show all";
 "시연 · %@" = "Demo · %@";

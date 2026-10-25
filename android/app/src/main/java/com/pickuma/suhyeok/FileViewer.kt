@@ -2,7 +2,6 @@ package com.pickuma.suhyeok
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
 import android.webkit.MimeTypeMap
 import android.widget.MediaController
 import android.widget.VideoView
@@ -56,6 +55,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -137,11 +137,38 @@ fun FileViewer(api: Api, path: String, onClose: () -> Unit) {
     }
 }
 
-/** Streams from the Mac with the pairing cookie; the Mac answers byte ranges, so seeking works. */
+/**
+ * Downloads the whole file, then plays it from the phone. Streaming it instead let the player read the start of a
+ * full-length response and leave the rest unread: through the Cloudflare tunnel that open response stalled every
+ * request to the Mac, the player's own range requests included (a black screen that never loaded).
+ */
 @Composable
 private fun Video(api: Api, path: String, onError: (String) -> Unit) {
+    val context = LocalContext.current
     val failed = stringResource(R.string.viewer_video_failed)
-    AndroidView(
+    var local by remember(path) { mutableStateOf<File?>(null) }
+    var progress by remember(path) { mutableFloatStateOf(0f) }
+    LaunchedEffect(path) {
+        // One video at a time in the cache; closing the viewer cancels the download (Api.download).
+        val dir = File(context.cacheDir, "video")
+        dir.listFiles()?.forEach { it.deleteRecursively() }
+        val file = File(dir, Integer.toHexString(path.hashCode()) + "." + path.substringAfterLast('.', "mp4"))
+        try {
+            api.download(path, file) { progress = it }
+            local = file
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onError(e.describe(context) ?: failed)
+        }
+    }
+    val f = local
+    if (f == null) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            LinearProgressIndicator(progress = { progress }, Modifier.fillMaxWidth(0.6f), color = Gold)
+            Text(stringResource(R.string.update_downloading, (progress * 100).toInt()), color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+        }
+    } else AndroidView(
         factory = { ctx ->
             VideoView(ctx).apply {
                 val controls = MediaController(ctx)
@@ -149,7 +176,7 @@ private fun Video(api: Api, path: String, onError: (String) -> Unit) {
                 setMediaController(controls)
                 setOnPreparedListener { start(); controls.show(3000) }
                 setOnErrorListener { _, _, _ -> onError(failed); true }
-                setVideoURI(Uri.parse(api.fileUrl(path)), api.headers)
+                setVideoPath(f.path)
             }
         },
         onRelease = { it.stopPlayback() },
