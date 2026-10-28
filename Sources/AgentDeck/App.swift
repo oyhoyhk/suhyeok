@@ -306,7 +306,7 @@ struct AgentDeckApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("수혁", id: "main") {
+        Window("수혁", id: "main") {
             WorkspaceView(store: store)
                 .frame(minWidth: 900, minHeight: 560)
         }
@@ -314,6 +314,15 @@ struct AgentDeckApp: App {
             CommandGroup(after: .newItem) {
                 Button("세션 이름 수정…") { store.editingSummary = store.selectedSession }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .disabled(store.selectedSession == nil)
+                Button("대화 새로 시작 (/clear)") {
+                    guard let s = store.selectedSession else { return }
+                    Task.detached { _ = SessionInput.send(s, text: "/clear") }
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .disabled(store.selectedSession?.agent != .claude)
+                Button("세션 종료…") { store.ending = store.selectedSession }
+                    .keyboardShortcut(.escape, modifiers: .command)
                     .disabled(store.selectedSession == nil)
             }
             CommandGroup(after: .sidebar) {
@@ -370,7 +379,11 @@ final class SessionStore: ObservableObject {
         if UserDefaults.standard.bool(forKey: "mobileEnabled"), !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }) {
             Task { @MainActor in MobileServer.shared.start(store: self); MobileTunnel.shared.start() }
         }
-        if !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }) { CrystalBank.shared.start() }
+        // SUHYEOK_NO_KEYCHAIN=1: launch without reading the ledger key, for when a keychain prompt nobody can answer
+        // (Mac locked, user away) would block launch. The ledger stays read-only, so crystals pause until a normal launch.
+        let noKeychain = ProcessInfo.processInfo.environment["SUHYEOK_NO_KEYCHAIN"] == "1"
+        if noKeychain { CrystalBank.preview = true }
+        if !CommandLine.arguments.contains(where: { $0.hasPrefix("--") }), !noKeychain { CrystalBank.shared.start() }
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -551,6 +564,8 @@ final class SessionStore: ObservableObject {
     /// The user's own one-line summary per conversation, shown instead of the generated title.
     /// Session whose summary sheet is open (set from the right-click menu).
     @Published var editingSummary: AgentSession?
+    /// Session whose end confirmation is open in the main window (right-click menu or ⌘Esc).
+    @Published var ending: AgentSession?
     @Published private(set) var summaries: [String: String] =
         UserDefaults.standard.dictionary(forKey: "summaries") as? [String: String] ?? [:]
 

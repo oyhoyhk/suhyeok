@@ -140,7 +140,7 @@ enum TmuxEngine {
 
     private static func titleFor(prompt: String?, cwd: String, resume: String?) -> String {
         if let p = prompt, !p.isEmpty { return oneLine(p, limit: 40) }
-        let folder = (cwd as NSString).lastPathComponent
+        let folder = Worktree.project(of: cwd)
         return resume == nil ? folder : String(localized: "\(folder) (이어서)")
     }
 

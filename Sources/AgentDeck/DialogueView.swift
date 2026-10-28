@@ -128,6 +128,8 @@ struct DialogueView: View {
     @State private var lastSpokenCount: Int?
     @State private var live: LiveReply?
     @State private var showScreen = false
+    /// The screen was opened by a slash command or key button, not the toggle; the next plain message closes it.
+    @State private var screenAuto = false
     @State private var notice: String?
     @FocusState private var focused: Bool
     /// Long pastes, images and files in the draft, as tokens.
@@ -672,7 +674,8 @@ struct DialogueView: View {
                 Toggle(isOn: $readReplies) { Label("답변 읽어 주기", systemImage: readReplies ? "speaker.wave.2.fill" : "speaker.slash") }
                     .toggleStyle(.button).controlSize(.small)
                 if speaker.speaking { Button("그만 읽기") { speaker.stop() }.controlSize(.small) }
-                Toggle("화면 보기", isOn: $showScreen).toggleStyle(.button).controlSize(.small)
+                Toggle("화면 보기", isOn: Binding(get: { showScreen }, set: { showScreen = $0; screenAuto = false }))
+                    .toggleStyle(.button).controlSize(.small)
             }
             if let usage { UsageLine(info: usage) }
         }
@@ -714,7 +717,7 @@ struct DialogueView: View {
         draft = ""
         sentHere = text
         // Slash commands (/usage, /model, /status …) answer in a panel on the terminal screen, not in the log.
-        if text.hasPrefix("/") { showScreen = true }
+        if text.hasPrefix("/") { openScreen() } else if screenAuto { showScreen = false; screenAuto = false }
         let full = attachments.expand(text)
         let p = Pending(text: text, sent: full)
         pending.append(p)
@@ -730,8 +733,13 @@ struct DialogueView: View {
     }
 
     private func press(_ s: AgentSession, _ key: SessionInput.Key) {
-        showScreen = true  // keys answer menus; show what they act on
+        openScreen()  // keys answer menus; show what they act on
         Task.detached { _ = SessionInput.press(s, key) }
+    }
+
+    /// Opens the screen for a slash command or key; one the user opened with the toggle stays theirs.
+    private func openScreen() {
+        if !showScreen { showScreen = true; screenAuto = true }
     }
 
     private func poll(_ start: AgentSession) async {
