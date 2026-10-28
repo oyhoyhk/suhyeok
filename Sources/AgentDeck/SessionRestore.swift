@@ -9,10 +9,13 @@ enum SessionRestore {
         let cwd: String
         let conversation: String
         let title: String
+        /// The conversation log (Claude jsonl, Codex rollout): Codex keeps the model it last ran with there.
+        var log: String? = nil
     }
 
-    static var path: String = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/Suhyeok/open-sessions.json").path
+    /// SUHYEOK_RESTORE_FILE: another record, so a check does not race the running app, which rewrites this one.
+    static var path: String = ProcessInfo.processInfo.environment["SUHYEOK_RESTORE_FILE"]
+        ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Suhyeok/open-sessions.json").path
 
     static func load() -> [Entry] {
         guard let data = FileManager.default.contents(atPath: path) else { return [] }
@@ -26,14 +29,35 @@ enum SessionRestore {
     }
 
     /// Agent sessions running on 수혁's tmux server, by the conversation each one has open.
+    /// One entry per conversation: two panes can have the same one open, and reopening both would fork it.
     static func live(hosted: [TmuxEngine.Hosted], sessions: [AgentSession]) -> [Entry] {
-        hosted.compactMap { h in
+        var seen = Set<String>()
+        return hosted.compactMap { h -> Entry? in
             guard let agent = h.agent,
                   let s = sessions.first(where: { $0.agent == agent && runs($0, in: h.name) }),
                   let conversation = s.conversationId,
                   // No log until the first message: such a conversation cannot be resumed (and holds nothing).
                   let log = s.transcriptPath, FileManager.default.fileExists(atPath: log) else { return nil }
-            return Entry(agent: agent.rawValue, cwd: h.cwd, conversation: conversation, title: s.name)
+            return Entry(agent: agent.rawValue, cwd: h.cwd, conversation: conversation, title: s.name, log: log)
+        }.filter { seen.insert($0.conversation).inserted }
+    }
+
+    /// The model and effort the conversation last ran with; without them a resumed agent starts on the defaults.
+    /// Claude: the status line copy kept per conversation. Codex: the newest turn in its rollout.
+    static func resumeFlags(_ e: Entry, statusDir: String = UsageInfo.statusDir) -> [String] {
+        switch Agent(rawValue: e.agent) {
+        case .claude:
+            guard let data = FileManager.default.contents(atPath: statusDir + "/\(e.conversation).json"),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+            var flags: [String] = []
+            if let id = (json["model"] as? [String: Any])?["id"] as? String, !id.isEmpty { flags += ["--model", id] }
+            if let level = (json["effort"] as? [String: Any])?["level"] as? String, !level.isEmpty { flags += ["--effort", level] }
+            return flags
+        case .codex:
+            guard let log = e.log, let info = UsageInfo.codex(log), let model = info.model else { return [] }
+            return ["-m", model] + (info.effort.map { ["-c", "model_reasoning_effort=" + TmuxEngine.tomlString($0)] } ?? [])
+        case nil:
+            return []
         }
     }
 

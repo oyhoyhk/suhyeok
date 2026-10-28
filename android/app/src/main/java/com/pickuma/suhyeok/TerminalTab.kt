@@ -149,7 +149,7 @@ private fun TerminalView(api: Api, name: String, onUnpaired: () -> Unit, onBack:
         screen?.let { s ->
             val cursor = s.lines.size - s.height + s.cy
             val text = s.lines.indexOfLast { ansi(it).text.isNotBlank() }
-            s.lines.take(maxOf(cursor, text) + 1).map(::ansi)
+            s.lines.take(maxOf(cursor, text) + 1).map { ansi(androidGlyphs(it)) }
         }.orEmpty()
     }
     // Follow the bottom, as a terminal does.
@@ -210,6 +210,12 @@ private fun color256(n: Int): Color = when {
     n < 232 -> { val i = n - 16; val v = { c: Int -> if (c == 0) 0 else 55 + c * 40 }; Color(v(i / 36), v(i / 6 % 6), v(i % 6)) }
     else -> { val g = 8 + (n - 232) * 10; Color(g, g, g) }
 }
+
+/**
+ * Claude Code symbols Android has no plain glyph for: ⏵ (the permission-mode line) draws as a box, ⏺ and ⏸ come out as
+ * color emoji. Swapped one character for one, so a line keeps its columns and its color spans.
+ */
+fun androidGlyphs(s: String): String = s.replace('⏵', '▸').replace('⏺', '●').replace('⏸', '‖')
 
 /** One line of `tmux capture-pane -e` output: SGR color and bold escapes become styles, other escapes are dropped. */
 fun ansi(line: String): AnnotatedString = buildAnnotatedString {

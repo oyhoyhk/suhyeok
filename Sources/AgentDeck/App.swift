@@ -606,7 +606,8 @@ final class SessionStore: ObservableObject {
             let face = character(resuming: e.conversation)
             let agent = Agent(rawValue: e.agent) ?? .claude
             _ = await Task.detached {
-                TmuxEngine.create(agent: agent, cwd: e.cwd, prompt: nil, resume: e.conversation, character: face)
+                TmuxEngine.create(agent: agent, cwd: e.cwd, prompt: nil, resume: e.conversation,
+                                  extraArgs: SessionRestore.resumeFlags(e), character: face)
             }.value
             closedSessions.removeAll { $0 == e }
             hosted = TmuxEngine.list()

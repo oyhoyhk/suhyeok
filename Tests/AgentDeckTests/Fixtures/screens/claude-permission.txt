@@ -1,0 +1,36 @@
+
+  Listed 1 directory
+
+⏺ .git 디렉터리와 a.txt(3바이트) 파일 하나가 있음
+
+✻ Cogitated for 5s · done 2:07 PM
+
+❯ Run exactly this shell command with the Bash tool: date > now.txt
+
+  Ran 1 shell command
+
+⏺ 현재 날짜와 시간을 now.txt에 썼습니다. 명령은 출력 없이 끝났습니다.
+
+✻ Baked for 3s · done 2:08 PM
+
+❯ Run exactly this shell command with the Bash tool: rm now.txt
+
+⏺ Deleting the date file
+  ⎿  $ rm now.txt
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command
+ Tip: auto mode handles these prompts for you — choose "switch to auto mode" below
+ Delete the date file
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ rm now.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and always allow access to
+      /tmp/fixture-repo
+      from this project
+   3. Yes, and switch to auto mode · auto mode handles these prompts for you
+   4. No
+
+ Esc to cancel · Tab to amend

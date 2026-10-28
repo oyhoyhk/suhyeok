@@ -141,6 +141,13 @@ struct PasteCatcher: NSViewRepresentable {
         private weak var mutedEditor: NSTextView?
         private var mutedTypes: [NSPasteboard.PasteboardType] = []
 
+        /// ⌘V by its letter. With a Korean (or other non-Latin) input source the letter can come through as Hangul,
+        /// so then the V key's position decides; Latin layouts such as Dvorak keep going by the letter.
+        static func isV(_ e: NSEvent) -> Bool {
+            guard let c = e.charactersIgnoringModifiers?.lowercased() else { return false }
+            return c == "v" || (!c.unicodeScalars.allSatisfy(\.isASCII) && e.keyCode == 9)
+        }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
@@ -155,7 +162,7 @@ struct PasteCatcher: NSViewRepresentable {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
                 guard let self, let w = self.window, e.window === w,
                       e.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                      e.charactersIgnoringModifiers == "v",
+                      Self.isV(e),
                       let editor = self.ownEditor(w),
                       let insert = self.onPaste?(Self.pasteboard)
                 else { return e }

@@ -221,11 +221,12 @@ struct TerminalMenu: Equatable {
     static func parse(_ screen: String) -> TerminalMenu? {
         let lines = screen.components(separatedBy: "\n")
         // The review step of a multi-question/multi-select AskUserQuestion has no footer: end at the last line.
-        // Claude Code: "Enter to confirm · Esc to cancel"; Codex: "enter select · esc back", "esc to cancel".
+        // Claude Code: "Enter to confirm · Esc to cancel"; Codex: "enter select · esc back", "esc to cancel",
+        // "enter continue · esc use session · ⌃c quit" (0.162's working-directory question on resume).
         let hint = lines.lastIndex(where: { l in
             let h = l.lowercased()
             return h.contains("enter to confirm") || h.contains("enter to select") || h.contains("esc to cancel")
-                || h.contains("enter select") || h.contains("esc back")
+                || h.contains("enter select") || h.contains("esc back") || h.contains("enter continue")
         })
         let review = lines.contains { $0.contains("Ready to submit your answers?") }
             ? lines.lastIndex { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map { $0 + 1 } : nil

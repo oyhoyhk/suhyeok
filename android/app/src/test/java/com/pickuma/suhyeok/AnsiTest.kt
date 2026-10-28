@@ -22,4 +22,12 @@ class AnsiTest {
         assertEquals("warn", a.text)
         assertEquals(Color(255, 128, 0), a.spanStyles.single().item.color)
     }
+
+    @Test
+    fun claudeSymbolsGetPlainGlyphs() {
+        val line = "  ⏵⏵ bypass permissions on · ⏺ done · ⏸ manual mode on"
+        val out = androidGlyphs(line)
+        assertEquals("  ▸▸ bypass permissions on · ● done · ‖ manual mode on", out)
+        assertEquals(line.length, out.length)  // columns and color spans stay where they were
+    }
 }

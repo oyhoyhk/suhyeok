@@ -102,6 +102,29 @@ open 수혁.app
 - 명령줄 변경사항: `--snapshot-changes <폴더> out.png`
 - 명령줄 복원: `--open-sessions [out.png]` → 기록될 세션 목록 (out.png = 사이드바 제안 카드) · `--reopen <대화ID>` → 기록된 세션 하나 다시 열기
 - 세션 목록을 읽는 명령은 release 빌드(`swift build -c release`)로 실행. debug 빌드는 큰 대화 기록을 읽는 데 30초를 넘겨 빈 결과가 나옴
+- 에이전트 화면 회귀 테스트 데이터 다시 뜨기: `./capture-screens.sh <출력 폴더>` → 상태별 화면 + `--parse-menu` 결과 출력. 바뀐 화면을 `Tests/AgentDeckTests/Fixtures/screens`에 넣고 `swift test`
+
+### 환경변수
+
+검증용 변수는 위 명령줄 확인에만 영향을 줌. 평소 실행에는 쓰지 않음.
+
+| 변수 | 쓰는 곳 | 효과 |
+|---|---|---|
+| `SUHYEOK_TEST_PASTEBOARD=<이름>` | `--snapshot-dialogue` | 그 이름의 별도 클립보드에서 ⌘V 두 번(긴 글, 이미지). 사용자 클립보드는 안 건드림 |
+| `SUHYEOK_TEST_DROP=<파일>` | `--snapshot-dialogue` | 대화창 가운데에 파일 드롭 |
+| `SUHYEOK_TEST_DROP_AT=field` | `--snapshot-dialogue` | 드롭 위치를 입력칸으로 |
+| `SUHYEOK_SNAPSHOT_SCROLL=top` | `--snapshot-dialogue` | 대화를 맨 위로 올린 화면("맨 아래로" 버튼 확인) |
+| `SUHYEOK_TEST_NOTE=<글>` | `--snapshot-changes` | 한 줄에 코멘트 입력칸을 연 화면 |
+| `SUHYEOK_TEST_NOTE_LINE=<글자>` | `--snapshot-changes` | 코멘트를 달 줄(그 글자가 든 첫 줄, 기본 `let limit`) |
+| `SUHYEOK_TEST_NOTE_SAVE=1` | `--snapshot-changes` | 코멘트를 추가한 뒤의 화면 |
+| `SUHYEOK_TEST_TYPE=<글>` | `--snapshot-hosted` | 입력기가 확정한 글자처럼 터미널에 입력(한글 확인용) |
+| `SUHYEOK_RESTORE_FILE=<파일>` | `--open-sessions` · `--reopen` | 복원 기록 파일을 바꿈. 실행 중인 앱이 3초마다 기본 파일을 다시 쓰므로 시험은 이 변수로 분리 |
+| `SUHYEOK_MOBILE_PORT=<포트>` | `--serve-mobile` | 시험용 폰 서버를 앱과 다른 포트로 |
+| `SUHYEOK_NO_KEYCHAIN=1` | 앱 실행 | 장부 키를 읽지 않고 실행(키체인 허용 창에 답할 수 없을 때). 결정 적립은 다음 정상 실행까지 멈춤 |
+| `SUHYEOK_DICTATION_LOG=<파일>` | 앱 실행 | 받아쓰기 로그를 파일에도 기록 |
+| `SUHYEOK_DEBUG=1` | 앱 실행 | 월드 출발 애니메이션·mermaid 높이 디버그 출력 |
+| `SUHYEOK_FAKE_DEPART=1` | 앱 실행 | 첫 에이전트의 출발 애니메이션을 한 번 재생 |
+| `SUHYEOK_SESSION` | (수혁이 설정) | 수혁 tmux 세션 이름. 에이전트 프로세스가 물려받고, 수혁이 Codex 세션과 pane을 연결하는 데 씀. 직접 설정하지 않음 |
 
 ## 터미널 보기 — 어떤 터미널이든 동작
 

@@ -319,7 +319,7 @@ private fun LiveBox(live: String) {
     val tail = live.lines().takeLast(14).joinToString("\n")
     Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(8.dp)) {
         Text(stringResource(R.string.chat_live_title), color = Color(0xFF66BB6A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        Text(linksOnly(tail, Color(0xFF80D8FF)), color = Color(0xFFB9F6CA), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp,
+        Text(linksOnly(androidGlyphs(tail), Color(0xFF80D8FF)), color = Color(0xFFB9F6CA), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp,
             modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState(), reverseScrolling = true))
     }
 }

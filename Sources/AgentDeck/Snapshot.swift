@@ -315,6 +315,12 @@ enum Snapshot {
         window.contentView = term
         term.frame = window.contentView!.bounds
         RunLoop.main.run(until: Date().addingTimeInterval(3))
+        // SUHYEOK_TEST_TYPE=<text>: hand the terminal text the way an input method commits it (insertText),
+        // e.g. Hangul finished in the Korean IME.
+        if let text = ProcessInfo.processInfo.environment["SUHYEOK_TEST_TYPE"] {
+            term.insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0))
+            RunLoop.main.run(until: Date().addingTimeInterval(1))
+        }
         if let rep = term.bitmapImageRepForCachingDisplay(in: term.bounds) {
             term.cacheDisplay(in: term.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
@@ -344,7 +350,7 @@ enum Snapshot {
             print("reopened:", TmuxEngine.list().last.map { "\($0.name) \($0.cwd) \($0.title)" } ?? "-")
         } else {
             for e in SessionRestore.live(hosted: store.hosted, sessions: store.sessions) {
-                print(e.agent, e.conversation, e.cwd, e.title, separator: "\t")
+                print(e.agent, e.conversation, e.cwd, e.title, SessionRestore.resumeFlags(e).joined(separator: " "), separator: "\t")
             }
         }
         exit(0)

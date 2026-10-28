@@ -1,0 +1,36 @@
+
+ ▐▛███▛█   Claude Code v2.1.312
+▝▜██████▀  Opus 5.5 with high effort · Claude Max
+ ▝▝   ▝▝   /tmp/fixture-repo · /rc
+
+
+❯ Run exactly this shell command with the Bash tool: ls -la. Then reply in one short line.
+
+  Listed 1 directory
+
+⏺ .git 디렉터리와 a.txt(3바이트) 파일 하나가 있음
+
+✻ Cogitated for 5s · done 2:07 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_…
+   ◆ Opus 5.5 │  /…/scratchpad/fixture-repo │  HEAD │ 󰍛 6% │ $0.284 │ 5h ▱▱▱▱▱▱▱▱▱▱   5% ↻3h42m │ 7d ▰▱▱▱▱…
+  ⏵⏵ accept edits on (shift+tab to cycle)

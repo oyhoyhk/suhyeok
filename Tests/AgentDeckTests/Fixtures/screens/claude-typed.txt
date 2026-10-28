@@ -1,0 +1,36 @@
+
+ ▐▛███▛█   Claude Code v2.1.312
+▝▜██████▀  Opus 5.5 with high effort · Claude Max
+ ▝▝   ▝▝   /tmp/fixture-repo · /rc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 이 저장소의 파일 목록을 알려줘
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · restart with CLAUDE_CODE_FORCE_…
+   ◆ Opus 5.5 │  /…/scratchpad/fixture-repo │  HEAD │ 󰍛 0% │ $0.000 │ 5h ▱▱▱▱▱▱▱▱▱▱   --% │ 7d ▱▱▱▱▱▱▱▱▱▱ …
+  ⏵⏵ accept edits on (shift+tab to cycle)
