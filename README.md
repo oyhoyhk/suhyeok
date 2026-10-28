@@ -41,6 +41,9 @@ suhyeok                            # 앱 실행
   - 줄 클릭 → 코멘트 → "에이전트에게 보내기"로 코멘트 전체를 지시 하나로 전달
   - 체크한 파일만 커밋. 나머지 변경·스테이지 상태는 그대로 둠. 훅이 거부하면 출력 표시
   - 세션 화면이 좁으면 옆 대신 아래에 열림. 경계선 드래그로 너비·높이 조절
+- 재부팅 후 복원: 열린 수혁 에이전트 세션(대화 ID)을 `~/Library/Application Support/Suhyeok/open-sessions.json`에 기록
+  - 앱 시작 시 tmux에 에이전트가 없으면 사이드바에 "모두 다시 열기" 제안 → `--resume`으로 같은 대화·같은 캐릭터
+  - 첫 메시지 전 Claude 세션은 대화 파일이 없어 기록하지 않음
 - tmux 접두키 없음(Claude Code의 ctrl+b 유지), 상태줄 숨김 — 설정 파일 `~/Library/Application Support/Suhyeok/tmux.conf`
 
 ```mermaid
@@ -97,6 +100,8 @@ open 수혁.app
 - 명령줄 세션 관리: `--new-session <Claude|Codex> <폴더> [지시]` · `--list-sessions` · `--kill-session <이름>` · `--snapshot-hosted <이름> out.png`
 - 명령줄 새 대화: `--clear <세션ID> [out.png]` → /clear 전송, 새 대화 ID까지 걸린 시간 출력 (out.png = 대기 중 스피너 화면)
 - 명령줄 변경사항: `--snapshot-changes <폴더> out.png`
+- 명령줄 복원: `--open-sessions [out.png]` → 기록될 세션 목록 (out.png = 사이드바 제안 카드) · `--reopen <대화ID>` → 기록된 세션 하나 다시 열기
+- 세션 목록을 읽는 명령은 release 빌드(`swift build -c release`)로 실행. debug 빌드는 큰 대화 기록을 읽는 데 30초를 넘겨 빈 결과가 나옴
 
 ## 터미널 보기 — 어떤 터미널이든 동작
 

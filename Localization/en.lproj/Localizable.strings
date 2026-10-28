@@ -537,3 +537,8 @@
 "변경사항 리뷰 코멘트 %lld개 — 반영해 줘." = "%lld review comments on your changes — please address them.";
 "(지운 줄)" = "(removed line)";
 "이 폴더에서 마지막 커밋 이후 바뀐 내용을 옆에 열기 — 줄에 코멘트를 달아 에이전트에게 보내고 커밋" = "Show what changed in this folder since the last commit — comment on lines, send them to the agent, and commit";
+"지난번 세션 %lld개가 닫혀 있음" = "%lld sessions from last time are closed";
+"외 %lld개" = "%lld more";
+"여는 중…" = "Opening…";
+"모두 다시 열기" = "Reopen all";
+"다시 열지 않음 — 대화는 '최근 대화'에 남아 있음" = "Don't reopen — the chats stay under Recent chats";

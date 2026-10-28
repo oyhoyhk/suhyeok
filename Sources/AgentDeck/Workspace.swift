@@ -112,6 +112,11 @@ struct WorkspaceView: View {
                 }
                 Section {
                     let agents = store.hosted.filter { $0.agent != nil }
+                    if !store.closedSessions.isEmpty {
+                        ClosedSessionsOffer(entries: store.closedSessions, reopening: store.reopening,
+                                            onReopen: { Task { await store.reopenClosedSessions() } },
+                                            onDismiss: store.dismissClosedSessions)
+                    }
                     if agents.isEmpty {
                         Text("＋ 버튼으로 새 세션 시작").font(.caption).foregroundStyle(.secondary)
                     }
@@ -912,6 +917,39 @@ enum TerminalPanelKey {
             MainActor.assumeIsolated { store.toggleTerminalPanel() }
             return nil
         }
+    }
+}
+
+
+/// After a restart: the agents that were open last time, with one button to continue them all.
+struct ClosedSessionsOffer: View {
+    let entries: [SessionRestore.Entry]
+    let reopening: Bool
+    let onReopen: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("지난번 세션 \(entries.count)개가 닫혀 있음", systemImage: "arrow.counterclockwise")
+                .font(.callout.bold())
+            ForEach(entries.prefix(6)) { e in
+                Text("\(e.agent) · \(e.title) — \(Worktree.project(of: e.cwd))")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if entries.count > 6 {
+                Text("외 \(entries.count - 6)개").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Button(reopening ? "여는 중…" : "모두 다시 열기", action: onReopen).disabled(reopening)
+                if reopening { ProgressView().controlSize(.mini) }
+                Spacer()
+                Button("닫기", action: onDismiss).buttonStyle(.borderless).disabled(reopening)
+                    .help("다시 열지 않음 — 대화는 '최근 대화'에 남아 있음")
+            }
+            .controlSize(.small)
+        }
+        .padding(8)
+        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

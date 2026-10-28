@@ -323,6 +323,33 @@ enum Snapshot {
         exit(0)
     }
 
+    static func restore(_ args: [String]) {
+        let saved = SessionRestore.load()  // before the store's first refresh writes the current state over it
+        let store = loadedStore()
+        // `--open-sessions <out.png>`: the sidebar offer as it would show these sessions after a restart.
+        if let i = args.firstIndex(of: "--open-sessions"), i + 1 < args.count, args[i + 1].hasSuffix(".png") {
+            let host = NSHostingView(rootView: ClosedSessionsOffer(entries: SessionRestore.live(hosted: store.hosted, sessions: store.sessions),
+                                                                   reopening: false, onReopen: {}, onDismiss: {})
+                .frame(width: 260).padding(10).fixedSize(horizontal: false, vertical: true))
+            let window = offscreen(host, size: host.fittingSize)
+            RunLoop.main.run(until: Date().addingTimeInterval(1))
+            writePNG(window, to: args[i + 1])
+            exit(0)
+        }
+        if let i = args.firstIndex(of: "--reopen"), i + 1 < args.count {
+            guard let e = saved.first(where: { $0.conversation == args[i + 1] }) else { print("not written down:", args[i + 1]); exit(1) }
+            let done = DispatchSemaphore(value: 0)
+            Task { @MainActor in await store.reopen([e]); done.signal() }
+            while done.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+            print("reopened:", TmuxEngine.list().last.map { "\($0.name) \($0.cwd) \($0.title)" } ?? "-")
+        } else {
+            for e in SessionRestore.live(hosted: store.hosted, sessions: store.sessions) {
+                print(e.agent, e.conversation, e.cwd, e.title, separator: "\t")
+            }
+        }
+        exit(0)
+    }
+
     static func changes(cwd: String, path: String) {
         // A window that was never shown gets no clicks (nor an accessibility tree), so the note editor opens as if
         // the line containing SUHYEOK_TEST_NOTE_LINE had been clicked.

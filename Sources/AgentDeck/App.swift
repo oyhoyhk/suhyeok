@@ -134,6 +134,9 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--snapshot-changes"), i + 2 < args.count {
             Snapshot.changes(cwd: args[i + 1], path: args[i + 2])
         }
+        // `AgentDeck --open-sessions [out.png]`: what is written down for reopening after a restart (live 수혁 agents).
+        // `AgentDeck --reopen <conversation>`: reopen that written-down session, as the sidebar offer does.
+        if args.contains("--open-sessions") || args.contains("--reopen") { Snapshot.restore(args) }
         // `AgentDeck --agents`: live agents by the names the app shows (who can be messaged).
         // `AgentDeck --msg <이름>[,<이름>…] "본문"`: types a message into those agents' terminals, signed by the caller.
         if args.contains("--agents") || args.contains("--msg") { Snapshot.mail(args) }
@@ -567,6 +570,53 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    // MARK: reopening after a restart
+
+    /// Sessions that were open when the tmux server last ran and are closed now (after a reboot), offered in the sidebar.
+    @Published private(set) var closedSessions: [SessionRestore.Entry] = []
+    @Published private(set) var reopening = false
+    private var restoreChecked = false
+    private var lastRecorded: [SessionRestore.Entry]?
+
+    /// Writes down which conversations 수혁's agents have open. On the first look after launch, an empty tmux
+    /// server means the last run's sessions were closed by a restart: offer those instead of forgetting them.
+    private func recordOpenSessions(hosted: [TmuxEngine.Hosted], sessions: [AgentSession]) {
+        if !restoreChecked {
+            restoreChecked = true
+            if !hosted.contains(where: { $0.agent != nil }) {
+                closedSessions = SessionRestore.load().filter { FileManager.default.fileExists(atPath: $0.cwd) }
+            }
+        }
+        // Already open again somewhere (e.g. from 최근 대화): a second process on the same conversation would fork it.
+        let open = Set(sessions.compactMap(\.conversationId))
+        if closedSessions.contains(where: { open.contains($0.conversation) }) { closedSessions.removeAll { open.contains($0.conversation) } }
+        let entries = SessionRestore.merged(live: SessionRestore.live(hosted: hosted, sessions: sessions), pending: closedSessions)
+        guard entries != lastRecorded else { return }
+        lastRecorded = entries
+        SessionRestore.save(entries)
+    }
+
+    /// Opens the closed sessions again, each continuing its conversation with the same character.
+    func reopenClosedSessions() async { await reopen(closedSessions) }
+
+    func reopen(_ entries: [SessionRestore.Entry]) async {
+        guard !reopening else { return }
+        reopening = true
+        for e in entries {
+            let face = character(resuming: e.conversation)
+            let agent = Agent(rawValue: e.agent) ?? .claude
+            _ = await Task.detached {
+                TmuxEngine.create(agent: agent, cwd: e.cwd, prompt: nil, resume: e.conversation, character: face)
+            }.value
+            closedSessions.removeAll { $0 == e }
+            hosted = TmuxEngine.list()
+        }
+        reopening = false
+        refresh()
+    }
+
+    func dismissClosedSessions() { closedSessions = [] }
+
     /// What an action is doing to a session until its result shows (session id → label), for a spinner.
     @Published private(set) var working: [String: String] = [:]
 
@@ -832,6 +882,7 @@ final class SessionStore: ObservableObject {
                 self.hunt = hunt
                 if let recent { self.recent = recent; self.lastRecentLoad = Date() }
                 self.sessions = all
+                self.recordOpenSessions(hosted: hosted, sessions: all)
                 self.updateStations(all)
                 self.assignments = self.assigner.update(all, allowed: CrystalBank.shared.unlocked, pinned: self.pins(all, hosted: hosted),
                                                           order: Lineup.order(Art.roster))
