@@ -74,14 +74,7 @@ struct MarkdownView: View {
             if lang == "mermaid" {
                 MermaidView(source: body)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(FileLinks.link(AttributedString(body), cwd: cwd))
-                        .font(.system(size: 12, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize()
-                        .padding(10)
-                }
-                .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                CodeBlock(code: body)
             }
         case .table(let header, let rows):
             ScrollView(.horizontal, showsIndicators: false) {
@@ -109,6 +102,39 @@ struct MarkdownView: View {
     private func inline(_ s: String) -> AttributedString {
         FileLinks.link((try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(s), cwd: cwd)
+    }
+}
+
+/// A fenced code block: one click copies the whole block, so commands are taken as a unit instead of selected by hand.
+struct CodeBlock: View {
+    let code: String
+    @State private var copied = false
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Text(code)
+                .font(.system(size: 12, design: .monospaced))
+                .textSelection(.disabled)  // a press on selectable text would start a selection instead of the tap
+                .fixedSize()
+                .padding(10)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(alignment: .topTrailing) {
+            if copied {
+                Label("복사됨", systemImage: "checkmark").font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.black.opacity(0.6), in: Capsule()).padding(6)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(code, forType: .string)
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+        }
+        .onHover { inside in if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+        .help("클릭하면 코드 전체를 복사")
     }
 }
 

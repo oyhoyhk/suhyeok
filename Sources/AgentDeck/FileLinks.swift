@@ -5,9 +5,9 @@ import SwiftUI
 /// File paths in chat text become links, opened with ⌘-click like in cmux.
 /// Only paths that exist on disk are linked, so ordinary words with slashes stay plain.
 enum FileLinks {
-    /// `~/a/b`, `/a/b`, `./a`, `a/b.swift`, `README.md`, each optionally followed by `:line[:col]`.
+    /// `~/a/b`, `/a/b`, `./a`, `a/b.swift`, `README.md`, each optionally followed by `:line[:col]` or `:line-line`.
     private static let pattern = try! NSRegularExpression(
-        pattern: #"(?<![\w/.~-])(?:~?/|\.{1,2}/)?[\w@가-힣.+-]+(?:/[\w@가-힣.+-]+)*(?::\d+(?::\d+)?)?"#)
+        pattern: #"(?<![\w/.~-])(?:~?/|\.{1,2}/)?[\w@가-힣.+-]+(?:/[\w@가-힣.+-]+)*(?::\d+(?:[:-]\d+)?)?"#)
 
     static func link(_ s: AttributedString, cwd: String?) -> AttributedString {
         let text = String(s.characters)
@@ -50,7 +50,7 @@ enum FileLinks {
     }
 
     private static func target(_ token: String, cwd: String?) -> URL? {
-        let path = token.replacingOccurrences(of: #":\d+(:\d+)?$"#, with: "", options: .regularExpression)
+        let path = token.replacingOccurrences(of: #":\d+([:-]\d+)?$"#, with: "", options: .regularExpression)
         guard path.contains("/") || path.contains(".") else { return nil }
         return resolve(path, cwd: cwd)
     }

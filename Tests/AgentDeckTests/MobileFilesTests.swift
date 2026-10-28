@@ -1,3 +1,4 @@
+import Network
 import XCTest
 @testable import AgentDeck
 
@@ -67,5 +68,37 @@ final class MobileFilesTests: XCTestCase {
         XCTAssertEqual(paths["out/demo.mp4"], home + "/proj/out/demo.mp4")
         XCTAssertEqual(paths[home + "/proj/out"], home + "/proj/out/")
         XCTAssertNil(paths["nothing/here.mp4"])
+    }
+
+    /// A phone that reads the start of a video and then stops must not keep the connection (and the tunnel) busy.
+    func testFileSenderDropsAReaderThatStopsReading() throws {
+        let path = home + "/proj/out/big.mp4"
+        try Data(count: 48 * 1024 * 1024).write(to: URL(fileURLWithPath: path))
+        let listener = try NWListener(using: .tcp, on: .any)
+        let queue = DispatchQueue(label: "sender-test")
+        let dropped = expectation(description: "server side cancelled")
+        listener.newConnectionHandler = { conn in
+            conn.stateUpdateHandler = { if case .cancelled = $0 { dropped.fulfill() } }
+            conn.start(queue: queue)
+            let handle = FileHandle(forReadingAtPath: path)!
+            FileSender(conn, handle, 48 * 1024 * 1024, stallLimit: 1).start(Data("HTTP/1.1 200 OK\r\n\r\n".utf8))
+        }
+        let ready = expectation(description: "listening")
+        listener.stateUpdateHandler = { if case .ready = $0 { ready.fulfill() } }
+        listener.start(queue: queue)
+        wait(for: [ready], timeout: 5)
+        // Connects, reads one chunk, then never reads again (the abandoned player).
+        let client = NWConnection(host: "127.0.0.1", port: listener.port!, using: .tcp)
+        client.start(queue: queue)
+        client.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { _, _, _, _ in }
+        wait(for: [dropped], timeout: 10)
+        client.cancel()
+        listener.cancel()
+    }
+
+    func testChatPathsKeepALineRange() {
+        let paths = FileLinks.paths(in: "고친 곳: `out/demo.mp4:71-75`, old.txt:3:7", cwd: home + "/proj")
+        XCTAssertEqual(paths["out/demo.mp4:71-75"], home + "/proj/out/demo.mp4")
+        XCTAssertEqual(paths["old.txt:3:7"], home + "/proj/old.txt")
     }
 }
