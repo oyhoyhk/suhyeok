@@ -323,6 +323,35 @@ enum Snapshot {
         exit(0)
     }
 
+    static func changes(cwd: String, path: String) {
+        // A window that was never shown gets no clicks (nor an accessibility tree), so the note editor opens as if
+        // the line containing SUHYEOK_TEST_NOTE_LINE had been clicked.
+        let target = ProcessInfo.processInfo.environment["SUHYEOK_TEST_NOTE_LINE"] ?? "let limit"
+        let line = ProcessInfo.processInfo.environment["SUHYEOK_TEST_NOTE"] == nil ? nil
+            : (try? GitChanges.load(cwd: cwd).get())?.files.lazy.compactMap { f in
+                f.hunks.flatMap(\.lines).first { $0.text.contains(target) }.map { ReviewComment(path: f.path, line: $0, body: "") }
+            }.first
+        let host = NSHostingView(rootView: ChangesView(cwd: cwd, session: nil, onClose: {}, startNote: line).frame(width: 640, height: 780))
+        let window = offscreen(host, size: CGSize(width: 640, height: 780))
+        RunLoop.main.run(until: Date().addingTimeInterval(2.5))
+        if let note = ProcessInfo.processInfo.environment["SUHYEOK_TEST_NOTE"] {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+            func fields(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(fields) }
+            if let f = fields(host).first(where: { $0.isEditable && $0.placeholderString?.contains("Enter") == true }) {
+                window.makeFirstResponder(f)
+                RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+                (f.currentEditor() as? NSTextView)?.insertText(note, replacementRange: NSRange(location: NSNotFound, length: 0))
+                RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+                if ProcessInfo.processInfo.environment["SUHYEOK_TEST_NOTE_SAVE"] == "1" {
+                    f.currentEditor()?.insertNewline(nil)
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+                }
+            } else { print("no comment field after the click") }
+        }
+        writePNG(window, to: path)
+        exit(0)
+    }
+
     /// A window that is never shown, so `view` lays out and draws for `writePNG` without appearing on screen.
     static func offscreen(_ view: NSView, size: CGSize) -> NSWindow {
         let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -5000, y: -5000), size: size),

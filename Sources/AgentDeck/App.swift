@@ -128,6 +128,12 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--snapshot-hosted"), i + 2 < args.count {
             Snapshot.hosted(name: args[i + 1], path: args[i + 2])
         }
+        // `AgentDeck --snapshot-changes <folder> out.png` renders the changes panel for that folder offscreen.
+        // SUHYEOK_TEST_NOTE=<text>: write that note on the diff line containing SUHYEOK_TEST_NOTE_LINE (default "let limit");
+        // SUHYEOK_TEST_NOTE_SAVE=1 also presses Enter to add it.
+        if let i = args.firstIndex(of: "--snapshot-changes"), i + 2 < args.count {
+            Snapshot.changes(cwd: args[i + 1], path: args[i + 2])
+        }
         // `AgentDeck --agents`: live agents by the names the app shows (who can be messaged).
         // `AgentDeck --msg <이름>[,<이름>…] "본문"`: types a message into those agents' terminals, signed by the caller.
         if args.contains("--agents") || args.contains("--msg") { Snapshot.mail(args) }

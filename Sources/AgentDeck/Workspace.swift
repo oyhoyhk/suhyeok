@@ -383,6 +383,9 @@ struct HostedSessionView: View {
     let name: String
     @State private var confirmKill = false
     @State private var mode: OpenMode?
+    @State private var showChanges = false
+    @AppStorage("changesWidth") private var changesWidth = 560.0
+    @AppStorage("changesHeight") private var changesHeight = 340.0
 
     var body: some View {
         let h = store.hosted.first { $0.name == name }
@@ -397,6 +400,11 @@ struct HostedSessionView: View {
                 }
                 Spacer()
                 if s != nil { ModePicker(mode: $mode) }
+                if h != nil {
+                    Toggle(isOn: $showChanges) { Label("변경사항", systemImage: "plusminus") }
+                        .toggleStyle(.button).controlSize(.small)
+                        .help("이 폴더에서 마지막 커밋 이후 바뀐 내용을 옆에 열기 — 줄에 코멘트를 달아 에이전트에게 보내고 커밋")
+                }
                 Text((h?.cwd ?? "").replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Button(role: .destructive) { confirmKill = true } label: { Image(systemName: "stop.circle") }
@@ -404,14 +412,31 @@ struct HostedSessionView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             Divider()
-            if h == nil {
-                Text("종료된 세션").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let s, ModePicker.effective(mode) == .dialogue {
-                // .id: a new session gets fresh state (messages, draft, pending bubbles), never the previous one's.
-                DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).id(s.id).padding(10)
-            } else {
-                // Codex sessions and agents still starting have no registry entry yet: terminal only.
-                EmbeddedTerminal(name: name).id(name)
+            GeometryReader { geo in
+                // Beside the session when both fit, else below it (a split pane is usually too narrow for two columns).
+                // AnyLayout keeps the session view in place when this flips, so its terminal is not re-attached.
+                let below = geo.size.width < changesWidth + 520
+                let layout = below ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+                layout {
+                    Group {
+                        if h == nil {
+                            Text("종료된 세션").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if let s, ModePicker.effective(mode) == .dialogue {
+                            // .id: a new session gets fresh state (messages, draft, pending bubbles), never the previous one's.
+                            DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).id(s.id).padding(10)
+                        } else {
+                            // Codex sessions and agents still starting have no registry entry yet: terminal only.
+                            EmbeddedTerminal(name: name).id(name)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if showChanges, let cwd = h?.cwd {
+                        DragDivider(axis: below ? .vertical : .horizontal, value: below ? $changesHeight : $changesWidth,
+                                    range: below ? 200...900 : 340...1400)
+                        ChangesView(cwd: cwd, session: s, onClose: { showChanges = false }).id(cwd)
+                            .frame(width: below ? nil : changesWidth, height: below ? changesHeight : nil)
+                    }
+                }
             }
         }
         .confirmationDialog("이 세션을 종료할까요?", isPresented: $confirmKill) {
@@ -887,5 +912,36 @@ enum TerminalPanelKey {
             MainActor.assumeIsolated { store.toggleTerminalPanel() }
             return nil
         }
+    }
+}
+
+
+/// The line between two parts of a view, moved by dragging. It sizes the part after it: `value` grows as the
+/// line moves toward the start (left, or up), by `scale` per point.
+struct DragDivider: View {
+    /// .horizontal: the parts sit side by side (a vertical line).
+    let axis: Axis
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var scale = 1.0
+    @State private var start: Double?
+
+    var body: some View {
+        let sideBySide = axis == .horizontal
+        Rectangle().fill(Color(nsColor: .separatorColor))
+            .frame(width: sideBySide ? 1 : nil, height: sideBySide ? nil : 1)
+            .padding(sideBySide ? .horizontal : .vertical, 2)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { (sideBySide ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push() } else { NSCursor.pop() }
+            }
+            .gesture(DragGesture(minimumDistance: 1)
+                .onChanged { g in
+                    let from = start ?? value
+                    start = from
+                    let moved = sideBySide ? g.translation.width : g.translation.height
+                    value = min(max(from - moved * scale, range.lowerBound), range.upperBound)
+                }
+                .onEnded { _ in start = nil })
     }
 }

@@ -483,6 +483,8 @@
 /* Worktree.swift */
 "git 저장소가 아님" = "Not a git repository";
 "수혁이 만든 워크트리가 아님" = "Not a worktree created by Suhyeok";
+"워크트리를 찾지 못함" = "Worktree not found";
+
 /* WorldView.swift */
 "전체 보기" = "Show all";
 "시연 · %@" = "Demo · %@";
@@ -500,3 +502,38 @@
 "새 대화 준비 중…" = "Starting a new chat…";
 "클론 만드는 중…" = "Cloning…";
 "종료하는 중…" = "Ending…";
+"변경사항" = "Changes";
+"파일 %lld개" = "%lld files";
+"다시 읽기" = "Reload";
+"변경사항 읽는 중…" = "Reading changes…";
+"마지막 커밋 이후 바뀐 파일 없음" = "No changes since the last commit";
+"추적하지 않는 파일 %lld개 더 있음 — .gitignore에 빠진 폴더가 없는지 확인할 것" = "%lld more untracked files — check .gitignore for a missing folder";
+"다음 커밋에 넣기" = "Include in the next commit";
+"바이너리 파일 — 내용 비교 없음" = "Binary file — no content diff";
+"빈 파일" = "Empty file";
+"내용 변경 없음 (권한만 바뀜)" = "No content change (mode only)";
+"%lld줄 더 있음 — 너무 길어 생략" = "%lld more lines — too long to show";
+"클릭해서 이 줄에 코멘트 달기" = "Click to comment on this line";
+"이 줄에 대한 요청 (Enter로 추가)" = "Request for this line (Enter to add)";
+"추가" = "Add";
+"코멘트 지우기" = "Delete comment";
+"코멘트 %lld개" = "%lld comments";
+"모두 지우기" = "Clear all";
+"에이전트에게 보내기" = "Send to agent";
+"코멘트를 한 번에 지시로 보냄" = "Sends all comments as one instruction";
+"이 세션에는 입력을 보낼 수 없음" = "This session cannot take input";
+"커밋 메시지" = "Commit message";
+"커밋 중…" = "Committing…";
+"커밋 (%lld개 파일)" = "Commit (%lld files)";
+"코멘트를 보냄 — 에이전트가 고치면 diff가 자동으로 바뀜" = "Comments sent — the diff updates as the agent edits";
+"보내지 못함 — 터미널 접근이 거부됨" = "Not sent — terminal access was denied";
+"커밋함: %@" = "Committed: %@";
+"커밋하지 못함 — %@" = "Commit failed — %@";
+"수정됨" = "Modified";
+"새 파일 (스테이지됨)" = "New file (staged)";
+"새 파일 (git이 아직 추적하지 않음)" = "New file (not tracked by git yet)";
+"삭제됨" = "Deleted";
+"커밋할 파일을 고를 것" = "Choose files to commit";
+"변경사항 리뷰 코멘트 %lld개 — 반영해 줘." = "%lld review comments on your changes — please address them.";
+"(지운 줄)" = "(removed line)";
+"이 폴더에서 마지막 커밋 이후 바뀐 내용을 옆에 열기 — 줄에 코멘트를 달아 에이전트에게 보내고 커밋" = "Show what changed in this folder since the last commit — comment on lines, send them to the agent, and commit";

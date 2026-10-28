@@ -37,6 +37,10 @@ suhyeok                            # 앱 실행
   - 작업 중인 세션은 끊지 않도록 제외. 원래 터미널에 입력할 수 없는 경우는 이어서 열기만 하고 안내
 - 지시 전달 경로: tmux(`paste-buffer`, 여러 줄 유지) · cmux(`send`, 한 줄로 합침, 소켓 password 모드 필요) · Orca(`terminal send`)
 - 최근 대화(7일) → "이어서" 한 번으로 수혁 세션으로 복귀
+- 변경사항(세션 헤더 버튼): 작업 폴더의 마지막 커밋 이후 diff를 옆에 표시, 4초마다 갱신
+  - 줄 클릭 → 코멘트 → "에이전트에게 보내기"로 코멘트 전체를 지시 하나로 전달
+  - 체크한 파일만 커밋. 나머지 변경·스테이지 상태는 그대로 둠. 훅이 거부하면 출력 표시
+  - 세션 화면이 좁으면 옆 대신 아래에 열림. 경계선 드래그로 너비·높이 조절
 - tmux 접두키 없음(Claude Code의 ctrl+b 유지), 상태줄 숨김 — 설정 파일 `~/Library/Application Support/Suhyeok/tmux.conf`
 
 ```mermaid
@@ -92,6 +96,7 @@ open 수혁.app
 - 명령줄 대화: `--send <세션ID> "지시"` · `--press <세션ID> escape` · `--migrate <세션ID>` · `--snapshot-dialogue <세션ID> out.png`
 - 명령줄 세션 관리: `--new-session <Claude|Codex> <폴더> [지시]` · `--list-sessions` · `--kill-session <이름>` · `--snapshot-hosted <이름> out.png`
 - 명령줄 새 대화: `--clear <세션ID> [out.png]` → /clear 전송, 새 대화 ID까지 걸린 시간 출력 (out.png = 대기 중 스피너 화면)
+- 명령줄 변경사항: `--snapshot-changes <폴더> out.png`
 
 ## 터미널 보기 — 어떤 터미널이든 동작
 
