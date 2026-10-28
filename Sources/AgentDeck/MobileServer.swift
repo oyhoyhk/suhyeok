@@ -424,7 +424,7 @@ final class MobileServer: ObservableObject {
                 return json(["ok": true])
             case "clear":
                 guard s.agent == .claude else { return json(["ok": false, "message": String(localized: "Claude 세션만 가능")]) }
-                let ok = await Task.detached { SessionInput.send(s, text: "/clear") }.value
+                let ok = await store.startOver(s)  // answers once the new conversation is up, so the phone's spinner covers it
                 return json(["ok": ok])
             case "migrate":
                 guard s.hostedName == nil, s.conversationId != nil else { return json(["ok": false, "message": String(localized: "옮길 수 없는 세션")]) }

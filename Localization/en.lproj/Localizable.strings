@@ -497,3 +497,6 @@
 "작업 폴더가 없음" = "Working folder not found";
 "복사됨" = "Copied";
 "클릭하면 코드 전체를 복사" = "Click to copy the whole code block";
+"새 대화 준비 중…" = "Starting a new chat…";
+"클론 만드는 중…" = "Cloning…";
+"종료하는 중…" = "Ending…";

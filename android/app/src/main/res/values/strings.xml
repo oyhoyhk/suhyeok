@@ -121,6 +121,11 @@
   <string name="done_migrate">Moving</string>
   <string name="done_end">Ended</string>
   <string name="done_rename">Renamed</string>
+  <string name="working_clear">%1$s: starting a new chat…</string>
+  <string name="working_clone">%1$s: cloning…</string>
+  <string name="working_migrate">%1$s: moving…</string>
+  <string name="working_end">%1$s: ending…</string>
+  <string name="working_generic">%1$s: working…</string>
   <string name="done_generic">Done</string>
   <string name="action_failed">Failed</string>
   <string name="action_not_done">Couldn\'t do that</string>

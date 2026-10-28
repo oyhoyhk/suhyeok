@@ -91,6 +91,7 @@ open 수혁.app
 - 업데이트 확인: `수혁.app/Contents/MacOS/AgentDeck --check-update`
 - 명령줄 대화: `--send <세션ID> "지시"` · `--press <세션ID> escape` · `--migrate <세션ID>` · `--snapshot-dialogue <세션ID> out.png`
 - 명령줄 세션 관리: `--new-session <Claude|Codex> <폴더> [지시]` · `--list-sessions` · `--kill-session <이름>` · `--snapshot-hosted <이름> out.png`
+- 명령줄 새 대화: `--clear <세션ID> [out.png]` → /clear 전송, 새 대화 ID까지 걸린 시간 출력 (out.png = 대기 중 스피너 화면)
 
 ## 터미널 보기 — 어떤 터미널이든 동작
 

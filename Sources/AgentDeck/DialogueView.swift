@@ -146,6 +146,7 @@ struct DialogueView: View {
                 VStack(spacing: 0) {
                     header(s)
                     conversation(s)
+                        .overlay { if let doing = store.working[s.id] { workingBadge(doing) } }
                     if showScreen { screenPreview }
                     inputBar(s)
                 }
@@ -278,8 +279,9 @@ struct DialogueView: View {
                 .buttonStyle(.borderless).help(large ? "작게 보기" : "크게 보기 (화면 절반)")
             }
             if s.agent == .claude, SessionInput.canSend(s) {
-                Button("새 대화 (/clear)") { Task.detached { _ = SessionInput.send(s, text: "/clear") } }
+                Button("새 대화 (/clear)") { Task { await store.startOver(s) } }
                     .controlSize(.small)
+                    .disabled(store.working[s.id] != nil)
                     .help("이 에이전트의 대화를 비우고 새로 시작 — 이전 대화는 '최근 대화'에서 다시 열 수 있음")
             }
             if let onTerminal { Button("터미널로", action: onTerminal).controlSize(.small) }
@@ -454,6 +456,20 @@ struct DialogueView: View {
         /// As sent, tokens expanded; this is what the log will hold.
         var sent: String = ""
         var failed = false
+    }
+
+    /// Covers the conversation while an action (/clear, clone, end) is on its way, so the old log does not look current.
+    private func workingBadge(_ label: String) -> some View {
+        ZStack {
+            Color.black.opacity(0.45)
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(label).font(.callout.bold())
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(Color.black.opacity(0.6), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color(red: 0.85, green: 0.68, blue: 0.25), lineWidth: 1.5))
+        }
     }
 
     private func pendingBubble(_ p: Pending) -> some View {
@@ -715,6 +731,7 @@ struct DialogueView: View {
             return
         }
         draft = ""
+        if text == "/clear", s.agent == .claude { Task { await store.startOver(s) }; return }
         sentHere = text
         // Slash commands (/usage, /model, /status …) answer in a panel on the terminal screen, not in the log.
         if text.hasPrefix("/") { openScreen() } else if screenAuto { showScreen = false; screenAuto = false }

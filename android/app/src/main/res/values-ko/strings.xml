@@ -117,6 +117,11 @@
   <string name="done_migrate">옮기는 중</string>
   <string name="done_end">종료함</string>
   <string name="done_rename">이름을 바꿈</string>
+  <string name="working_clear">%1$s: 새 대화 준비 중…</string>
+  <string name="working_clone">%1$s: 클론 만드는 중…</string>
+  <string name="working_migrate">%1$s: 옮기는 중…</string>
+  <string name="working_end">%1$s: 종료하는 중…</string>
+  <string name="working_generic">%1$s: 처리 중…</string>
   <string name="done_generic">완료</string>
   <string name="action_failed">실패</string>
   <string name="action_not_done">하지 못함</string>

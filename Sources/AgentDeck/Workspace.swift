@@ -330,7 +330,10 @@ struct SessionRow: View {
                 }
             }
             Spacer(minLength: 4)
-            if let s = session {
+            if let s = session, let doing = store.working[s.id] {
+                ProgressView().controlSize(.mini)
+                Text(doing).font(.caption2).foregroundStyle(.secondary)
+            } else if let s = session {
                 // Time since the agent last did anything (newest log entry), refreshed every 30 s.
                 TimelineView(.periodic(from: .now, by: 30)) { _ in
                     let last = store.lastActivity(for: s)
@@ -748,7 +751,7 @@ struct AgentMenu: View {
         Button("클론으로 새 에이전트 만들기") { store.clone(session) }
             .disabled(session.conversationId == nil)
         Button("진행 요약 수정…") { store.editingSummary = session }
-        Button("대화 새로 시작 (/clear)") { Task.detached { _ = SessionInput.send(session, text: "/clear") } }
+        Button("대화 새로 시작 (/clear)") { Task { await store.startOver(session) } }
             .disabled(!SessionInput.canSend(session) || session.agent != .claude)
         if session.hostedName == nil, session.conversationId != nil {
             Button("수혁으로 옮기기…") { migrating = session }

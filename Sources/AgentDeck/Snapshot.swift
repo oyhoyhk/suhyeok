@@ -400,6 +400,22 @@ enum Snapshot {
                 done.signal()
             }
             while done.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+        case "--clear":
+            // arg = out path: the dialogue drawn while /clear is still on its way (the spinner over the old log).
+            let host = NSHostingView(rootView: DialogueView(store: store, sessionId: s.id, onClose: {}, onTerminal: {})
+                .frame(width: 1100, height: 640))
+            let window = offscreen(host, size: CGSize(width: 1100, height: 640))
+            RunLoop.main.run(until: Date().addingTimeInterval(2))
+            let t0 = Date(), done = DispatchSemaphore(value: 0)
+            Task { @MainActor in
+                let ok = await store.startOver(s)
+                let now = store.sessions.first { $0.id == s.id }?.conversationId ?? "-"
+                print(ok ? "sent" : "FAILED", s.conversationId ?? "-", "→", now, String(format: "%.1fs", Date().timeIntervalSince(t0)))
+                done.signal()
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            if let arg { writePNG(window, to: arg) }
+            while done.wait(timeout: .now()) == .timedOut { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
         case "--snapshot-world-dialogue":
             // arg = out path; the panel size comes from the dialogueLarge default.
             let host = NSHostingView(rootView: WorldView(store: store, initialSelection: nil, initialDialogue: s.id)

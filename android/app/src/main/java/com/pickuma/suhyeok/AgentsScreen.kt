@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -83,6 +84,8 @@ fun AgentsScreen(api: Api, openRequest: String?, onOpen: (Agent) -> Unit, onUnpa
     var menuFor by remember { mutableStateOf<Agent?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var working by remember { mutableStateOf<String?>(null) }  // a menu action on its way to the Mac
+    val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 4.dp, top = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -95,11 +98,19 @@ fun AgentsScreen(api: Api, openRequest: String?, onOpen: (Agent) -> Unit, onUnpa
             error?.let {
                 Text(it, color = Color(0xFFFFB74D), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
             }
+            working?.let {
+                Row(Modifier.padding(horizontal = 18.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(14.dp), color = Gold, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(it, color = Gold, fontSize = 13.sp)
+                }
+            }
             result?.let {
                 Text(it, color = Color(0xFF66BB6A), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp))
                 LaunchedEffect(it) { delay(4000); result = null }
             }
-            menuFor?.let { a -> SessionMenu(api, a, onOpen = { onOpen(a) }, onDismiss = { menuFor = null }, onResult = { result = it }) }
+            menuFor?.let { a -> SessionMenu(api, a, onOpen = { onOpen(a) }, onDismiss = { menuFor = null },
+                onRun = { label, work -> working = label; result = null; scope.launch { result = work(); working = null } }) }
             if (BuildConfig.SELF_UPDATE) UpdateBanner(api)
             // Opened from a notification: go straight to that agent once it is in the list.
             LaunchedEffect(openRequest, agents) {

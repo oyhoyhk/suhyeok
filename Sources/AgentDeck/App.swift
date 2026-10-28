@@ -158,7 +158,7 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--snapshot-guild"), i + 1 < args.count { CrystalBank.snapshot(path: args[i + 1]) }
         if let i = args.firstIndex(of: "--snapshot-market"), i + 1 < args.count { CrystalBank.snapshot(path: args[i + 1], market: true) }
         // Talking to a live session from the command line (same paths as the dialogue view):
-        //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png
+        //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png   --clear <id> [out.png]
         // `AgentDeck --snapshot-sidebar out.png`: the workspace window (sidebar + world) offscreen.
         if let i = args.firstIndex(of: "--snapshot-sidebar"), i + 1 < args.count {
             let store = Snapshot.loadedStorePublic()
@@ -245,7 +245,7 @@ struct AgentDeckApp: App {
             Snapshot.marketUpload(folder: args[i + 1], price: Int(args[i + 2]) ?? 0, descriptionFile: args[i + 3],
                                   alias: args.dropFirst(i + 4).first ?? "")
         }
-        for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--clone", "--summary", "--hunt", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
+        for flag in ["--send", "--press", "--migrate", "--end", "--menu", "--choose", "--live", "--clone", "--clear", "--summary", "--hunt", "--snapshot-dialogue", "--snapshot-world-dialogue"] {
             if let i = args.firstIndex(of: flag), i + 1 < args.count {
                 Snapshot.session(flag: flag, id: args[i + 1], arg: args.dropFirst(i + 2).first)
             }
@@ -317,7 +317,7 @@ struct AgentDeckApp: App {
                     .disabled(store.selectedSession == nil)
                 Button("대화 새로 시작 (/clear)") {
                     guard let s = store.selectedSession else { return }
-                    Task.detached { _ = SessionInput.send(s, text: "/clear") }
+                    Task { await store.startOver(s) }
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
                 .disabled(store.selectedSession?.agent != .claude)
@@ -548,15 +548,36 @@ final class SessionStore: ObservableObject {
         guard let id = s.conversationId else { return }
         let flags = Self.permissionFlags(s)
         let face = character(resuming: nil)  // a clone is a new agent with its own face
+        working[s.id] = String(localized: "클론 만드는 중…")
         Task.detached {
             let name = TmuxEngine.create(agent: s.agent, cwd: s.cwd, prompt: nil, resume: id, fork: true, extraArgs: flags,
                                          character: face)
             await MainActor.run {
+                self.working[s.id] = nil
                 self.hosted = TmuxEngine.list()
                 if let name { self.selection = .hosted(name) }
                 self.refresh()
             }
         }
+    }
+
+    /// What an action is doing to a session until its result shows (session id → label), for a spinner.
+    @Published private(set) var working: [String: String] = [:]
+
+    /// /clear, marked as working until the new conversation shows up. Returns whether it reached the terminal.
+    @discardableResult
+    func startOver(_ s: AgentSession) async -> Bool {
+        working[s.id] = String(localized: "새 대화 준비 중…")
+        defer { working[s.id] = nil }
+        guard await Task.detached(operation: { SessionInput.send(s, text: "/clear") }).value else { return false }
+        // The new conversation id reaches the session file a moment later; stop waiting after ~10 s.
+        var tries = 0
+        while tries < 20, sessions.first(where: { $0.id == s.id })?.conversationId == s.conversationId {
+            tries += 1
+            try? await Task.sleep(for: .milliseconds(500))
+            refresh()
+        }
+        return true
     }
 
     // MARK: summaries
@@ -605,6 +626,8 @@ final class SessionStore: ObservableObject {
     func migrate(_ targets: [AgentSession], closeOriginal: Bool) async -> [MigrationResult] {
         var results: [MigrationResult] = []
         for s in targets {
+            working[s.id] = String(localized: "옮기는 중…")
+            defer { working[s.id] = nil }
             let label = agentName(for: s) + " · " + s.name
             guard let conversation = s.conversationId else {
                 results.append(.init(id: s.id, name: label, message: String(localized: "대화 ID를 몰라 이어서 열 수 없음"), ok: false)); continue
@@ -635,6 +658,8 @@ final class SessionStore: ObservableObject {
     /// Ends a session gracefully: quit command first; hosted sessions also lose their tmux session.
     /// Returns a message when the session could not be ended.
     func end(_ s: AgentSession) async -> String? {
+        working[s.id] = String(localized: "종료하는 중…")
+        defer { working[s.id] = nil }
         let note = await Task.detached { Self.closeOriginal(s) }.value
         if let name = s.hostedName {
             kill(name)  // also covers an agent that ignored /exit

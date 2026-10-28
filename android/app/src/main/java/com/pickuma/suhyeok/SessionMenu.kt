@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,7 +28,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 /**
  * Long-press menu for an agent, the phone's version of the Mac's right-click menu (AgentMenu): talk, rename,
@@ -37,18 +35,21 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionMenu(api: Api, agent: Agent, onOpen: () -> Unit, onDismiss: () -> Unit, onResult: (String) -> Unit) {
-    val scope = rememberCoroutineScope()
+fun SessionMenu(api: Api, agent: Agent, onOpen: () -> Unit, onDismiss: () -> Unit,
+                onRun: (label: String, work: suspend () -> String) -> Unit) {
     val context = LocalContext.current
     var confirm by remember { mutableStateOf<Pair<String, String>?>(null) }   // action to (question, button)
     var renaming by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf(agent.title) }
 
+    // The caller runs the request: this sheet leaves the screen at once, and a scope of its own would go with it.
     fun run(action: String, text: String? = null, done: String) {
         onDismiss()
-        scope.launch {
+        val label = mapOf("clone" to R.string.working_clone, "clear" to R.string.working_clear, "migrate" to R.string.working_migrate,
+            "end" to R.string.working_end)[action] ?: R.string.working_generic
+        onRun(context.getString(label, agent.name)) {
             val (ok, note) = runCatching { api.action(agent.id, action, text) }.getOrElse { false to (it.describe(context) ?: context.getString(R.string.action_failed)) }
-            onResult(if (ok) note.ifEmpty { done } else "${agent.name}: ${note.ifEmpty { context.getString(R.string.action_not_done) }}")
+            if (ok) note.ifEmpty { done } else "${agent.name}: ${note.ifEmpty { context.getString(R.string.action_not_done) }}"
         }
     }
 
