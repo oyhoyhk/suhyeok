@@ -26,9 +26,10 @@ android {
     versionName = (project.findProperty("versionName") as String?) ?: "0.1.0"
   }
   // direct = updates itself from the Mac (publish.sh); play = Google Play, which forbids self-updating apps.
+  // direct has its own package: the Play package signed by another key looks like a tampered copy to Play Protect.
   flavorDimensions += "store"
   productFlavors {
-    create("direct") { dimension = "store"; buildConfigField("boolean", "SELF_UPDATE", "true"); buildConfigField("boolean", "BACKGROUND_NOTIFY", "true") }
+    create("direct") { dimension = "store"; applicationIdSuffix = ".direct"; buildConfigField("boolean", "SELF_UPDATE", "true"); buildConfigField("boolean", "BACKGROUND_NOTIFY", "true") }
     create("play") { dimension = "store"; buildConfigField("boolean", "SELF_UPDATE", "false"); buildConfigField("boolean", "BACKGROUND_NOTIFY", "false") }
   }
   signingConfigs {
