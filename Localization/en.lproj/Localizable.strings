@@ -155,14 +155,14 @@
 "대화창" = "Chat";
 "화면 모드" = "Appearance";
 "에이전트를 권한 확인 없이 실행" = "Run agents without permission prompts";
-"Claude: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox\n새로 만들기·이어서 열기·클론에 적용됨. 에이전트가 묻지 않고 파일 수정·명령 실행을 하므로 믿는 폴더에서만 켤 것." = "Claude: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox\nApplies to new, resumed and cloned sessions. Agents edit files and run commands without asking, so turn this on only for folders you trust.";
+"Claude·Antigravity: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox\n새로 만들기·이어서 열기·클론에 적용됨. 에이전트가 묻지 않고 파일 수정·명령 실행을 하므로 믿는 폴더에서만 켤 것." = "Claude, Antigravity: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox\nApplies to new, resumed and cloned sessions. Agents edit files and run commands without asking, so turn this on only for folders you trust.";
 "다시 여는 중…" = "Reopening…";
 "실행 중인 수혁 세션에 지금 적용" = "Apply to running Suhyeok sessions now";
 "바꿀 세션 없음" = "No sessions to change";
 "%lld개 다시 열림, %lld개 건너뜀" = "%lld reopened, %lld skipped";
 "대화는 그대로 이어서 열림. 작업 중이거나 입력칸에 보내지 않은 글이 있는 세션은 건너뜀." = "Conversations resume as they were. Sessions that are working or have unsent text in the input box are skipped.";
 "캐릭터 말투로 대답" = "Reply in the character's voice";
-"수혁이 띄우는 세션에 캐릭터 말투 지시를 덧붙임 (Claude: --append-system-prompt · Codex: developer_instructions). 코드·커밋·파일 내용에는 쓰지 않게 지시함. 새로 만들기·이어서 열기·클론부터 적용됨." = "Adds the character's speech style to sessions Suhyeok starts (Claude: --append-system-prompt · Codex: developer_instructions), with an instruction to keep it out of code, commits and file contents. Applies to new, resumed and cloned sessions.";
+"수혁이 띄우는 세션에 캐릭터 말투 지시를 덧붙임 (Claude: --append-system-prompt · Codex: developer_instructions; Antigravity는 지시를 넣을 방법이 없어 제외). 코드·커밋·파일 내용에는 쓰지 않게 지시함. 새로 만들기·이어서 열기·클론부터 적용됨." = "Adds the character's speech style to sessions Suhyeok starts (Claude: --append-system-prompt · Codex: developer_instructions; not Antigravity, which has no way to add instructions), with an instruction to keep it out of code, commits and file contents. Applies to new, resumed and cloned sessions.";
 "세션 여는 방식" = "Open sessions in";
 "대화창: 에이전트와 RPG 대화하듯 질문·답을 주고받음. 권한 확인 같은 메뉴는 아래 빠른 키로 답함.\n터미널: 에이전트 TUI를 그대로 조작." = "Chat: talk with the agent like an RPG dialogue. Answer menus such as permission prompts with the quick keys below.\nTerminal: use the agent's TUI directly.";
 "놓으면 지시에 첨부" = "Drop to attach to the instruction";
@@ -311,6 +311,7 @@
 "<b>Mac에서 [허용]을 눌러 주세요.</b><br>2분 안에 허용하지 않으면 만료됨." = "<b>Press [Allow] on your Mac.</b><br>The request expires if not allowed within 2 minutes.";
 /* MobileServer.swift */
 "이어 열 대화가 없음" = "No conversation to resume";
+"Antigravity는 클론을 지원하지 않음" = "Antigravity sessions cannot be cloned";
 "클론을 만드는 중" = "Creating a clone";
 "Claude 세션만 가능" = "Claude sessions only";
 "옮길 수 없는 세션" = "This session cannot be moved";
@@ -408,6 +409,7 @@
 "이름을 불러 주세요" = "Say an agent's name";
 /* Workspace.swift */
 "Codex 대화" = "Codex chat";
+"Antigravity 대화" = "Antigravity chat";
 "월드" = "World";
 "목록" = "List";
 "길드 · 결정" = "Guild · Crystals";

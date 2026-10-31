@@ -77,19 +77,34 @@ enum SessionTree {
     static func codexRollouts() -> [String: Int32] {
         var out: [String: Int32] = [:]
         for pid in codexPids() where !isCodexDaemon(pid) {
-            let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
-            guard bytes > 0 else { continue }
-            var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bytes) / MemoryLayout<proc_fdinfo>.stride)
-            let got = Int(proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, bytes)) / MemoryLayout<proc_fdinfo>.stride
-            for fd in fds.prefix(got) where fd.proc_fdtype == PROX_FDTYPE_VNODE {
-                var vi = vnode_fdinfowithpath()
-                guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &vi,
-                                     Int32(MemoryLayout<vnode_fdinfowithpath>.size)) > 0 else { continue }
-                let path = withUnsafeBytes(of: vi.pvip.vip_path) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
-                if path.hasSuffix(".jsonl"), path.contains("/.codex/sessions/") { out[path] = pid }
+            for path in openFiles(pid) where path.hasSuffix(".jsonl") && path.contains("/.codex/sessions/") { out[path] = pid }
+        }
+        return out
+    }
+
+    /// Conversation id -> pid of the `agy` process running it: the CLI holds presence/<id>.lock open while it runs
+    /// (the file itself stays behind after exit).
+    static func antigravityLocks() -> [String: Int32] {
+        var out: [String: Int32] = [:]
+        for pid in pids(named: "agy") {
+            for path in openFiles(pid) where path.hasSuffix(".lock") && path.contains("/.gemini/antigravity-cli/presence/") {
+                out[((path as NSString).lastPathComponent as NSString).deletingPathExtension] = pid
             }
         }
         return out
+    }
+
+    private static func openFiles(_ pid: Int32) -> [String] {
+        let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard bytes > 0 else { return [] }
+        var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bytes) / MemoryLayout<proc_fdinfo>.stride)
+        let got = Int(proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, bytes)) / MemoryLayout<proc_fdinfo>.stride
+        return fds.prefix(got).filter { $0.proc_fdtype == PROX_FDTYPE_VNODE }.compactMap { fd in
+            var vi = vnode_fdinfowithpath()
+            guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &vi,
+                                 Int32(MemoryLayout<vnode_fdinfowithpath>.size)) > 0 else { return nil }
+            return withUnsafeBytes(of: vi.pvip.vip_path) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+        }
     }
 
     /// Interactive Codex (its daemon writes the rollout): the newest `codex` process in `cwd` started before the thread.
@@ -100,12 +115,14 @@ enum SessionTree {
             .max { $0.1 < $1.1 }?.0
     }
 
-    private static func codexPids() -> [Int32] {
+    private static func codexPids() -> [Int32] { pids(named: "codex") }
+
+    private static func pids(named process: String) -> [Int32] {
         var pids = [Int32](repeating: 0, count: 8192)
         let n = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<Int32>.size)))
         return pids.prefix(max(0, n)).filter { pid in
             var name = [CChar](repeating: 0, count: 64)
-            return pid > 0 && proc_name(pid, &name, UInt32(name.count)) > 0 && String(cString: name) == "codex"
+            return pid > 0 && proc_name(pid, &name, UInt32(name.count)) > 0 && String(cString: name) == process
         }
     }
 
@@ -123,7 +140,7 @@ enum SessionTree {
         return withUnsafeBytes(of: info.pvi_cdir.vip_path) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
     }
 
-    private static func processStart(_ pid: Int32) -> Date? {
+    static func processStart(_ pid: Int32) -> Date? {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]

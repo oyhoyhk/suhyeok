@@ -416,6 +416,7 @@ final class MobileServer: ObservableObject {
             switch action {
             case "clone":
                 guard s.conversationId != nil else { return json(["ok": false, "message": String(localized: "이어 열 대화가 없음")]) }
+                guard s.agent.canFork else { return json(["ok": false, "message": String(localized: "Antigravity는 클론을 지원하지 않음")]) }
                 store.clone(s)
                 return json(["ok": true, "message": String(localized: "클론을 만드는 중")])
             case "rename":
@@ -535,7 +536,7 @@ final class MobileServer: ObservableObject {
                 "action": s.action?.detail ?? "", "last": store.lastActivity(for: s)?.timeIntervalSince1970 ?? 0,
                 "canSend": SessionInput.canSend(s),
                 // What the long-press menu on the phone may offer (same rules as the Mac's context menu).
-                "hosted": s.hostedName != nil, "canClone": s.conversationId != nil,
+                "hosted": s.hostedName != nil, "canClone": s.conversationId != nil, "canFork": s.agent.canFork,
             ]
         }
         let bosses: [[String: Any]] = Hunt.Tier.allCases.map { t in

@@ -13,7 +13,7 @@ enum Pane: Hashable {
 
 /// A past conversation that can be resumed inside 수혁.
 struct RecentConversation: Identifiable, Hashable {
-    let id: String  // Claude session id or Codex thread id
+    let id: String  // Claude session id, Codex thread id or Antigravity conversation id
     let agent: Agent
     let cwd: String
     let title: String
@@ -23,7 +23,7 @@ struct RecentConversation: Identifiable, Hashable {
 enum RecentSource {
     static func load(excluding live: Set<String>, days: Double = 7, limit: Int = 30) -> [RecentConversation] {
         let since = Date().addingTimeInterval(-days * 86400)
-        return (claude(since: since) + codex(since: since))
+        return (claude(since: since) + codex(since: since) + antigravity(since: since))
             .filter { !live.contains($0.id) }
             .sorted { $0.updated > $1.updated }
             .prefix(limit).map { $0 }
@@ -88,6 +88,16 @@ enum RecentSource {
                                           updated: Date(timeIntervalSince1970: Double(sqlite3_column_int64(stmt, 3)) / 1000)))
         }
         return out
+    }
+
+    /// Subagent conversations are left out; so are rows without a folder (the desktop app's, imported into the table).
+    private static func antigravity(since: Date) -> [RecentConversation] {
+        AntigravitySource.summaries().compactMap { s in
+            guard let updated = s.updated, updated > since, !s.cwd.isEmpty, s.parent.isEmpty else { return nil }
+            return RecentConversation(id: s.id, agent: .antigravity, cwd: s.cwd,
+                                      title: s.title.isEmpty ? String(localized: "Antigravity 대화") : oneLine(s.title, limit: 60),
+                                      updated: updated)
+        }
     }
 }
 
@@ -527,6 +537,7 @@ struct NewSessionSheet: View {
             Picker("에이전트", selection: $agent) {
                 Text("Claude Code").tag(Agent.claude)
                 Text("Codex").tag(Agent.codex)
+                Text("Antigravity").tag(Agent.antigravity)
             }
             .pickerStyle(.segmented)
             HStack {
@@ -779,7 +790,7 @@ struct AgentMenu: View {
         Button("터미널 보기") { store.selection = store.pane(for: session) }
         Divider()
         Button("클론으로 새 에이전트 만들기") { store.clone(session) }
-            .disabled(session.conversationId == nil)
+            .disabled(session.conversationId == nil || !session.agent.canFork)
         Button("진행 요약 수정…") { store.editingSummary = session }
         Button("대화 새로 시작 (/clear)") { Task { await store.startOver(session) } }
             .disabled(!SessionInput.canSend(session) || session.agent != .claude)
@@ -822,7 +833,7 @@ struct EndSessionDialog: ViewModifier {
                     }
                 }
             } message: { s in
-                Text("\(s.name)\n에이전트에 \(s.agent == .claude ? "/exit" : "/quit")를 보내 정상 종료함. 대화 기록은 남아 '최근 대화'에서 이어서 열 수 있음.")
+                Text("\(s.name)\n에이전트에 \(s.agent.quitCommand)를 보내 정상 종료함. 대화 기록은 남아 '최근 대화'에서 이어서 열 수 있음.")
             }
             .alert("세션을 끝내지 못함", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                 Button("확인") { failure = nil }

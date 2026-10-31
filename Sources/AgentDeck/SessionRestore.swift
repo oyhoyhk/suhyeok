@@ -9,7 +9,8 @@ enum SessionRestore {
         let cwd: String
         let conversation: String
         let title: String
-        /// The conversation log (Claude jsonl, Codex rollout): Codex keeps the model it last ran with there.
+        /// The conversation log (Claude jsonl, Codex rollout, Antigravity step db): Codex and Antigravity keep the model
+        /// it last ran with there.
         var log: String? = nil
     }
 
@@ -56,6 +57,9 @@ enum SessionRestore {
         case .codex:
             guard let log = e.log, let info = UsageInfo.codex(log), let model = info.model else { return [] }
             return ["-m", model] + (info.effort.map { ["-c", "model_reasoning_effort=" + TmuxEngine.tomlString($0)] } ?? [])
+        case .antigravity:
+            // The display name carries the effort ("Gemini 3.8 Flash (High)"), and --model takes it as is.
+            return e.log.flatMap(AntigravitySource.model).map { ["--model", $0] } ?? []
         case nil:
             return []
         }

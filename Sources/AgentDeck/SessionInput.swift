@@ -245,13 +245,25 @@ struct TerminalMenu: Equatable {
             let h = l.lowercased()
             return h.contains("enter to confirm") || h.contains("enter to select") || h.contains("esc to cancel")
                 || h.contains("enter select") || h.contains("esc back") || h.contains("enter continue")
+                || h.contains("↑/↓ navigate")
         })
         let review = lines.contains { $0.contains("Ready to submit your answers?") }
             ? lines.lastIndex { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.map { $0 + 1 } : nil
-        guard let footer = hint ?? review else { return nil }
-        // The highlighted line closest above the footer ("❯" in Claude Code, "›" in Codex).
+        guard var footer = hint ?? review else { return nil }
+        // Antigravity CLI: "↑/↓ Navigate · enter Confirm" right under the options, "esc to cancel" below that. Its
+        // highlight is ">", the same as its input box and sent prompts, so ">" counts only above this footer.
+        // The slash-command popup ("… · tab Complete") is autocomplete, not a question.
+        let navigate = lines[max(0, footer - 2)...min(footer, lines.count - 1)].lastIndex { $0.contains("↑/↓ Navigate") }
+        if let n = navigate {
+            if lines[n].contains("tab Complete") { return nil }
+            footer = n
+        }
+        // The highlighted line closest above the footer ("❯" in Claude Code, "›" in Codex, ">" in Antigravity).
         guard let sel = lines[..<footer].lastIndex(where: { l in
-                  indentOf(l).map { lineTail(l, $0).hasPrefix("❯") || lineTail(l, $0).hasPrefix("›") } ?? false }),
+                  indentOf(l).map { ind in
+                      let t = lineTail(l, ind)
+                      return t.hasPrefix("❯") || t.hasPrefix("›") || navigate != nil && t.hasPrefix(">")
+                  } ?? false }),
               footer - sel < 40, let col = indentOf(lines[sel]) else { return nil }
         let numbered = String(lineTail(lines[sel], col).dropFirst()).trimmingCharacters(in: .whitespaces)
             .range(of: #"^\d+\."#, options: .regularExpression) != nil

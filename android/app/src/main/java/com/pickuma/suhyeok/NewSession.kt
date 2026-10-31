@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-/** The Mac's new-session sheet on the phone: Claude Code or Codex, a working folder, an optional first instruction. */
+/** The Mac's new-session sheet on the phone: Claude Code, Codex or Antigravity, a working folder, an optional first instruction. */
 @Composable
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 fun NewSessionDialog(api: Api, onDismiss: () -> Unit, onStarted: (String) -> Unit) {
@@ -63,9 +63,12 @@ fun NewSessionDialog(api: Api, onDismiss: () -> Unit, onStarted: (String) -> Uni
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    listOf("Claude" to "Claude Code", "Codex" to "Codex").forEachIndexed { i, (value, label) ->
-                        SegmentedButton(selected = agent == value, onClick = { agent = value }, shape = SegmentedButtonDefaults.itemShape(i, 2)) {
-                            Text(label)
+                    // Three across a phone dialog: "Claude Code" would be cut short.
+                    val agents = listOf("Claude" to "Claude", "Codex" to "Codex", "Antigravity" to "Antigravity")
+                    agents.forEachIndexed { i, (value, label) ->
+                        SegmentedButton(selected = agent == value, onClick = { agent = value }, shape = SegmentedButtonDefaults.itemShape(i, agents.size),
+                            icon = {}) {
+                            Text(label, maxLines = 1, fontSize = 12.sp)
                         }
                     }
                 }

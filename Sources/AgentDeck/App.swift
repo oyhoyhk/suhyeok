@@ -287,7 +287,7 @@ struct AgentDeckApp: App {
             exit(0)
         }
         // Session engine from the command line:
-        //   --new-session <Claude|Codex|Shell> <cwd> [prompt]   --list-sessions   --kill-session <name>
+        //   --new-session <Claude|Codex|Antigravity|Shell> <cwd> [prompt]   --list-sessions   --kill-session <name>
         if let i = args.firstIndex(of: "--new-session"), i + 2 < args.count, args[i + 1] == TmuxEngine.shellTag {
             print(TmuxEngine.createShell(cwd: args[i + 2]) ?? "FAILED")
             exit(0)
@@ -554,7 +554,7 @@ final class SessionStore: ObservableObject {
 
     /// A new agent that starts from a copy of this session's conversation; the original keeps running.
     func clone(_ s: AgentSession) {
-        guard let id = s.conversationId else { return }
+        guard let id = s.conversationId, s.agent.canFork else { return }
         let flags = Self.permissionFlags(s)
         let face = character(resuming: nil)  // a clone is a new agent with its own face
         working[s.id] = String(localized: "클론 만드는 중…")
@@ -780,7 +780,7 @@ final class SessionStore: ObservableObject {
         if let draft = inputDraft(screen) {
             return String(localized: "입력칸에 보내지 않은 글이 있어 종료하지 않음(\(oneLine(draft, limit: 30))) — 원래 터미널에서 정리 후 다시 시도")
         }
-        _ = SessionInput.send(s, text: s.agent == .claude ? "/exit" : "/quit")
+        _ = SessionInput.send(s, text: s.agent.quitCommand)
         for _ in 0..<30 {
             if Darwin.kill(pid, 0) != 0 { return "" }
             usleep(500_000)
@@ -859,7 +859,7 @@ final class SessionStore: ObservableObject {
         guard !loading else { return }
         loading = true
         Task.detached(priority: .utility) {
-            let all = SessionTree.link(ClaudeSource.load() + CodexSource.load()).sorted {
+            let all = SessionTree.link(ClaudeSource.load() + CodexSource.load() + AntigravitySource.load()).sorted {
                 if $0.activity.sortRank != $1.activity.sortRank { return $0.activity.sortRank < $1.activity.sortRank }
                 return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast)
             }
@@ -867,7 +867,7 @@ final class SessionStore: ObservableObject {
             AgentMail.deliverSpool(all)
             let mail = AgentMail.recent()
             var hunt: [String: Hunt.Progress] = [:]
-            for s in all { if let p = s.transcriptPath { hunt[s.id] = HuntClock.progress(path: p) } }
+            for s in all where s.agent != .antigravity { if let p = s.transcriptPath { hunt[s.id] = HuntClock.progress(path: p) } }
             let reloadRecent = await MainActor.run { Date().timeIntervalSince(self.lastRecentLoad) > 30 }
             let recent = reloadRecent
                 ? RecentSource.load(excluding: Set(all.compactMap { $0.conversationId ?? $0.id.replacingOccurrences(of: "codex-", with: "") }))

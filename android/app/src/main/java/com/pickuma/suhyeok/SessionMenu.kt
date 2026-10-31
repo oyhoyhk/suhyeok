@@ -63,7 +63,7 @@ fun SessionMenu(api: Api, agent: Agent, onOpen: () -> Unit, onDismiss: () -> Uni
             HorizontalDivider(color = Color.White.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 6.dp))
             Item("💬", stringResource(R.string.session_chat)) { onDismiss(); onOpen() }
             Item("✏️", stringResource(R.string.session_rename)) { renaming = true }
-            Item("🧬", stringResource(R.string.session_clone), enabled = agent.canClone) { run("clone", done = context.getString(R.string.done_clone)) }
+            Item("🧬", stringResource(R.string.session_clone), enabled = agent.canClone && agent.canFork) { run("clone", done = context.getString(R.string.done_clone)) }
             Item("🧹", stringResource(R.string.session_clear), enabled = agent.kind == "Claude" && agent.canSend) {
                 confirm = "clear" to context.getString(R.string.session_clear_question, agent.name)
             }

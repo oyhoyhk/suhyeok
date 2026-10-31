@@ -23,9 +23,10 @@ data class Agent(
     val action: String,
     val last: Double,
     val canSend: Boolean,
-    val kind: String,        // Claude / Codex
+    val kind: String,        // Claude / Codex / Antigravity
     val hosted: Boolean,     // runs on 수혁's own terminal server
     val canClone: Boolean,   // has a conversation to copy or resume
+    val canFork: Boolean = true,  // the agent can copy a conversation (Antigravity cannot)
 ) {
     /** Stopped on a permission or question menu: blocked until you answer. */
     val asking get() = status == "waiting"
@@ -122,6 +123,7 @@ class Api(val base: String, private val token: String?) {
         character = a.optString("character"), action = a.optString("action"), last = a.optDouble("last", 0.0),
         canSend = a.optBoolean("canSend", false), kind = a.optString("agent"),
         hosted = a.optBoolean("hosted", false), canClone = a.optBoolean("canClone", false),
+        canFork = a.optBoolean("canFork", true),  // a Mac from before Antigravity support leaves it out
     )
 
     suspend fun chat(id: String): Chat = withContext(Dispatchers.IO) {
@@ -205,7 +207,7 @@ class Api(val base: String, private val token: String?) {
         o.optString("home") to (0 until arr.length()).map { arr.getString(it) }
     }
 
-    /** Starts Claude Code or Codex ("Claude" / "Codex") in [cwd]; returns whether it started and the Mac's note. */
+    /** Starts Claude Code, Codex or Antigravity ("Claude" / "Codex" / "Antigravity") in [cwd]; returns whether it started and the Mac's note. */
     suspend fun newSession(agent: String, cwd: String, prompt: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val o = request("POST", "/api/new", JSONObject().put("agent", agent).put("cwd", cwd).put("prompt", prompt))
         o.optBoolean("ok", false) to o.optString("message")

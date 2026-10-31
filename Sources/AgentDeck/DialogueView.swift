@@ -43,7 +43,7 @@ struct SettingsView: View {
             .onChange(of: appearance) { _, v in AppAppearance(rawValue: v)?.apply() }
             Divider()
             Toggle("에이전트를 권한 확인 없이 실행", isOn: $skipPermissions)
-            Text("Claude: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox\n새로 만들기·이어서 열기·클론에 적용됨. 에이전트가 묻지 않고 파일 수정·명령 실행을 하므로 믿는 폴더에서만 켤 것.")
+            Text("Claude·Antigravity: --dangerously-skip-permissions · Codex: --dangerously-bypass-approvals-and-sandbox\n새로 만들기·이어서 열기·클론에 적용됨. 에이전트가 묻지 않고 파일 수정·명령 실행을 하므로 믿는 폴더에서만 켤 것.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button(reopening ? "다시 여는 중…" : "실행 중인 수혁 세션에 지금 적용") {
@@ -62,7 +62,7 @@ struct SettingsView: View {
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
             Toggle("캐릭터 말투로 대답", isOn: $characterTone)
-            Text("수혁이 띄우는 세션에 캐릭터 말투 지시를 덧붙임 (Claude: --append-system-prompt · Codex: developer_instructions). 코드·커밋·파일 내용에는 쓰지 않게 지시함. 새로 만들기·이어서 열기·클론부터 적용됨.")
+            Text("수혁이 띄우는 세션에 캐릭터 말투 지시를 덧붙임 (Claude: --append-system-prompt · Codex: developer_instructions; Antigravity는 지시를 넣을 방법이 없어 제외). 코드·커밋·파일 내용에는 쓰지 않게 지시함. 새로 만들기·이어서 열기·클론부터 적용됨.")
                 .font(.caption).foregroundStyle(.secondary)
             Divider()
             WakeWordSettings()

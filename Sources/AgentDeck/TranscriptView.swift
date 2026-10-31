@@ -8,7 +8,7 @@ struct ChatItem: Identifiable, Equatable {
     let text: String
 }
 
-/// Reads the tail of a Claude or Codex conversation log; feeds both the chat view and the terminal-style view.
+/// Reads the tail of a Claude, Codex or Antigravity conversation log; feeds both the chat view and the terminal-style view.
 enum TranscriptRenderer {
     /// Parsed entries per log, extended incrementally as the file grows (logs only ever get appended to).
     private struct Cached { var offset: UInt64; var entries: [(ChatItem.Role, String)] }
@@ -24,6 +24,8 @@ enum TranscriptRenderer {
     private static let keep = 600
 
     static func items(path: String, agent: Agent) -> [ChatItem] {
+        // Antigravity's log is a SQLite file, not JSON lines.
+        if agent == .antigravity { return wrap(Array(AntigravitySource.entries(path: path).suffix(keep))) }
         lock.lock(); defer { lock.unlock() }
         guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
         defer { try? handle.close() }
@@ -177,6 +179,11 @@ enum TranscriptRenderer {
             text = items.compactMap { $0["text"] as? String }.joined(separator: "\n")
             if text.isEmpty, !items.isEmpty { text = String(localized: "(이미지 등 \(items.count)개 항목)") }
         } else if let d = content as? [String: Any], let s = d["output"] as? String { text = s }
+        return clip(text)
+    }
+
+    /// Tool output text, first six lines.
+    static func clip(_ text: String) -> String {
         let rows = text.split(separator: "\n", omittingEmptySubsequences: false)
         let shown = rows.prefix(6).map { "  ⎿ " + $0 }.joined(separator: "\n")
         return rows.count > 6 ? shown + "\n  ⎿ … " + String(localized: "+\(rows.count - 6)줄") : shown

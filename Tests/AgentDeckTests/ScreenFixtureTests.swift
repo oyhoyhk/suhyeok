@@ -38,6 +38,34 @@ final class ScreenFixtureTests: XCTestCase {
         XCTAssertEqual(m.selected, 0)
     }
 
+    /// Antigravity CLI 1.4.12 highlights with ">", like its input box and the prompts it echoes.
+    func testAntigravityFolderTrust() throws {
+        let m = try XCTUnwrap(TerminalMenu.parse(try screen("agy-trust")))
+        XCTAssertEqual(m.options.map(\.label), ["Yes, I trust this folder", "No, exit"])
+        XCTAssertEqual(m.selected, 0)
+    }
+
+    func testAntigravityPermission() throws {
+        let m = try XCTUnwrap(TerminalMenu.parse(try screen("agy-permission")))
+        XCTAssertEqual(m.question, "Run this command?")
+        XCTAssertEqual(m.options.count, 4)
+        XCTAssertEqual(m.options.first?.label, "Yes, run command")
+        XCTAssertEqual(m.options.last?.label, "No, cancel")
+        XCTAssertTrue(m.context?.contains("date > now.txt") ?? false)
+    }
+
+    func testAntigravityScreensWithoutMenu() throws {
+        for name in ["agy-idle", "agy-typed", "agy-working", "agy-replied", "agy-slash"] {
+            XCTAssertNil(TerminalMenu.parse(try screen(name)), name)
+        }
+    }
+
+    func testUnsentTextInAntigravityInputBox() throws {
+        XCTAssertTrue(SessionInput.stillTyped("이 폴더의 파일 목록을 알려줘", in: try screen("agy-typed")))
+        XCTAssertFalse(SessionInput.stillTyped("이 폴더의 파일 목록을 알려줘", in: try screen("agy-idle")))
+        XCTAssertFalse(SessionInput.stillTyped("Run the shell command: date > now.txt", in: try screen("agy-replied")))
+    }
+
     func testNoMenuWhenIdleWorkingOrDone() throws {
         for name in ["claude-idle", "claude-typed", "claude-working", "claude-replied", "codex-idle"] {
             XCTAssertNil(TerminalMenu.parse(try screen(name)), name)

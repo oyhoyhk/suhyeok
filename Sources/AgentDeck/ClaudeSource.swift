@@ -59,7 +59,7 @@ enum ClaudeSource {
 
     /// tmux session on 수혁's server that runs this process, if any. The TMUX variables alone are not enough:
     /// an agent started from that pane inherits them, and once its shell is gone it no longer runs under the pane.
-    private static func hostedName(pid: Int32) -> String? {
+    static func hostedName(pid: Int32) -> String? {
         let env = ProcessEnv.of(pid)
         guard let tmux = env["TMUX"], TmuxEngine.isOurs(tmuxEnv: tmux), let pane = env["TMUX_PANE"] else { return nil }
         // A cached pane can be stale after the tmux server restarted (pane ids start over): ask again once.

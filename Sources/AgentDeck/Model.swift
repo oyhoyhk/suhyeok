@@ -3,6 +3,48 @@ import Foundation
 enum Agent: String {
     case claude = "Claude"
     case codex = "Codex"
+    case antigravity = "Antigravity"
+
+    /// Can start a new conversation from a copy of an existing one (agy has no fork).
+    var canFork: Bool {
+        switch self {
+        case .claude, .codex: return true
+        case .antigravity: return false
+        }
+    }
+
+    /// What ends the CLI when typed into its input box.
+    var quitCommand: String {
+        switch self {
+        case .claude, .antigravity: return "/exit"
+        case .codex: return "/quit"
+        }
+    }
+
+    /// Runs the agent without asking before it edits files or runs commands.
+    var skipPermissionsFlag: String {
+        switch self {
+        case .claude, .antigravity: return "--dangerously-skip-permissions"
+        case .codex: return "--dangerously-bypass-approvals-and-sandbox"
+        }
+    }
+
+    /// Arguments that add `text` to the agent's system instructions; nil when the CLI has no way to (agy).
+    func instructionArgs(_ text: String) -> [String]? {
+        switch self {
+        case .claude: return ["--append-system-prompt", text]
+        case .codex: return ["-c", "developer_instructions=" + TmuxEngine.tomlString(text)]
+        case .antigravity: return nil
+        }
+    }
+
+    /// The first prompt on the command line: agy rejects a bare argument; -i sends it and stays interactive.
+    func promptArgs(_ prompt: String) -> [String] {
+        switch self {
+        case .claude, .codex: return [prompt]
+        case .antigravity: return ["-i", prompt]
+        }
+    }
 }
 
 enum SessionStatus: String {
@@ -149,15 +191,15 @@ struct AgentAction: Equatable {
     static func tool(_ name: String, input: [String: Any]) -> AgentAction {
         let kind: Kind
         switch name {
-        case "Edit", "Write", "MultiEdit", "NotebookEdit": kind = .editing
-        case "Read", "Grep", "Glob", "LS", "LSP": kind = .reading
-        case "Bash", "exec", "shell", "exec_command": kind = .shell
-        case "WebFetch", "WebSearch": kind = .web
-        case "Agent", "Task", "Workflow": kind = .delegating
+        case "Edit", "Write", "MultiEdit", "NotebookEdit", "write_file", "edit_file": kind = .editing
+        case "Read", "Grep", "Glob", "LS", "LSP", "read_file": kind = .reading
+        case "Bash", "exec", "shell", "exec_command", "run_command": kind = .shell
+        case "WebFetch", "WebSearch", "search_web": kind = .web
+        case "Agent", "Task", "Workflow", "invoke_subagent": kind = .delegating
         default: kind = .other
         }
-        // The most telling input field per tool, e.g. the command or the file name.
-        let keys = ["description", "command", "file_path", "pattern", "url", "query", "prompt", "cmd"]
+        // The most telling input field per tool, e.g. the command or the file name. Antigravity: toolSummary, CommandLine, Path.
+        let keys = ["description", "toolSummary", "command", "CommandLine", "file_path", "Path", "pattern", "url", "query", "prompt", "cmd"]
         let raw = keys.lazy.compactMap { input[$0] as? String }.first ?? ""
         let detail = raw.hasPrefix("/") ? (raw as NSString).lastPathComponent : raw
         return AgentAction(kind: kind, detail: oneLine(detail.isEmpty ? name : "\(name) · \(detail)", limit: 80))

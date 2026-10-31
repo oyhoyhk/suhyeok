@@ -64,19 +64,21 @@ enum TmuxEngine {
             cmd = ["claude"] + (resume.map { ["--resume", $0] + (fork ? ["--fork-session"] : []) } ?? [])
         case .codex:
             cmd = ["codex"] + (resume.map { [fork ? "fork" : "resume", $0] } ?? [])
+        case .antigravity:
+            // agy cannot fork a conversation; callers offer cloning for Claude and Codex only.
+            cmd = ["agy"] + (resume.map { ["--conversation", $0] } ?? [])
         }
-        if let c = character, Persona.enabled, let voice = Persona.instructions(for: c) {
-            let flag = agent == .claude ? ["--append-system-prompt", voice] : ["-c", "developer_instructions=" + tomlString(voice)]
+        // An agent without an instructions flag (agy) keeps its own voice.
+        if let c = character, Persona.enabled, let voice = Persona.instructions(for: c), let flag = agent.instructionArgs(voice) {
             cmd.insert(contentsOf: flag, at: 1)
         }
         // Skip permission prompts by default (Settings ⌘, can turn it off); flags already carried over from a
         // migrated or cloned session are not added twice.
         if UserDefaults.standard.object(forKey: "skipPermissions") as? Bool ?? true {
-            let flag = agent == .claude ? "--dangerously-skip-permissions" : "--dangerously-bypass-approvals-and-sandbox"
-            if !extraArgs.contains(flag) { cmd.append(flag) }
+            if !extraArgs.contains(agent.skipPermissionsFlag) { cmd.append(agent.skipPermissionsFlag) }
         }
         cmd += extraArgs
-        if let p = prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty { cmd.append(p) }
+        if let p = prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty { cmd += agent.promptArgs(p) }
         // Login + interactive zsh so PATH matches the user's terminals; keep a shell after the agent exits.
         let inner = cmd.map(quote).joined(separator: " ")
             + "; echo; echo " + quote(String(localized: "[에이전트 종료됨 — exit 로 창 닫기]")) + "; exec zsh -l"

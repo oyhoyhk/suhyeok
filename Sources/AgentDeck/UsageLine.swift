@@ -31,6 +31,7 @@ struct UsageInfo: Equatable {
         switch s.agent {
         case .claude: return claude(s)
         case .codex: return s.transcriptPath.flatMap(codex)
+        case .antigravity: return nil  // agy keeps no usage numbers on disk
         }
     }
 
