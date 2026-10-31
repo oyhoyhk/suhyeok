@@ -209,6 +209,10 @@
 "피드백 보내지 못함 — %@" = "Could not send feedback — %@";
 "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)" = "Not sent — terminal access denied (cmux works after a restart)";
 "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것" = "The agent is waiting for a choice, so the message is queued behind the menu — pick an option above first";
+"터미널에 열려 있던 창을 닫고 보냄" = "Closed the panel open in the terminal, then sent";
+"터미널에 창이 열려 있음 (/status, /config 등)" = "A panel is open in the terminal (/status, /config …)";
+"보내면 이 창을 먼저 닫고 보냄" = "Sending closes it first";
+"닫기 (Esc)" = "Close (Esc)";
 "모바일 접속 (외부 인터넷)" = "Mobile access";
 "폰 브라우저로 지도·대화·지시 보내기. Cloudflare 임시 주소로 열리며 앱을 다시 켜면 바뀜. 새 기기는 QR을 찍은 뒤 이 Mac에서 허용해야 연결됨." = "Map, chat and instructions from a phone browser, over the internet. Opens on a temporary Cloudflare address that changes when the app restarts. A new device connects only after it scans the QR code and you allow it on this Mac.";
 "%lld초 남음" = "%llds left";

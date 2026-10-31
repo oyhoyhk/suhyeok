@@ -128,6 +128,8 @@ struct DialogueView: View {
     @State private var lastSpokenCount: Int?
     @State private var live: LiveReply?
     @State private var showScreen = false
+    /// A Claude Code panel (/status, /config …) is open, read from the registry each poll (the store refreshes every 3 s).
+    @State private var panelOpen = false
     /// The screen was opened by a slash command or key button, not the toggle; the next plain message closes it.
     @State private var screenAuto = false
     @State private var notice: String?
@@ -147,7 +149,7 @@ struct DialogueView: View {
                     header(s)
                     conversation(s)
                         .overlay { if let doing = store.working[s.id] { workingBadge(doing) } }
-                    if showScreen { screenPreview }
+                    if panelOpen, let name = s.hostedName { panelTerminal(name) } else if showScreen { screenPreview }
                     inputBar(s)
                 }
             }
@@ -323,7 +325,9 @@ struct DialogueView: View {
                     ForEach(items.suffix(shown)) { item in bubble(item, s) }
                     ForEach(pending) { p in pendingBubble(p) }
                     if let live { liveBubble(live, s) }
-                    if let menu { menuCard(menu, s) }
+                    if panelOpen {
+                        if s.hostedName == nil { panelCard(s) }  // hosted sessions show the panel in their own terminal below
+                    } else if let menu { menuCard(menu, s) }
                     Color.clear.frame(height: 1).id("end")
                         .background(GeometryReader { g in
                             Color.clear.preference(key: EndOffset.self, value: g.frame(in: .named("chat")).maxY)
@@ -579,6 +583,27 @@ struct DialogueView: View {
         .padding(.trailing, 40)
     }
 
+    /// A Claude Code panel (/status, /config …) is open in the terminal and would take what is typed here;
+    /// sending closes it first (SessionInput.send).
+    private func panelCard(_ s: AgentSession) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("터미널에 창이 열려 있음 (/status, /config 등)", systemImage: "macwindow").font(.callout.bold())
+                .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
+            Text("보내면 이 창을 먼저 닫고 보냄").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button("닫기 (Esc)") { Task.detached { SessionInput.closePanel(s) } }
+                if !showScreen { Button("화면 보기") { openScreen() } }
+            }
+            .controlSize(.small)
+            .disabled(!SessionInput.canSend(s))
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.2, green: 0.16, blue: 0.05).opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.85, green: 0.68, blue: 0.25), lineWidth: 1.5))
+        .padding(.trailing, 40)
+    }
+
     private func answerFreeText(_ m: TerminalMenu, _ i: Int, _ s: AgentSession) {
         let text = freeText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
@@ -599,6 +624,13 @@ struct DialogueView: View {
         if found == nil, let shown = menu, menuMisses < 1 { menuMisses += 1; return shown }
         menuMisses = 0
         return found
+    }
+
+    /// The session's own terminal while a panel is open, so keys work in it as they do there:
+    /// Tab between tabs, arrows, typing to filter, Esc to close.
+    private func panelTerminal(_ name: String) -> some View {
+        EmbeddedTerminal(name: name).id(name)
+            .frame(height: large == false ? 300 : 420)
     }
 
     private var screenPreview: some View {
@@ -739,12 +771,14 @@ struct DialogueView: View {
         let p = Pending(text: text, sent: full)
         pending.append(p)
         let blockedByMenu = menu != nil
+        let closesPanel = panelOpen
         Task.detached {
             let ok = SessionInput.send(s, text: full)
             await MainActor.run {
                 if !ok, let i = pending.firstIndex(where: { $0.id == p.id }) { pending[i].failed = true }
                 notice = !ok ? String(localized: "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)")
-                    : blockedByMenu ? String(localized: "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것") : nil
+                    : blockedByMenu ? String(localized: "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것")
+                    : closesPanel ? String(localized: "터미널에 열려 있던 창을 닫고 보냄") : nil
             }
         }
     }
@@ -826,8 +860,16 @@ struct DialogueView: View {
             let steady = readScreen ? steadyMenu(newMenu) : newMenu
             if steady != menu { menu = steady }
             if newLive != live { live = newLive }
+            let panel = s.agent == .claude && (s.pid.map { ClaudeSource.panelOpen(pid: $0) } ?? false)
+            if panel != panelOpen {
+                panelOpen = panel
+                if !panel {
+                    focused = true  // back to typing here once the panel is closed
+                    if screenAuto { showScreen = false; screenAuto = false }  // opened for the slash command
+                }
+            }
             // Fast while something is happening, so the reply appears as it is typed.
-            try? await Task.sleep(for: .seconds(busy || newMenu != nil ? 0.5 : 1.5))
+            try? await Task.sleep(for: .seconds(busy || newMenu != nil || panel ? 0.5 : 1.5))
         }
     }
 

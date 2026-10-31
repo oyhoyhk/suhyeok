@@ -25,6 +25,10 @@ enum SessionTree {
                 }
             }
             if s.parentId == nil, let owner = known[s.id], ids.contains(owner) { s.parentId = owner; s.hostedName = nil }
+            // A background shell detached to launchd breaks the pid chain, but the child keeps the pane's TMUX env.
+            if s.parentId == nil, s.hostedName == nil, let owner = s.pid.flatMap({ paneOwner($0, sessions) }), owner != s.id {
+                s.parentId = owner
+            }
             // No process left to trace: a run inside a Claude session's scratchpad (…/<sessionId>/scratchpad) is that session's.
             if s.parentId == nil, let owner = sessions.first(where: { o in
                 o.id != s.id && o.agent == .claude && o.conversationId.map { s.cwd.contains("/\($0)/") } == true
@@ -39,6 +43,24 @@ enum SessionTree {
             if let d = try? JSONEncoder().encode(now) { try? d.write(to: URL(fileURLWithPath: linksPath)) }
         }
         return linked
+    }
+
+    /// The hosted session whose 수혁 tmux pane `pid` was started from, by its inherited TMUX env.
+    private static func paneOwner(_ pid: Int32, _ sessions: [AgentSession]) -> String? {
+        let env = ProcessEnv.of(pid)
+        guard let tmux = env["TMUX"], TmuxEngine.isOurs(tmuxEnv: tmux), let pane = env["TMUX_PANE"],
+              let name = TmuxEngine.pane(pane)?.session else { return nil }
+        return sessions.first { $0.hostedName == name }?.id
+    }
+
+    /// `pid` is `ancestor` or runs under it.
+    static func descends(_ pid: Int32, from ancestor: Int32) -> Bool {
+        var p = pid
+        for _ in 0..<32 where p > 1 {
+            if p == ancestor { return true }
+            p = parentPid(p)
+        }
+        return false
     }
 
     static func parentPid(_ pid: Int32) -> Int32 {

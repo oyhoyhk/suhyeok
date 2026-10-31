@@ -90,6 +90,7 @@ enum SessionInput {
     /// Sends a whole message and presses Enter. Returns false when the host refused it.
     static func send(_ s: AgentSession, text: String) -> Bool {
         guard let t = target(s) else { return false }
+        closePanel(s)
         switch t {
         case .tmux(let socket, let pane):
             guard let tmux = TmuxEngine.tmux else { return false }
@@ -119,6 +120,23 @@ enum SessionInput {
             guard TerminalSource.run(cmux, ["send", "--workspace", w, "--surface", f, "--", line]) != nil else { return false }
             usleep(150_000)
             return TerminalSource.run(cmux, ["send-key", "--workspace", w, "--surface", f, "enter"]) != nil
+        }
+    }
+
+    /// A message typed while a Claude Code panel (/status, /config …) is open goes into the panel and is lost,
+    /// so close it first. Menus (permission, question, model picker) are left for the user to answer.
+    static func closePanel(_ s: AgentSession) {
+        guard s.agent == .claude, let pid = s.pid, ClaudeSource.panelOpen(pid: pid),
+              case .text(let screen, _) = TerminalSource.read(pid: pid, lines: 60), TerminalMenu.parse(screen) == nil
+        else { return }
+        // /config takes the first Esc to leave its search box. Press again only while the registry still shows
+        // the panel: a second Esc on the empty prompt would open the rewind menu.
+        for _ in 0..<3 {
+            guard press(s, .escape) else { return }
+            for _ in 0..<6 {
+                usleep(100_000)
+                if !ClaudeSource.panelOpen(pid: pid) { usleep(100_000); return }
+            }
         }
     }
 

@@ -31,6 +31,20 @@ final class PersonaTests: XCTestCase {
         XCTAssertNotEqual(next["s0"], taken)
     }
 
+    func testTwoSessionsPinnedToOneCharacterDoNotShareIt() {
+        var assigner = CharacterAssigner()
+        // s1 started first; s2 (say, an agent it launched) claims the same character.
+        let picks = assigner.update([session(2), session(1)], pinned: ["s1": 0, "s2": 0], rosterCount: 4)
+        XCTAssertEqual(picks["s1"], 0)
+        XCTAssertNotEqual(picks["s2"], 0)
+    }
+
+    func testDescendsFollowsTheProcessTree() {
+        XCTAssertTrue(SessionTree.descends(getpid(), from: getpid()))
+        XCTAssertTrue(SessionTree.descends(getpid(), from: getppid()))
+        XCTAssertFalse(SessionTree.descends(getppid(), from: getpid()))
+    }
+
     func testBackToBackLaunchesFollowTheLineup() {
         let lineup = [5, 2, 9, 0]
         var starting = Set<Int>()

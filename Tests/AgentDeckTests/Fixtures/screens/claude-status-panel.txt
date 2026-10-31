@@ -1,0 +1,50 @@
+
+⚠ 1 MCP server needs authentication · run /mcp
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ This project's settings set telemetry environment variables. Run /status to see which ones Claude Code ignored and which turned telemetry off. ▔
+   Settings  Status   Config   Usage   Stats
+
+   Version:           2.1.314
+   Session name:      /rename to add a name
+   Session ID:        00000000-0000-0000-0000-000000000000
+   Session kind:      interactive
+   Peer address:      uds:/tmp/cc-socks/12345.sock
+   cwd:               /Users/me/project/agent-deck
+   Login method:      Claude Max account
+   Organization:      user@example.com's Organization
+   Email:             user@example.com
+   Cloud sessions:    Not set up · /web-setup to connect GitHub
+
+   Model:             opus (claude-opus-5-5)
+   MCP servers:       7 connected, 3 need auth, 1 disabled · /mcp
+   Setting sources:   User settings, Project local settings
+   Auto mode server:  Disabled
+
+   System diagnostics
+    ⚠ Claude Code ignores these telemetry variables in .claude/settings.local.json: CLAUDE_CODE_ENABLE_TELEMETRY, OTEL_LOG_USER_PROMPTS,
+      OTEL_LOG_ASSISTANT_RESPONSES, OTEL_LOG_TOOL_DETAILS, OTEL_LOG_TOOL_CONTENT. A project's settings files can only turn telemetry off: set
+      OTEL_LOGS_EXPORTER, OTEL_METRICS_EXPORTER, or OTEL_TRACES_EXPORTER to none, or a content variable such as OTEL_LOG_USER_PROMPTS to 0, with the name in
+      upper case. That doesn't work for a variable that managed settings, a --settings file, or the environment you start Claude Code from already sets. If
+      you set them on purpose, set them in your shell, your user settings (~/.claude/settings.json), or managed settings instead.
+
+
+   Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

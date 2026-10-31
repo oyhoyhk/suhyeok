@@ -42,16 +42,33 @@ enum ClaudeSource {
         return sessions
     }
 
-    private static var paneSessions: [String: String] = [:]
+    /// Claude Code marks its panels (/status, /usage, /config …) as `waitingFor: "dialog open"`; a dialog that
+    /// asks for a choice also says what it `needs`, and is answered, not closed.
+    static func isPanel(_ obj: [String: Any]) -> Bool {
+        obj["waitingFor"] as? String == "dialog open" && obj["needs"] == nil
+    }
 
-    /// tmux session on 수혁's server that runs this process, if any.
+    /// Reads the registry now, not the store's last refresh: it changes within 0.1 s of a panel opening or closing.
+    static func panelOpen(pid: Int32) -> Bool {
+        guard let data = FileManager.default.contents(atPath: sessionsDir + "/\(pid).json"),
+              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        return isPanel(obj)
+    }
+
+    private static var panes: [String: (session: String, pid: Int32)] = [:]
+
+    /// tmux session on 수혁's server that runs this process, if any. The TMUX variables alone are not enough:
+    /// an agent started from that pane inherits them, and once its shell is gone it no longer runs under the pane.
     private static func hostedName(pid: Int32) -> String? {
         let env = ProcessEnv.of(pid)
         guard let tmux = env["TMUX"], TmuxEngine.isOurs(tmuxEnv: tmux), let pane = env["TMUX_PANE"] else { return nil }
-        if let name = paneSessions[pane] { return name }
-        let name = TmuxEngine.session(ofPane: pane)
-        paneSessions[pane] = name
-        return name
+        // A cached pane can be stale after the tmux server restarted (pane ids start over): ask again once.
+        for fresh in [false, true] {
+            if fresh || panes[pane] == nil { panes[pane] = TmuxEngine.pane(pane) }
+            guard let p = panes[pane] else { return nil }
+            if SessionTree.descends(pid, from: p.pid) { return p.session }
+        }
+        return nil
     }
 
     private static func date(ms: Any?) -> Date? {

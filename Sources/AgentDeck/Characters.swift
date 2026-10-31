@@ -172,7 +172,14 @@ struct CharacterAssigner {
         let pool = lineup.isEmpty ? Array(0..<count) : lineup
         let live = Set(sessions.map(\.id))
         assigned = assigned.filter { live.contains($0.key) }
-        let pins = pinned.filter { live.contains($0.key) && $0.value < count }
+        // Two sessions pinned to one character (a resumed conversation open twice, a child that looked like its
+        // parent's pane): the older keeps it and the other draws below, so no two live sessions share a name.
+        let start = Dictionary(sessions.map { ($0.id, $0.startedAt ?? .distantPast) }, uniquingKeysWith: { a, _ in a })
+        var pins: [String: Int] = [:]
+        for (id, i) in pinned.filter({ live.contains($0.key) && $0.value < count })
+            .sorted(by: { (start[$0.key]!, $0.key) < (start[$1.key]!, $1.key) }) where !pins.values.contains(i) {
+            pins[id] = i
+        }
         // An unpinned session holding a pinned character gives it up and draws another below.
         let taken = Set(pins.values)
         assigned = assigned.filter { pins[$0.key] != nil || !taken.contains($0.value) }

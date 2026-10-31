@@ -56,4 +56,20 @@ final class ScreenFixtureTests: XCTestCase {
         let live = LiveReply.parse(try screen("claude-working"), alreadyLogged: nil)
         XCTAssertEqual(live?.status?.hasPrefix("Cascading"), true)
     }
+
+    /// Panels (2.1.314) are not menus, so a message sent into one closes it first instead of waiting behind it.
+    func testPanelsAreNotMenus() throws {
+        XCTAssertNil(TerminalMenu.parse(try screen("claude-status-panel")))
+        XCTAssertNil(TerminalMenu.parse(try screen("claude-config-panel")))
+        // The model picker is also "dialog open" in the registry, but it is a menu: left for the user to answer.
+        XCTAssertEqual(TerminalMenu.parse(try screen("claude-model-menu"))?.selected, 1)
+    }
+
+    func testPanelFromRegistry() {
+        XCTAssertTrue(ClaudeSource.isPanel(["status": "waiting", "waitingFor": "dialog open"]))
+        // A dialog that asks for a choice is answered, not closed.
+        XCTAssertFalse(ClaudeSource.isPanel(["waitingFor": "dialog open", "needs": "choose: retry on fallback model or edit prompt"]))
+        XCTAssertFalse(ClaudeSource.isPanel(["status": "waiting", "waitingFor": "input needed"]))
+        XCTAssertFalse(ClaudeSource.isPanel(["status": "idle"]))
+    }
 }

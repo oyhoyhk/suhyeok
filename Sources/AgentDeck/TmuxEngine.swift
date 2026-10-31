@@ -130,12 +130,14 @@ enum TmuxEngine {
     }
 
     /// tmux session that owns a pane, e.g. "%3" -> "sh-3fa9c1".
-    static func session(ofPane pane: String) -> String? {
+    /// The session a pane belongs to, and the pid of the process the pane started (the agent runs under it).
+    static func pane(_ pane: String) -> (session: String, pid: Int32)? {
         guard let tmux,
-              let out = TerminalSource.run(tmux, base + ["display-message", "-p", "-t", pane, "#{session_name}"])
+              let out = TerminalSource.run(tmux, base + ["display-message", "-p", "-t", pane, "#{session_name}\t#{pane_pid}"])
         else { return nil }
-        let name = out.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? nil : name
+        let parts = out.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\t")
+        guard parts.count == 2, let pid = Int32(parts[1]) else { return nil }
+        return (String(parts[0]), pid)
     }
 
     private static func titleFor(prompt: String?, cwd: String, resume: String?) -> String {
