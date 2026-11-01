@@ -361,8 +361,11 @@ class Api(val base: String, private val token: String?) {
         val total = c.contentLengthLong.coerceAtLeast(1)
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         file.parentFile?.mkdirs()
+        // Written beside the final name and moved there only once whole and checked: a download cut off when the app
+        // was closed left a partial APK under the final name, which the next tap installed ("problem parsing the package").
+        val part = java.io.File(file.path + ".part")
         c.inputStream.use { input ->
-            file.outputStream().use { out ->
+            part.outputStream().use { out ->
                 val buf = ByteArray(64 * 1024)
                 var done = 0L
                 while (true) {
@@ -375,7 +378,8 @@ class Api(val base: String, private val token: String?) {
             }
         }
         val sha = digest.digest().joinToString("") { "%02x".format(it) }
-        if (release.sha256.isNotEmpty() && sha != release.sha256) { file.delete(); throw Failure(R.string.error_update_corrupt) }
+        if (release.sha256.isNotEmpty() && sha != release.sha256) { part.delete(); throw Failure(R.string.error_update_corrupt) }
+        if (!part.renameTo(file)) { part.delete(); throw Failure(R.string.error_update_corrupt) }
     }
 
     // Pairing: the QR's one-time secret makes a request the owner allows on the Mac; the token comes back once.
