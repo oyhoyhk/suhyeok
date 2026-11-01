@@ -178,4 +178,15 @@
   <string name="new_session_started">새 세션을 시작했어요</string>
   <string name="new_session_failed">시작하지 못했어요 — Mac의 수혁을 업데이트하세요</string>
   <string name="new_session_demo">체험 모드에서는 쓸 수 없어요</string>
+  <string name="chat_more">더보기</string>
+  <string name="chat_tile_file">파일</string>
+  <string name="chat_tile_voice">음성</string>
+  <string name="chat_tile_keys">빠른 키</string>
+  <string name="panel_waiting">화면을 기다리는 중 — 계속 비어 있으면 Mac의 수혁을 업데이트하세요</string>
+  <string name="panel_close">닫기</string>
+  <string name="chat_commands">%1$s 명령</string>
+  <string name="chat_cancel">취소 (Esc)</string>
+  <string name="copied">복사됨</string>
+  <string name="usage_context">컨텍스트</string>
+  <string name="usage_days_hours">%1$d일%2$dh</string>
 </resources>

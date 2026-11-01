@@ -7,10 +7,13 @@ import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Keyboard
@@ -42,13 +46,16 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -62,9 +69,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -76,8 +87,10 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** Conversation with one agent: its log, the reply being written, menu choices, and an input with dictation. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpaired: () -> Unit) {
     val context = LocalContext.current
@@ -90,8 +103,14 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
     /** Files from the phone already on the Mac: (name, path there). Their paths go out with the next message. */
     val attached = remember { mutableStateListOf<Pair<String, String>>() }
     var uploading by remember { mutableStateOf(0) }
+    /** A send is on its way to the Mac: a second tap now would type the message twice. */
+    var sending by remember { mutableStateOf(false) }
     /** What was last sent from this screen (the ↑ button brings it back). */
     var sentHere by remember { mutableStateOf<String?>(null) }
+    /** The + drawer under the input, as in KakaoTalk: file, voice, quick keys and the agent's commands. */
+    var more by remember { mutableStateOf(false) }
+    /** The command whose dialog is shown as a panel (/status, /model …); null when closed. */
+    var panel by remember { mutableStateOf<String?>(null) }
     val list = rememberLazyListState()
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val unreachable = stringResource(R.string.chat_unreachable)
@@ -109,7 +128,7 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 try {
-                    val c = api.chat(agent.id)
+                    val c = api.chat(agent.id, screen = panel != null)
                     val replies = c.items.count { it.role == "agent" }
                     // A new finished reply (not the ones there on open): read it if asked.
                     if (seenReplies >= 0 && replies > seenReplies && prefs.readAloud) {
@@ -130,7 +149,7 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
                 } catch (e: Exception) {
                     notice = unreachable
                 }
-                delay(if (chat?.live != null || chat?.menu?.isNotEmpty() == true) 1000 else 2000)
+                delay(if (panel != null) 700 else if (chat?.live != null || chat?.menu?.isNotEmpty() == true) 1000 else 2000)
             }
         }
     }
@@ -176,14 +195,52 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
             }
             return
         }
+        if (sending) return
+        // Clear the box before the request, not after: the send takes a second or two, and a tap in that window sent it again.
+        val files = attached.toList()
+        sending = true; draft = ""; attached.clear()
         scope.launch {
             val ok = runCatching { api.send(agent.id, text) }.getOrDefault(false)
-            if (ok) { sentHere = text; draft = ""; attached.clear(); notice = if (agent.busy) context.getString(R.string.chat_queued) else null }
-            else notice = context.getString(R.string.send_failed)
+            sending = false
+            if (ok) { sentHere = text; notice = if (agent.busy) context.getString(R.string.chat_queued) else null }
+            else {
+                if (draft.isEmpty() && attached.isEmpty()) { draft = typed; attached.addAll(files) }
+                notice = context.getString(R.string.send_failed)
+            }
         }
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
+    // A command button types the command; one that opens a dialog also opens the panel that shows it.
+    fun command(cmd: AgentCommand) {
+        scope.launch { if (!runCatching { api.send(agent.id, cmd.text) }.getOrDefault(false)) notice = context.getString(R.string.send_failed) }
+        if (cmd.panel) panel = cmd.text
+    }
+    // A key in the panel, then a quick look so the panel follows it without waiting for the next poll.
+    fun panelKey(key: String) = scope.launch {
+        runCatching { api.key(agent.id, key) }
+        delay(250)
+        runCatching { api.chat(agent.id, screen = true) }.getOrNull()?.let { chat = it }
+    }
+
+    fun choose(i: Int) = scope.launch {
+        notice = if (runCatching { api.choose(agent.id, i) }.getOrDefault(false)) null else context.getString(R.string.chat_choose_failed)
+    }
+    /** Leaves a menu or dialog without choosing, as Esc does in the terminal. */
+    fun cancel() = scope.launch { runCatching { api.key(agent.id, "Escape") } }
+
+    panel?.let { cmd ->
+        val screen = chat?.screen
+        // The dialog's choices are in the panel too, so a choice does not mean closing the panel first.
+        PanelSheet(cmd, screen, chat?.takeIf { it.menu.isNotEmpty() }, ::panelKey,
+            choose = { i -> choose(i); panel = null }, cancel = { cancel(); panel = null }) {
+            // Closing the panel closes the dialog too, or the next message would be typed into it. Only when the
+            // screen offers Esc to close: a busy agent says "esc to interrupt", and Esc there would stop its work.
+            if (screen != null && screen.lines().takeLast(8).any { escCloses.containsMatchIn(it) }) panelKey("Escape")
+            panel = null
+        }
+    }
+
+    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
         // Header: back, portrait, name, read-aloud toggle.
         Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = Color.White) }
@@ -219,97 +276,250 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
             if (c == null) item { Text(stringResource(R.string.loading), color = Color.White.copy(alpha = 0.6f)) }
             else {
                 if (c.menu.isNotEmpty()) item(key = "menu") {
-                    MenuCard(c) { i -> scope.launch { if (runCatching { api.choose(agent.id, i) }.getOrDefault(false)) notice = null else notice = context.getString(R.string.chat_choose_failed) } }
+                    MenuCard(c, ::choose, ::cancel)
                 }
                 c.live?.let { live -> item(key = "live") { LiveBox(live) } }
                 val newestFirst = c.items.withIndex().reversed()
-                items(newestFirst, key = { "m${it.index}" }) { Bubble(it.value) }
+                items(newestFirst, key = { "m${it.index}" }) { Bubble(api, agent, it.value) }
                 if (c.items.isEmpty()) item { Text(stringResource(R.string.chat_empty), color = Color.White.copy(alpha = 0.6f)) }
             }
         }
 
-        notice?.let { Text(linksOnly(it, Gold), color = Color(0xFFFFB74D), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 14.dp)) }
+        // Notices sit in the middle like a messenger's date lines.
+        notice?.let {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+                Text(linksOnly(it, Gold), color = Color(0xFFFFB74D), fontSize = 12.sp,
+                    modifier = Modifier.background(Panel, RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 4.dp))
+            }
+        }
 
         // As in Claude Code and Codex: stop the running turn (Esc), then bring back the last instruction to fix.
         val busyNow = (chat?.status ?: agent.status) == "busy"
         val last = (sentHere ?: chat?.items?.lastOrNull { it.role == "me" && !it.text.startsWith("/") }?.text)
             ?.substringBefore("\n\n(수혁 음성 지시")
-        if (busyNow || (draft.isBlank() && last != null)) Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (busyNow) Button(
-                onClick = { scope.launch { if (runCatching { api.key(agent.id, "Escape") }.getOrDefault(false)) notice = context.getString(R.string.chat_stopped) } },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828), contentColor = Color.White),
-                modifier = Modifier.height(34.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 0.dp),
-            ) { Text(stringResource(R.string.chat_stop), fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-            if (draft.isBlank() && last != null) OutlinedButton(onClick = { draft = last }, modifier = Modifier.height(34.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
-                Text(stringResource(R.string.chat_recall), color = Color.White, fontSize = 13.sp)
+        if (busyNow || (draft.isBlank() && last != null)) Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (busyNow) Chip(stringResource(R.string.chat_stop), container = Color(0xFFC62828), content = Color.White, bold = true) {
+                scope.launch { if (runCatching { api.key(agent.id, "Escape") }.getOrDefault(false)) notice = context.getString(R.string.chat_stopped) }
             }
+            if (draft.isBlank() && last != null) Chip(stringResource(R.string.chat_recall)) { draft = last }
         }
 
         // Quick keys for menus and the terminal: shown with a menu on screen or on request.
         if (showKeys || chat?.menu?.isNotEmpty() == true) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("Esc" to "Escape", "↑" to "Up", "↓" to "Down", "⏎" to "Enter", "1" to "1", "2" to "2", "3" to "3").forEach { (label, key) ->
-                OutlinedButton(onClick = { scope.launch { runCatching { api.key(agent.id, key) } } },
-                    modifier = Modifier.height(32.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 0.dp)) {
-                    Text(label, color = Color.White, fontSize = 13.sp)
-                }
+                Chip(label) { scope.launch { runCatching { api.key(agent.id, key) } } }
             }
         }
 
-        // Files waiting to go out with the message; ✕ leaves one out (it stays on the Mac).
-        if (attached.isNotEmpty() || uploading > 0) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-            attached.forEach { file ->
-                Row(Modifier.background(Panel, RoundedCornerShape(8.dp)).padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(file.first, color = Color.White, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 160.dp))
-                    IconButton(onClick = { attached.remove(file) }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Filled.Close, stringResource(R.string.attach_remove), tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
+        // The input bar runs to the bottom edge; the + drawer opens under it.
+        Column(Modifier.fillMaxWidth().background(Panel).navigationBarsPadding()) {
+            // Files waiting to go out with the message; ✕ leaves one out (it stays on the Mac).
+            if (attached.isNotEmpty() || uploading > 0) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 10.dp, end = 10.dp, top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                attached.forEach { file ->
+                    Row(Modifier.background(Navy, RoundedCornerShape(8.dp)).padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(file.first, color = Color.White, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 160.dp))
+                        IconButton(onClick = { attached.remove(file) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Filled.Close, stringResource(R.string.attach_remove), tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
+                        }
                     }
                 }
+                if (uploading > 0) Text(stringResource(R.string.attach_uploading, uploading), color = Gold, fontSize = 12.sp)
             }
-            if (uploading > 0) Text(stringResource(R.string.attach_uploading, uploading), color = Gold, fontSize = 12.sp)
-        }
 
-        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { pick.launch("*/*") }) { Icon(Icons.Filled.AttachFile, stringResource(R.string.attach), tint = Gold) }
-            OutlinedTextField(
-                value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
-                placeholder = { Text(stringResource(R.string.chat_placeholder, agent.name)) }, maxLines = 5,
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                    focusedBorderColor = Gold, cursorColor = Gold),
-            )
-            val dictatePrompt = stringResource(R.string.chat_dictate_prompt, agent.name)
-            IconButton(onClick = {
-                dictate.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                    .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                    .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-                    .putExtra(RecognizerIntent.EXTRA_PROMPT, dictatePrompt))
-            }) { Icon(Icons.Filled.Mic, stringResource(R.string.dictate), tint = Gold) }
-            IconButton(onClick = { showKeys = !showKeys }) {
-                Icon(Icons.Filled.Keyboard, stringResource(R.string.quick_keys), tint = if (showKeys) Gold else Color.White.copy(alpha = 0.5f))
+            // [+] [input] [send]: the input takes the rest of the width.
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.Bottom) {
+                IconButton(onClick = { more = !more }) {
+                    Icon(if (more) Icons.Filled.Close else Icons.Filled.Add, stringResource(R.string.chat_more), tint = Gold)
+                }
+                TextField(
+                    value = draft, onValueChange = { draft = it }, modifier = Modifier.weight(1f),
+                    placeholder = { Text(stringResource(R.string.chat_placeholder, agent.name), color = Color.White.copy(alpha = 0.4f)) }, maxLines = 6,
+                    shape = RoundedCornerShape(20.dp),
+                    colors = TextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, cursorColor = Gold,
+                        focusedContainerColor = Navy, unfocusedContainerColor = Navy,
+                        focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
+                )
+                val ready = (draft.isNotBlank() || attached.isNotEmpty()) && uploading == 0 && !sending
+                Box(Modifier.padding(start = 6.dp, end = 4.dp, bottom = 6.dp).size(44.dp)
+                    .background(if (ready) Gold else Navy, RoundedCornerShape(10.dp))
+                    .clickable(enabled = ready, onClick = ::send), contentAlignment = Alignment.Center) {
+                    Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.send), tint = if (ready) Color.Black else Color.Gray)
+                }
             }
-            val ready = (draft.isNotBlank() || attached.isNotEmpty()) && uploading == 0
-            IconButton(onClick = ::send, enabled = ready) {
-                Icon(Icons.AutoMirrored.Filled.Send, stringResource(R.string.send), tint = if (ready) Gold else Color.Gray)
+
+            chat?.usage?.let { UsageLine(it) }
+
+            if (more) {
+                val dictatePrompt = stringResource(R.string.chat_dictate_prompt, agent.name)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Tile(Icons.Filled.AttachFile, stringResource(R.string.chat_tile_file), Color(0xFF7FC97F)) { more = false; pick.launch("*/*") }
+                    Tile(Icons.Filled.Mic, stringResource(R.string.chat_tile_voice), Color(0xFF6FA8F5)) {
+                        more = false
+                        dictate.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                            .putExtra(RecognizerIntent.EXTRA_PROMPT, dictatePrompt))
+                    }
+                    Tile(Icons.Filled.Keyboard, stringResource(R.string.chat_tile_keys), if (showKeys) Gold else Color(0xFF5A6390)) { showKeys = !showKeys }
+                }
+                // The agent's own slash commands, so settings like /status and /model are a tap instead of typing.
+                Text(stringResource(R.string.chat_commands, agent.kind), color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp,
+                    modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
+                FlowRow(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    commandsFor(agent.kind).forEach { cmd -> Chip(cmd.text) { more = false; command(cmd) } }
+                }
             }
         }
     }
 }
 
+/** Messenger bubbles: mine on the right; the agent's on the left under its face and name. */
 @Composable
-private fun Bubble(item: ChatItem) {
+private fun Bubble(api: Api, agent: Agent, item: ChatItem) {
     when (item.role) {
-        "me" -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-            Text(inline(item.text, linkColor = Color(0xFF0D2A8A), files = item.files), color = Color.Black, modifier = Modifier.widthIn(max = 320.dp)
-                .background(Gold, RoundedCornerShape(12.dp)).padding(10.dp))
+        "me" -> Box(Modifier.fillMaxWidth().padding(start = 48.dp), contentAlignment = Alignment.CenterEnd) {
+            Text(inline(item.text, linkColor = Color(0xFF0D2A8A), files = item.files), color = Color.Black,
+                modifier = Modifier.background(Gold, RoundedCornerShape(14.dp, 4.dp, 14.dp, 14.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
         }
-        "agent" -> Box(Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(12.dp)).padding(10.dp)) { Markdown(item.text, files = item.files) }
-        else -> Text("🔧 " + item.text, color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp, maxLines = 2)
+        "agent" -> Row(Modifier.fillMaxWidth()) {
+            Portrait(api, agent.character, agent.name, 38.dp)
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(agent.name, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                Spacer(Modifier.height(4.dp))
+                Box(Modifier.background(Panel, RoundedCornerShape(4.dp, 14.dp, 14.dp, 14.dp)).padding(horizontal = 12.dp, vertical = 9.dp)) {
+                    Markdown(item.text, files = item.files)
+                }
+            }
+        }
+        else -> Text("🔧 " + item.text, color = Color.White.copy(alpha = 0.5f), fontSize = 12.sp, maxLines = 2, modifier = Modifier.padding(start = 46.dp))
+    }
+}
+
+/**
+ * The Mac's status line under the input, as under Claude Code's prompt: model and effort, context use, and the
+ * account's limits (5-hour, weekly) with the time left until each resets. Scrolls sideways when it does not fit.
+ */
+@Composable
+private fun UsageLine(u: Usage) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (u.model.isNotEmpty()) Text(buildAnnotatedString {
+            withStyle(SpanStyle(color = Color(0xFFD99AFF), fontWeight = FontWeight.Bold)) { append("◆ " + u.model) }
+            if (u.effort.isNotEmpty()) withStyle(SpanStyle(color = Color.White.copy(alpha = 0.5f))) { append(" · " + u.effort) }
+        }, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        u.contextPercent?.let { p ->
+            Text(buildAnnotatedString {
+                withStyle(SpanStyle(color = Color.White.copy(alpha = 0.5f))) { append(stringResource(R.string.usage_context) + " ") }
+                withStyle(SpanStyle(color = usageColor(p))) { append("${p.roundToInt()}%") }
+            }, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        }
+        u.limits.forEach { l ->
+            val filled = (l.percent / 20).toInt().coerceIn(0, 5)
+            val left = l.resetsAt?.let { timeLeft(it) }
+            Text(buildAnnotatedString {
+                withStyle(SpanStyle(color = Color.White.copy(alpha = 0.5f))) { append(l.label + " ") }
+                withStyle(SpanStyle(color = usageColor(l.percent))) { append("▰".repeat(filled)) }
+                withStyle(SpanStyle(color = Color.Gray)) { append("▱".repeat(5 - filled)) }
+                withStyle(SpanStyle(color = usageColor(l.percent))) { append(" ${l.percent.roundToInt()}%") }
+                if (left != null) withStyle(SpanStyle(color = Color.White.copy(alpha = 0.5f))) { append(" ↻$left") }
+            }, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        }
+    }
+}
+
+/** Green, then yellow from half, red from 80%, as on the Mac. */
+private fun usageColor(p: Double) = if (p >= 80) Color(0xFFFF6B6B) else if (p >= 50) Color(0xFFFFD54F) else Color(0xFF66BB6A)
+
+/** "3일4h", "2h05m", "12m" until [epoch]; null once it has passed. */
+@Composable
+private fun timeLeft(epoch: Double): String? {
+    val s = (epoch - System.currentTimeMillis() / 1000.0).toLong()
+    if (s <= 0) return null
+    val d = s / 86400; val h = s % 86400 / 3600; val m = s % 3600 / 60
+    return if (d > 0) stringResource(R.string.usage_days_hours, d, h) else if (h > 0) String.format(Locale.ROOT, "%dh%02dm", h, m) else "${m}m"
+}
+
+/** A rounded button: stop and recall over the input, commands in the + drawer, keys in the panel. */
+@Composable
+private fun Chip(label: String, container: Color = Navy, content: Color = Color.White, bold: Boolean = false, onClick: () -> Unit) {
+    Text(label, color = content, fontSize = 13.sp, fontWeight = if (bold) FontWeight.Bold else null, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(container).clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 7.dp))
+}
+
+/** A round icon with its name under it, as in a messenger's + drawer. */
+@Composable
+private fun Tile(icon: ImageVector, label: String, color: Color, onClick: () -> Unit) {
+    Column(Modifier.clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(52.dp).background(color, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(icon, label, tint = Color.White)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(label, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+    }
+}
+
+/** A slash command button: [panel] when the command opens a dialog to show (rather than starting work, like /compact). */
+data class AgentCommand(val text: String, val panel: Boolean = true)
+
+/**
+ * Each agent's settings and status commands, from its own slash menu (Claude Code 2.1.314, Codex 0.166, agy 1.4.12).
+ * Commands that end the conversation (/clear, /new) are left out: one stray tap would lose it.
+ */
+fun commandsFor(kind: String): List<AgentCommand> = when (kind) {
+    "Codex" -> listOf("/status", "/model", "/permissions", "/usage", "/mcp", "/diff", "/review").map(::AgentCommand) + AgentCommand("/compact", panel = false)
+    "Antigravity" -> listOf("/model", "/effort", "/usage", "/credits", "/context", "/config", "/permissions", "/mcp").map(::AgentCommand) + AgentCommand("/compact", panel = false)
+    else -> listOf("/status", "/model", "/effort", "/usage", "/context", "/config", "/permissions", "/mcp").map(::AgentCommand) + AgentCommand("/compact", panel = false)
+}
+
+/** A dialog's own way out ("Esc to cancel", "esc to close" …), not "esc to interrupt" on a busy agent. */
+private val escCloses = Regex("""(?i)\besc to (cancel|close|exit|clear)\b""")
+
+/**
+ * The terminal's bottom lines in full width, for dialogs the chat cannot show (/status, /model …), with the keys
+ * they take. Long rules are cut short so they do not wrap into rows of dashes, and the wide gaps of two-column
+ * screens ("Model:      opus") shrink to two spaces so a row fits the phone's width.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PanelSheet(title: String, screen: String?, menu: Chat?, key: (String) -> Unit, choose: (Int) -> Unit,
+                       cancel: () -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Color(0xFF1E1E1E)) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 10.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = cancel) { Text(stringResource(R.string.chat_cancel), color = Color(0xFFFF8A80)) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.panel_close), color = Gold) }
+            }
+            menu?.let {
+                // Scrolls on its own so a long model list never pushes the keys out of reach.
+                Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MenuOptions(it, choose)
+                }
+            }
+            // The keys above the screen, so a long screen never pushes them out of reach.
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Esc" to "Escape", "←" to "Left", "→" to "Right", "↑" to "Up", "↓" to "Down", "Tab" to "Tab", "⏎" to "Enter").forEach { (label, k) ->
+                    Chip(label, container = Color(0xFF3A3A3A), content = Color.White) { key(k) }
+                }
+            }
+            val text = screen?.let { androidGlyphs(it.replace(Regex("[─━═▔▁]{6,}"), "─────").replace(Regex("(?<=\\S) {3,}"), "  ")) }
+            // A Mac from before the panel sends no screen; its menu above is then all there is to show.
+            if (text != null || menu == null) Text(text ?: stringResource(R.string.panel_waiting), color = Color(0xFFE0E0E0), fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp, lineHeight = 16.sp,
+                modifier = Modifier.fillMaxWidth().weight(1f, fill = false).padding(horizontal = 10.dp)
+                    .background(Color.Black, RoundedCornerShape(8.dp)).padding(10.dp)
+                    .verticalScroll(rememberScrollState(), reverseScrolling = true))
+        }
     }
 }
 
@@ -325,21 +535,29 @@ private fun LiveBox(live: String) {
 }
 
 @Composable
-private fun MenuCard(c: Chat, choose: (Int) -> Unit) {
+private fun MenuCard(c: Chat, choose: (Int) -> Unit, cancel: () -> Unit) {
     Column(Modifier.fillMaxWidth().background(Color(0xFF3A1F1F), RoundedCornerShape(12.dp)).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // The question and its grounds (tool, command, file) instead of a generic title, as on the Mac.
-        Text(c.menuQuestion.ifEmpty { stringResource(R.string.chat_menu_title) }, color = Color(0xFFFF8A80), fontWeight = FontWeight.Bold)
-        if (c.menuContext.isNotEmpty()) Text(c.menuContext, color = Color(0xFFE0E0E0), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp,
-            modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(6.dp)).padding(8.dp)
-                .heightIn(max = 220.dp).verticalScroll(rememberScrollState()))
-        c.menu.forEachIndexed { i, label ->
-            Button(onClick = { choose(i) }, modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Panel, contentColor = Color.White)) {
-                Column(Modifier.fillMaxWidth()) {
-                    Text("${i + 1}. $label")
-                    c.menuDetails.getOrNull(i)?.takeIf { it.isNotEmpty() }?.let { Text(it, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp) }
-                }
+        MenuOptions(c, choose)
+        // Leaving without a choice, as Esc in the terminal.
+        Chip(stringResource(R.string.chat_cancel), container = Color.Black.copy(alpha = 0.3f), content = Color(0xFFFF8A80), onClick = cancel)
+    }
+}
+
+/** A menu's question, its grounds and the choices: in the chat's menu card and in the command panel. */
+@Composable
+private fun MenuOptions(c: Chat, choose: (Int) -> Unit) {
+    // The question and its grounds (tool, command, file) instead of a generic title, as on the Mac.
+    Text(c.menuQuestion.ifEmpty { stringResource(R.string.chat_menu_title) }, color = Color(0xFFFF8A80), fontWeight = FontWeight.Bold)
+    if (c.menuContext.isNotEmpty()) Text(c.menuContext, color = Color(0xFFE0E0E0), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp,
+        modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(6.dp)).padding(8.dp)
+            .heightIn(max = 220.dp).verticalScroll(rememberScrollState()))
+    c.menu.forEachIndexed { i, label ->
+        Button(onClick = { choose(i) }, modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Panel, contentColor = Color.White)) {
+            Column(Modifier.fillMaxWidth()) {
+                Text("${i + 1}. $label")
+                c.menuDetails.getOrNull(i)?.takeIf { it.isNotEmpty() }?.let { Text(it, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp) }
             }
         }
     }

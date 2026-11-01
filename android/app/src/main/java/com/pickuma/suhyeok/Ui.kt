@@ -1,7 +1,11 @@
 package com.pickuma.suhyeok
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,11 +17,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -32,6 +43,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 
 /** The agent's face; its initial shows until (or instead of) the picture. */
 @Composable
@@ -111,11 +123,27 @@ fun Markdown(text: String, color: Color = Color.White, files: Map<String, String
                 Text(inline(s, files = files), color = color.copy(alpha = 0.85f), modifier = Modifier.padding(start = 8.dp))
             }
             "table" -> Table(s.lines(), color, files)
-            "code" -> Text(s, color = Color(0xFFB9F6CA), fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(6.dp)).padding(8.dp))
+            "code" -> CodeBlock(s)
             else -> Text(inline(s, files = files), color = color)
         }
+    }
+}
+
+/** A fenced code block: a tap copies the whole block, so commands are taken as a unit instead of selected by hand (as on the Mac). */
+@Composable
+private fun CodeBlock(code: String) {
+    val context = LocalContext.current
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) { if (copied) { delay(1200); copied = false } }
+    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = 0.4f))
+        .clickable {
+            (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("code", code))
+            copied = true
+        }) {
+        Text(code, color = Color(0xFFB9F6CA), fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.padding(8.dp))
+        if (copied) Text("✓ " + stringResource(R.string.copied), color = Color.White, fontSize = 11.sp,
+            modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 6.dp, vertical = 2.dp))
     }
 }
 

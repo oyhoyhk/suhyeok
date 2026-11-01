@@ -72,7 +72,14 @@ data class Chat(
     val status: String,      // as in Agent
     val activity: String,
     val action: String,
+    val screen: String? = null,                    // the terminal's bottom lines, when asked for (panel view)
+    val usage: Usage? = null,                      // null from a Mac that does not send it, or an agent without numbers
 )
+
+/** The Mac's status line (UsageLine.swift): model, context use, and the account's limits in the Mac's language. */
+data class Usage(val model: String, val effort: String, val contextPercent: Double?, val limits: List<UsageLimit>)
+/** [resetsAt]: epoch seconds, null when the agent did not say. */
+data class UsageLimit(val label: String, val percent: Double, val resetsAt: Double?)
 
 /** Thrown when the Mac no longer accepts this phone's token: pair again. */
 class Unpaired : Exception("pair")
@@ -126,8 +133,9 @@ class Api(val base: String, private val token: String?) {
         canFork = a.optBoolean("canFork", true),  // a Mac from before Antigravity support leaves it out
     )
 
-    suspend fun chat(id: String): Chat = withContext(Dispatchers.IO) {
-        val o = request("GET", "/api/chat?id=" + java.net.URLEncoder.encode(id, "UTF-8"))
+    /** [screen]: also the terminal's bottom lines, for the panel that shows /status and other dialogs. */
+    suspend fun chat(id: String, screen: Boolean = false): Chat = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/chat?id=" + java.net.URLEncoder.encode(id, "UTF-8") + if (screen) "&screen=1" else "")
         val items = o.optJSONArray("items") ?: JSONArray()
         val menu = o.optJSONArray("menu") ?: JSONArray()
         Chat(
@@ -142,6 +150,16 @@ class Api(val base: String, private val token: String?) {
             menuDetails = (0 until menu.length()).map { menu.getJSONObject(it).optString("detail") },
             menuQuestion = o.optString("menuQuestion"), menuContext = o.optString("menuContext"),
             status = o.optString("status"), activity = o.optString("activity"), action = o.optString("action"),
+            screen = if (o.has("screen")) o.optString("screen") else null,
+            usage = o.optJSONObject("usage")?.let { u ->
+                val limits = u.optJSONArray("limits") ?: JSONArray()
+                Usage(u.optString("model"), u.optString("effort"), if (u.has("contextPercent")) u.optDouble("contextPercent") else null,
+                    (0 until limits.length()).map { i ->
+                        limits.getJSONObject(i).let { l ->
+                            UsageLimit(l.optString("label"), l.optDouble("percent"), if (l.has("resetsAt")) l.optDouble("resetsAt") else null)
+                        }
+                    })
+            },
         )
     }
 

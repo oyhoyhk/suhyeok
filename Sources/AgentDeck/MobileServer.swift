@@ -36,6 +36,11 @@ final class MobileServer: ObservableObject {
     /// Wrong codes per client (Cloudflare's CF-Connecting-IP through the tunnel, "local" otherwise).
     private var failedPairs: [String: [Date]] = [:]
     private var connections = 0
+    /// Last phone send per "session \0 text". The same message again within `resendWindow` is a double send
+    /// (a second tap, a retried request) and is answered ok without typing it twice.
+    private var lastSends: [String: Date] = [:]
+    private static let resendWindow: TimeInterval = 5
+    static let sendLogPath = AgentMail.dir + "/phone-sends.jsonl"
 
     /// A paired phone: only the SHA-256 of its token is kept; the token lives in the phone's cookie.
     struct Device: Codable, Identifiable, Equatable {
@@ -264,6 +269,23 @@ final class MobileServer: ObservableObject {
     /// Where android/publish.sh leaves the latest phone app (suhyeok.apk + version.json).
     static let androidDir = FileManager.default.homeDirectoryForCurrentUser.path + "/Library/Application Support/Suhyeok/android"
 
+    /// One line per phone send, so a doubled message can be traced to the request that typed it.
+    /// The text is kept as a hash only.
+    private static func logSend(session: String, text: String, ok: Bool, duplicate: Bool) {
+        let hash = SHA256.hash(data: Data(text.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+        let entry: [String: Any] = ["at": Date().timeIntervalSince1970, "session": session, "text": hash,
+                                    "chars": text.count, "ok": ok, "duplicate": duplicate]
+        guard var line = try? JSONSerialization.data(withJSONObject: entry) else { return }
+        line.append(UInt8(ascii: "\n"))
+        if let h = FileHandle(forWritingAtPath: sendLogPath) {
+            defer { try? h.close() }
+            _ = try? h.seekToEnd()
+            try? h.write(contentsOf: line)
+        } else {
+            try? line.write(to: URL(fileURLWithPath: sendLogPath))
+        }
+    }
+
     private func json(_ o: Any, _ status: Int = 200) -> (Int, String, Data, [String: String]) {
         (status, "application/json; charset=utf-8", (try? JSONSerialization.data(withJSONObject: o)) ?? Data(), [:])
     }
@@ -361,10 +383,19 @@ final class MobileServer: ObservableObject {
             return json(state(store))
         case ("GET", "/api/chat"):
             guard let s = session(r.query["id"]) else { return json(["error": "gone"], 404) }
-            return json(await Self.chat(s))
+            return json(await Self.chat(s, screen: r.query["screen"] == "1"))
         case ("POST", "/api/send"):
             guard let s = session(body["id"] as? String), let text = body["text"] as? String, !text.isEmpty else { return json(["ok": false], 400) }
+            let key = s.id + "\u{0}" + text
+            lastSends = lastSends.filter { Date().timeIntervalSince($0.value) < Self.resendWindow }
+            if lastSends[key] != nil {
+                Self.logSend(session: s.id, text: text, ok: true, duplicate: true)
+                return json(["ok": true])
+            }
+            lastSends[key] = Date()  // set before the await: a copy arriving mid-send is caught too
             let ok = await Task.detached { SessionInput.send(s, text: text) }.value
+            lastSends[key] = ok ? Date() : nil  // the window runs from the end of the send; a failed send may be retried
+            Self.logSend(session: s.id, text: text, ok: ok, duplicate: false)
             return json(["ok": ok])
         // A file from the phone, kept in a temporary folder (Attachments.savePhone); the phone puts the path in its message.
         case ("POST", "/api/upload"):
@@ -547,7 +578,9 @@ final class MobileServer: ObservableObject {
                 "world": ["w": World.size.width, "h": World.size.height], "avatar": World.avatarHeight]
     }
 
-    nonisolated private static func chat(_ s: AgentSession) async -> [String: Any] {
+    /// `screen`: also the terminal's bottom lines as they are, for the phone's panel view of /status, /model and the like
+    /// (dialogs that are neither a menu nor a reply, so the chat alone would not show them).
+    nonisolated private static func chat(_ s: AgentSession, screen: Bool = false) async -> [String: Any] {
         await Task.detached { () -> [String: Any] in
             let items = s.transcriptPath.map { TranscriptRenderer.items(path: $0, agent: s.agent) } ?? []
             var out: [String: Any] = [
@@ -564,7 +597,24 @@ final class MobileServer: ObservableObject {
                 "status": s.status.rawValue, "activity": s.activity.label, "activityCode": "\(s.activity)",
                 "action": s.action?.detail ?? "",
             ]
+            // The status line under the Mac's input (UsageLine): model, context, and the account's 5-hour / weekly limits.
+            if let u = UsageInfo.load(s) {
+                var usage: [String: Any] = ["limits": u.limits.map { l -> [String: Any] in
+                    var o: [String: Any] = ["label": l.label, "percent": l.percent]
+                    if let r = l.resetsAt { o["resetsAt"] = r.timeIntervalSince1970 }
+                    return o
+                }]
+                if let m = u.model { usage["model"] = m }
+                if let e = u.effort { usage["effort"] = e }
+                if let p = u.contextPercent { usage["contextPercent"] = p }
+                out["usage"] = usage
+            }
             if let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 60) {
+                if screen {
+                    var lines = t.components(separatedBy: "\n").map { l in String(l.reversed().drop(while: { $0 == " " }).reversed()) }
+                    while lines.last?.isEmpty == true { lines.removeLast() }
+                    out["screen"] = lines.suffix(40).joined(separator: "\n")
+                }
                 if let m = TerminalMenu.parse(t) {
                     out["menu"] = m.options.indices.map { i -> [String: Any] in
                         ["label": m.options[i].label, "detail": m.options[i].detail ?? "", "free": m.isFreeText(i)]

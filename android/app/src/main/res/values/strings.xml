@@ -182,4 +182,15 @@
   <string name="new_session_started">Started a new session</string>
   <string name="new_session_failed">Couldn\'t start — update Suhyeok on your Mac</string>
   <string name="new_session_demo">Not available in demo mode</string>
+  <string name="chat_more">More</string>
+  <string name="chat_tile_file">File</string>
+  <string name="chat_tile_voice">Voice</string>
+  <string name="chat_tile_keys">Keys</string>
+  <string name="panel_waiting">Waiting for the screen — if it stays empty, update Suhyeok on your Mac</string>
+  <string name="panel_close">Close</string>
+  <string name="chat_commands">%1$s commands</string>
+  <string name="chat_cancel">Cancel (Esc)</string>
+  <string name="copied">Copied</string>
+  <string name="usage_context">Context</string>
+  <string name="usage_days_hours">%1$dd%2$dh</string>
 </resources>
