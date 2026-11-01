@@ -106,12 +106,23 @@ pre { margin: 6px 0 0; background: var(--code); border: 1px solid var(--line); b
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 :not(pre) > code { font-size: .9em; background: var(--code); border-radius: 4px; padding: 1px 5px; }
 
+.tester { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+.tester ol { margin: 0; padding-left: 22px; }
+.tester li { margin: 0 0 14px; }
+.tester li .btn { margin-top: 6px; padding: 7px 14px; font-size: 14px; }
+.tester p { color: var(--muted); font-size: 15px; margin: 14px 0 0; }
+.phones { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.phones figure { margin: 0; }
+.phones img { width: 100%; border: 1px solid var(--line); border-radius: 10px; }
+.phones figcaption { margin-top: 6px; font-size: 12px; color: var(--muted); text-align: center; }
+
 footer { margin-top: 72px; border-top: 1px solid var(--line); padding: 24px 0 40px; font-size: 14px; color: var(--muted); }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
 @media (max-width: 760px) {
   header nav { display: none; }
-  .features, .install, .voice { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .features, .install, .voice, .tester { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .phones { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vid, .videos.en .vid[data-lang="en"] { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .vid figure { max-width: 320px; }
   .roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -128,6 +139,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
       <a href="#video">영상</a>
       <a href="#features">기능</a>
       <a href="#install">설치</a>
+      <a href="#tester">Android 테스터</a>
       <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
     </nav>
   </div>
@@ -142,7 +154,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   <p>여러 터미널에서 돌아가는 Claude Code와 Codex 세션을 길드홀 지도 한 장에 모아 보여 줍니다. 어느 에이전트가 일하는 중이고 어느 에이전트가 답을 기다리는지 바로 보이고, 그 자리에서 지시를 보낼 수 있습니다.</p>
   <div class="actions">
     <a class="btn" href="#install">설치하기</a>
-    <span class="sub">버전 0.2.0 · Apple Silicon Mac, macOS 14 이상</span>
+    <a href="#tester">Android 비공개 테스터 모집 중</a>
+    <span class="sub">버전 0.2.3 · Apple Silicon Mac, macOS 14 이상</span>
   </div>
 </div>
 
@@ -258,7 +271,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
       <img class="pixel" src="img/i/phone.png" alt="">
       <div>
         <h3>휴대폰 연결</h3>
-        <p>휴대폰 브라우저로 지도와 대화를 보고 지시를 보냅니다. 새 기기는 QR을 찍고 Mac에서 허용해야 연결됩니다. Android 앱은 Google Play 출시를 준비하고 있어 아직 사용할 수 없습니다.</p>
+        <p>휴대폰에서 지도와 대화를 보고 지시를 보냅니다. 새 기기는 QR을 찍고 Mac에서 허용해야 연결됩니다. Android 앱은 Google Play 비공개 테스트 중입니다. <a href="#tester">테스터로 참여하기</a></p>
       </div>
     </div>
     <div class="feature">
@@ -331,6 +344,31 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   </div>
 </section>
 
+<section id="tester">
+  <h2>Android 비공개 테스터 모집</h2>
+  <p class="section-note">Google Play에 정식으로 내려면 테스터 12명이 14일 동안 앱을 설치해 두어야 합니다. Mac이 없어도 체험 모드로 참여할 수 있습니다.</p>
+
+  <div class="tester">
+    <div>
+      <ol>
+        <li>테스터 그룹에 가입합니다. Google 계정으로 로그인한 뒤 <b>그룹 가입</b>을 누릅니다.<br>
+          <a class="btn" href="https://groups.google.com/g/suhyeok-testers">테스터 그룹 열기</a></li>
+        <li>같은 계정으로 테스트 참여 페이지를 열고 <b>테스터 되기</b>를 누릅니다.<br>
+          <a class="btn" href="https://play.google.com/apps/testing/com.pickuma.suhyeok">테스트 참여하기</a></li>
+        <li>참여 페이지의 링크로 Google Play에서 수혁을 설치합니다. 가입 직후에는 스토어에 반영되기까지 몇 분 걸릴 수 있습니다.</li>
+        <li>14일 동안 앱을 지우지 말아 주세요. Mac이 없다면 첫 화면에서 <b>Mac 없이 둘러보기</b>를 누르면 예시 세션으로 모든 화면을 볼 수 있습니다.</li>
+      </ol>
+      <p>불편한 점은 대화 입력창에 <code>/피드백 내용</code>을 적어 보내거나 <a href="https://github.com/oyhoyhk/suhyeok/issues">GitHub 이슈</a>에 남겨 주세요. 앱은 광고가 없고, 개인정보를 수집하지 않습니다. <a href="https://suhyeok-feedback.pickuma.workers.dev/privacy">개인정보처리방침</a></p>
+    </div>
+    <div class="phones">
+      <figure><img src="img/phone/1-sessions.jpg" alt="세션 목록. 선택 필요, 작업 중, 다음 지시 대기, 휴식 중으로 나뉜 에이전트" loading="lazy"><figcaption>세션 목록</figcaption></figure>
+      <figure><img src="img/phone/2-chat.jpg" alt="에이전트와 주고받은 대화와 넓은 입력창" loading="lazy"><figcaption>대화</figcaption></figure>
+      <figure><img src="img/phone/3-commands.jpg" alt="더보기 서랍의 파일, 음성, 빠른 키와 Claude 명령 버튼" loading="lazy"><figcaption>모델별 명령</figcaption></figure>
+      <figure><img src="img/phone/4-menu.jpg" alt="권한 질문에 예, 아니요, 취소로 답하는 선택 카드" loading="lazy"><figcaption>선택지에 답하기</figcaption></figure>
+    </div>
+  </div>
+</section>
+
 <section id="install">
   <h2>설치</h2>
   <p class="section-note">Mac 앱을 먼저 설치합니다. 휴대폰 연결은 필요할 때 추가합니다.</p>
@@ -351,7 +389,7 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
     <div>
       <div class="install-head"><img class="pixel" src="img/i/android.png" alt=""><h3>휴대폰</h3></div>
-      <p><b>Android 앱은 아직 사용할 수 없습니다.</b> Google Play 출시를 준비하고 있습니다. 그동안은 휴대폰 브라우저로 연결합니다.</p>
+      <p><b>Android 앱은 비공개 테스트 중입니다.</b> <a href="#tester">테스터로 참여</a>하면 Google Play에서 설치할 수 있습니다. 테스터가 아니라면 휴대폰 브라우저로 연결합니다.</p>
       <ol>
         <li>Mac의 수혁에서 설정(⌘,)을 열고 <b>모바일 접속</b>을 켭니다. QR 코드가 나옵니다. 2026년 10월 12일 이전에 수혁을 설치했다면 먼저 터미널에서 <code>brew install cloudflared</code>를 실행합니다.</li>
         <li>휴대폰 카메라로 QR을 찍습니다. 브라우저에서 수혁 화면이 열립니다.</li>
