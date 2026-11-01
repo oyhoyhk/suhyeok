@@ -304,7 +304,17 @@ struct TerminalMenu: Equatable {
         }
         guard options.count >= 2 else { return nil }
         // Context: lines between the box's top border (───) and the first option, minus tips and separators.
-        let top = lines[..<first].lastIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix("──") } ?? max(0, first - 30)
+        // Codex 0.166 draws no border: its block starts after two or more blank lines that set it off from the
+        // transcript (the blank lines right above the options do not count).
+        let blank = { (i: Int) in lines[i].trimmingCharacters(in: .whitespaces).isEmpty }
+        var gap: Int?
+        var row = first - 1
+        while row >= 0, blank(row) { row -= 1 }
+        while row > max(0, first - 30) {
+            if blank(row), blank(row - 1) { gap = row; break }
+            row -= 1
+        }
+        let top = lines[..<first].lastIndex { $0.trimmingCharacters(in: .whitespaces).hasPrefix("──") } ?? gap ?? max(0, first - 30)
         var ctx = lines[(top + 1)..<first].map { l -> String in
             var t = l.trimmingCharacters(in: .whitespaces)
             if t.hasPrefix("│") { t = String(t.dropFirst()).trimmingCharacters(in: .whitespaces) }
@@ -314,6 +324,8 @@ struct TerminalMenu: Equatable {
         }
         var question: String?
         if let q = ctx.last, q.hasSuffix("?") { question = q; ctx.removeLast() }
+        // Codex asks first and lists the details under it ("Would you like to run the following command?").
+        else if gap != nil, let q = ctx.first, q.hasSuffix("?") { question = q; ctx.removeFirst() }
         return TerminalMenu(options: options, selected: selected, question: question,
                             context: ctx.isEmpty ? nil : ctx.suffix(14).joined(separator: "\n"))
     }

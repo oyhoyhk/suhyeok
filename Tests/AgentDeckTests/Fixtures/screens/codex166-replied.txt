@@ -1,0 +1,40 @@
+
+  >_ OpenAI Codex (v0.166.0)
+     /tmp/fixture-repo
+
+  To get started, describe a task or try one of these commands:
+
+  /init - create an AGENTS.md file with instructions for Codex
+  /status - show current session configuration
+  /permissions - choose what Codex is allowed to do
+  /model - choose what model and reasoning effort to use
+  /review - review any changes and find issues
+
+
+› Run exactly this shell command: date > now.txt
+
+
+• I’ll run the command exactly as provided.
+
+✔ You approved codex to run date > now.txt this time
+
+• Ran date > now.txt
+  └ (no output)
+
+• Ran date > now.txt successfully.
+
+  Worked for 20s • 7:04 PM
+
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  GPT-6-Astra medium · /tmp/fixture-repo · Run date command
+  ? for shortcuts                                                                             ⚠ 4 warnings · f2 to view

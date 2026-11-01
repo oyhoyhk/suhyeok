@@ -2,7 +2,8 @@ import Foundation
 import XCTest
 @testable import AgentDeck
 
-/// Screens captured from Claude Code 2.1.312 and Codex 0.162.1 (Fixtures/screens, local paths replaced).
+/// Screens captured from Claude Code 2.1.312–2.1.314, Codex 0.162.1 and 0.166.0 (codex166-*) and Antigravity CLI
+/// 1.4.12 (agy-*) (Fixtures/screens, local paths replaced).
 /// When an update changes what these agents draw, capture the new screens next to these and see what breaks.
 final class ScreenFixtureTests: XCTestCase {
     private func screen(_ name: String) throws -> String {
@@ -36,6 +37,25 @@ final class ScreenFixtureTests: XCTestCase {
         XCTAssertEqual(m.options.map(\.label), ["Use session directory (/tmp/other-session/", "Use current directory (/tmp/",
                                                  "Always use session directory", "Always use current directory"])
         XCTAssertEqual(m.selected, 0)
+    }
+
+    /// Codex 0.166.0 opens straight on the input box and draws its approval prompt without a border.
+    func testCodex166Approval() throws {
+        let m = try XCTUnwrap(TerminalMenu.parse(try screen("codex166-approval")))
+        XCTAssertEqual(m.question, "Would you like to run the following command?")
+        XCTAssertEqual(m.options.map(\.label), ["Yes, proceed (y)",
+                                                 "Yes, and don't ask again for commands that start with `date > now.txt` (p)",
+                                                 "No, and tell Codex what to do differently (esc)"])
+        XCTAssertEqual(m.context?.components(separatedBy: "\n").last, "$ date > now.txt")
+        XCTAssertFalse(m.context?.contains("/init") ?? true)  // the welcome text above the transcript is not context
+    }
+
+    func testCodex166ScreensWithoutMenu() throws {
+        for name in ["codex166-idle", "codex166-typed", "codex166-replied"] {
+            XCTAssertNil(TerminalMenu.parse(try screen(name)), name)
+        }
+        XCTAssertTrue(SessionInput.stillTyped("이 폴더의 파일 목록을 알려줘", in: try screen("codex166-typed")))
+        XCTAssertFalse(SessionInput.stillTyped("Run exactly this shell command: date > now.txt", in: try screen("codex166-replied")))
     }
 
     /// Antigravity CLI 1.4.12 highlights with ">", like its input box and the prompts it echoes.
