@@ -296,6 +296,17 @@ struct AgentDeckApp: App {
             print(TmuxEngine.create(agent: agent, cwd: args[i + 2], prompt: args.dropFirst(i + 3).first) ?? "FAILED")
             exit(0)
         }
+        // `AgentDeck --background-shells`: each live Claude session's background shells and whether they only wait (kills nothing).
+        if args.contains("--background-shells") {
+            let procs = BackgroundShells.table()
+            for s in ClaudeSource.load() where s.pid != nil {
+                for sh in BackgroundShells.shells(of: s.pid!, in: procs) {
+                    print(s.id, s.status.rawValue, s.activity.label, sh.pid, String(format: "%.1fh", sh.age / 3600),
+                          sh.waiting ? "wait-loop" : "work", BackgroundShells.script(sh.command).prefix(80), separator: "\t")
+                }
+            }
+            exit(0)
+        }
         if args.contains("--list-sessions") {
             for h in TmuxEngine.list() { print(h.name, h.agent?.rawValue ?? TmuxEngine.shellTag, h.cwd, h.title, separator: "\t") }
             exit(0)
@@ -310,6 +321,8 @@ struct AgentDeckApp: App {
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
             Snapshot.run(path: args[i + 1], select: i + 2 < args.count ? args[i + 2] : nil)
         }
+        // Only the app itself kills forgotten wait loops; `--…` checks that load sessions must not.
+        BackgroundShells.reaping = !args.dropFirst().contains { $0.hasPrefix("--") }
         CommandHover.install()
         AppAppearance.current.apply()
     }
@@ -864,6 +877,7 @@ final class SessionStore: ObservableObject {
                 return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast)
             }
             let hosted = TmuxEngine.list()
+            BackgroundShells.reap(all)
             AgentMail.deliverSpool(all)
             let mail = AgentMail.recent()
             var hunt: [String: Hunt.Progress] = [:]

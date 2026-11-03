@@ -71,11 +71,10 @@ struct UsageInfo: Equatable {
             }
         }
         // Limits are per account: the newest copy from any conversation is the freshest.
-        if let rl = newestRateLimits() {
-            for (key, label) in [("five_hour", String(localized: "5시간")), ("seven_day", String(localized: "주간"))] {
-                guard let l = rl[key] as? [String: Any], let p = number(l["used_percentage"]) else { continue }
-                info.limits.append(Limit(label: label, percent: p, resetsAt: number(l["resets_at"]).map { Date(timeIntervalSince1970: $0) }))
-            }
+        // Claude Code dropped the 5-hour limit (2026-11); only the weekly one is left.
+        if let l = newestRateLimits()?["seven_day"] as? [String: Any], let p = number(l["used_percentage"]) {
+            info.limits.append(Limit(label: String(localized: "주간"), percent: p,
+                                     resetsAt: number(l["resets_at"]).map { Date(timeIntervalSince1970: $0) }))
         }
         return info.model == nil && info.limits.isEmpty ? nil : info
     }

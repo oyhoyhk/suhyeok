@@ -99,6 +99,8 @@ struct AgentSession: Identifiable {
     var conversationId: String? = nil
     /// Live session whose process launched this one, e.g. a `claude -p` run from that session's script.
     var parentId: String? = nil
+    /// With status "shell": whether a background shell runs real work (true) or only wait loops (false); nil when unknown.
+    var backgroundWork: Bool? = nil
 
     var project: String { Worktree.project(of: cwd) }
 }
@@ -137,6 +139,13 @@ enum Activity: CaseIterable {
         return (m > 0 ? m : 10) * 60
     }
 
+    /// A wait loop older than this is killed (BackgroundShells.reap); a background shell that could not be looked at
+    /// counts as work for this long. Default 6 hours; override with `defaults write com.pickuma.agentdeck waitLoopHours <n>`.
+    static var waitLoopLimit: TimeInterval {
+        let h = UserDefaults.standard.double(forKey: "waitLoopHours")
+        return (h > 0 ? h : 6) * 3600
+    }
+
     var label: String {
         switch self {
         case .working: return String(localized: "작업 중")
@@ -161,7 +170,10 @@ extension AgentSession {
         // Blocked on a permission prompt or a question: not working, needs you.
         case .waiting: return .waiting
         // Claude Code reports "shell" when its turn is over but background shells it started are still
-        // running (the "N shells still running" footer). The agent itself is waiting for you.
+        // running (the "N shells still running" footer). An experiment or build is still work; wait loops alone
+        // are not, and the agent is waiting for you.
+        case .shell where backgroundWork ?? (-(updatedAt ?? .distantPast).timeIntervalSinceNow < Activity.waitLoopLimit):
+            return .working
         case .shell, .idle, .unknown:
             let idleFor = -(updatedAt ?? .distantPast).timeIntervalSinceNow
             return idleFor < Activity.restAfter ? .waiting : .resting

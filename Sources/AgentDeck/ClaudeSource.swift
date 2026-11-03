@@ -9,6 +9,7 @@ enum ClaudeSource {
     static func load() -> [AgentSession] {
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(atPath: sessionsDir) else { return [] }
+        var procs: [BackgroundShells.Proc]?  // read once, only when a session has background shells
         let sessions: [AgentSession] = files.filter { $0.hasSuffix(".json") }.compactMap { file in
             guard let data = fm.contents(atPath: sessionsDir + "/" + file),
                   let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -20,13 +21,19 @@ enum ClaudeSource {
             let registryName = obj["name"] as? String ?? String(sessionId.prefix(8))
             // A user-set name wins; otherwise the AI title beats the derived "project-8f" style name.
             let name = obj["nameSource"] as? String == "derived" ? (info.title ?? registryName) : registryName
+            let status = SessionStatus(rawValue: obj["status"] as? String ?? "") ?? .unknown
+            var backgroundWork: Bool?
+            if status == .shell {
+                if procs == nil { procs = BackgroundShells.table() }
+                backgroundWork = BackgroundShells.working(BackgroundShells.shells(of: pid, in: procs ?? []))
+            }
             return AgentSession(
                 // pid, not sessionId: a resumed conversation can run in two processes at once.
                 id: "claude-\(pid)",
                 agent: .claude,
                 name: name,
                 cwd: cwd,
-                status: SessionStatus(rawValue: obj["status"] as? String ?? "") ?? .unknown,
+                status: status,
                 startedAt: date(ms: obj["startedAt"]),
                 updatedAt: date(ms: obj["statusUpdatedAt"] ?? obj["updatedAt"]),
                 lastUser: info.user,
@@ -36,7 +43,8 @@ enum ClaudeSource {
                 action: info.action,
                 transcriptPath: transcriptPath(sessionId: sessionId, cwd: cwd),
                 hostedName: hostedName(pid: pid),
-                conversationId: sessionId
+                conversationId: sessionId,
+                backgroundWork: backgroundWork
             )
         }
         return sessions
