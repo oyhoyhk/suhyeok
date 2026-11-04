@@ -264,6 +264,8 @@
 "%@ 복사" = "Copy %@";
 "%lld자" = "%lld chars";
 /* MarketView.swift */
+"내 캐릭터 설치" = "Install my character";
+"내 캐릭터 · 설치됨" = "My character · installed";
 "마켓은 서버 정산을 켜고 등록한 기기에서만 쓸 수 있음 (길드 · 결정 > pickuma 결정 서버)" = "The market works only on a Mac with server settlement on and registered (Guild · Crystals > pickuma crystal server)";
 "둘러보기" = "Browse";
 "판매" = "Sell";

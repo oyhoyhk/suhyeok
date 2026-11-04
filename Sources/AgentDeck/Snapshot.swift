@@ -84,6 +84,25 @@ enum Snapshot {
         RunLoop.main.run()
     }
 
+    static func marketInstall(listingId: String) {
+        let bank = CrystalBank.shared
+        guard let market = bank.market, bank.canTrade else {
+            print("market unavailable: turn on server sync and register this Mac first"); exit(1)
+        }
+        Task {
+            do {
+                try await market.install(listingId)
+                print("installed \(listingId)")
+                exit(0)
+            } catch {
+                print("FAILED", CrystalBank.describe(error))
+                if let u = error as? URLError { print("  request:", u.failureURLString ?? "-") }
+                exit(1)
+            }
+        }
+        RunLoop.main.run()
+    }
+
     static func marketUpload(folder: String, price: Int, descriptionFile: String, alias: String) {
         let bank = CrystalBank.shared
         guard let market = bank.market, bank.canTrade else {

@@ -252,6 +252,8 @@ struct AgentDeckApp: App {
         }
         // `--market-upload <pack folder> <price> <description file> [alias]`: the selling tab's upload, for packs
         // made outside the app. Needs server sync on and this Mac registered, like the tab.
+        // `--market-install <listing id>`: download and install a listing this Mac owns or sells (its own pack).
+        if let i = args.firstIndex(of: "--market-install"), i + 1 < args.count { Snapshot.marketInstall(listingId: args[i + 1]) }
         if let i = args.firstIndex(of: "--market-upload"), i + 3 < args.count {
             Snapshot.marketUpload(folder: args[i + 1], price: Int(args[i + 2]) ?? 0, descriptionFile: args[i + 3],
                                   alias: args.dropFirst(i + 4).first ?? "")

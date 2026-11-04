@@ -95,6 +95,8 @@ struct MarketView: View {
     private func card(_ l: MarketService.Listing) -> some View {
         let owned = bank.market?.owns(l.id) ?? false
         let installed = AssetLibrary.shared.isInstalled(l.id)
+        // The server refuses a seller buying their own listing (own_listing) but lets them download it.
+        let own = mine?.listings.contains { $0.id == l.id } ?? false
         return VStack(alignment: .leading, spacing: 6) {
             Group {
                 if let img = previews[l.id] {
@@ -113,7 +115,9 @@ struct MarketView: View {
                 Text("\(l.price) 💎").font(.callout.monospacedDigit().bold())
                 if let s = l.sales, s > 0 { Text("· \(s)명 구매").font(.caption).foregroundStyle(.secondary) }
                 Spacer()
-                if owned && installed {
+                if own {
+                    ownInstall(l.id)
+                } else if owned && installed {
                     Text("보유").font(.caption.bold()).foregroundStyle(.green)
                 } else {
                     Button(busy == l.id ? "…" : owned ? "다시 받기" : "구매") {
@@ -129,6 +133,19 @@ struct MarketView: View {
         .hoverInfo {
             CharacterInfo(character: Character(id: AssetLibrary.idPrefix + l.id, name: l.name, ko: l.profile?.ko, role: l.profile?.role,
                                                visual: l.profile?.visual, tone: l.profile?.tone))
+        }
+    }
+
+    /// A seller's own character: installed for free, without a purchase (and without counting as a sale).
+    @ViewBuilder private func ownInstall(_ id: String) -> some View {
+        if AssetLibrary.shared.isInstalled(id) {
+            Text("내 캐릭터 · 설치됨").font(.caption.bold()).foregroundStyle(.green)
+        } else {
+            Button(busy == id ? "…" : String(localized: "내 캐릭터 설치")) {
+                Task { await act(id) { try await $0.install(id) } }
+            }
+            .controlSize(.small)
+            .disabled(busy != nil || !bank.canTrade)
         }
     }
 
@@ -200,6 +217,7 @@ struct MarketView: View {
                         Spacer()
                         if let s = m.sales, s > 0 { Text("\(s)건 · \(m.earned ?? 0) 결정").font(.caption) }
                         Text(Self.status[m.status] ?? m.status).font(.caption.bold()).foregroundStyle(m.status == "rejected" ? .red : .secondary)
+                        if m.status != "draft" && m.status != "withdrawn" { ownInstall(m.id) }  // drafts lack files
                         if m.status == "draft" {
                             Button(busy == m.id ? "…" : "취소") {
                                 Task { await act(m.id) { try await $0.withdraw(m.id) }; await reload() }
