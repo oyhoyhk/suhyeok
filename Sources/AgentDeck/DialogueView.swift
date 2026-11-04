@@ -107,6 +107,10 @@ struct DialogueView: View {
     @State private var draft = ""
     /// What was last sent from this window (↑ brings it back).
     @State private var sentHere: String?
+    /// When it was sent, and the send itself (paste, then Enter). An Esc waits for the send so it never lands
+    /// between the paste and the Enter.
+    @State private var sentAt: Date?
+    @State private var sending: Task<Bool, Never>?
     @State private var screen: String?
     @State private var menu: TerminalMenu?
     /// The menu last answered here; the screen keeps showing it until the TUI redraws, so it is not shown again.
@@ -290,7 +294,7 @@ struct DialogueView: View {
             if let onClose {
                 // While the agent works, Esc interrupts it (as in its own terminal) instead of closing the dialogue.
                 Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(.borderless)
-                    .keyboardShortcut(s.status == .busy ? nil : .cancelAction)
+                    .keyboardShortcut(working(s) ? nil : .cancelAction)
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -674,14 +678,14 @@ struct DialogueView: View {
                     // As in Claude Code and Codex: Esc stops the running turn, ↑ in an empty box brings back the
                     // last instruction to fix and send again.
                     .onKeyPress(.escape) {
-                        guard s.status == .busy else { return .ignored }
+                        guard working(s) else { return .ignored }
                         interrupt(s); return .handled
                     }
                     .onKeyPress(.upArrow) {
                         guard draft.isEmpty, let last = lastInstruction else { return .ignored }
                         draft = last; return .handled
                     }
-                if s.status == .busy {
+                if working(s) {
                     Button(role: .destructive) { interrupt(s) } label: { Label("중단", systemImage: "stop.fill") }
                         .help("지금 하는 작업을 멈춤 (Esc). 멈춘 뒤 ↑로 마지막 지시를 불러와 고쳐 보낼 수 있음")
                         .tint(.red)
@@ -740,10 +744,22 @@ struct DialogueView: View {
             .components(separatedBy: "\n\n(수혁 음성 지시").first
     }
 
+    /// Whether the agent is on a turn. The registry shows a sent instruction as busy only after the store's next
+    /// refresh (every 3 s), so until the session has updated since the send, it counts as working.
+    private func working(_ s: AgentSession) -> Bool {
+        if s.status == .busy { return true }
+        guard let sentAt, -sentAt.timeIntervalSinceNow < 10 else { return false }
+        return (s.updatedAt ?? .distantPast) < sentAt
+    }
+
     /// Esc stops the agent's current turn, as pressing it in the agent's own terminal does.
     private func interrupt(_ s: AgentSession) {
         notice = String(localized: "중단함 — ↑로 마지막 지시를 불러와 고쳐 보낼 수 있음")
-        Task.detached { _ = SessionInput.press(s, .escape) }
+        let send = sending
+        Task.detached {
+            _ = await send?.value
+            _ = SessionInput.press(s, .escape)
+        }
     }
 
     private func submit(_ s: AgentSession) {
@@ -772,14 +788,15 @@ struct DialogueView: View {
         pending.append(p)
         let blockedByMenu = menu != nil
         let closesPanel = panelOpen
-        Task.detached {
-            let ok = SessionInput.send(s, text: full)
-            await MainActor.run {
-                if !ok, let i = pending.firstIndex(where: { $0.id == p.id }) { pending[i].failed = true }
-                notice = !ok ? String(localized: "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)")
-                    : blockedByMenu ? String(localized: "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것")
-                    : closesPanel ? String(localized: "터미널에 열려 있던 창을 닫고 보냄") : nil
-            }
+        let send = Task.detached { SessionInput.send(s, text: full) }
+        sentAt = Date()
+        sending = send
+        Task {
+            let ok = await send.value
+            if !ok, let i = pending.firstIndex(where: { $0.id == p.id }) { pending[i].failed = true }
+            notice = !ok ? String(localized: "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)")
+                : blockedByMenu ? String(localized: "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것")
+                : closesPanel ? String(localized: "터미널에 열려 있던 창을 닫고 보냄") : nil
         }
     }
 
