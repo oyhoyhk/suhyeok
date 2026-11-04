@@ -4,14 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>수혁</title>
-<meta name="description" content="Claude Code와 Codex 세션을 픽셀 RPG 길드홀 한 화면에 모아 보고 지시하는 맥 앱">
+<meta name="description" content="Claude Code와 Codex 세션을 픽셀 RPG 지도 한 화면에 모아 보고 지시하는 맥 앱">
 <meta property="og:title" content="수혁">
-<meta property="og:description" content="Claude Code와 Codex 세션을 픽셀 RPG 길드홀 한 화면에 모아 보고 지시하는 맥 앱">
+<meta property="og:description" content="Claude Code와 Codex 세션을 픽셀 RPG 지도 한 화면에 모아 보고 지시하는 맥 앱">
 <meta property="og:image" content="https://oyhoyhk.github.io/suhyeok/img/og.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="img/favicon.png">
+<link rel="preload" as="image" href="img/w/field.webp" media="(min-width: 761px)">
+<link rel="preload" as="image" href="img/w/field-2k.webp" media="(max-width: 760px)">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<script>document.documentElement.classList.add('js');</script>
 <style>
 :root {
   color-scheme: dark;
@@ -23,8 +26,12 @@
   --gold: #e8b44c;
   --link: #f2cf7e;
   --code: #100b07;
+  --red: #e5484d;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 * { box-sizing: border-box; }
+html { scroll-padding-top: 64px; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
   font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
@@ -35,31 +42,130 @@ img { max-width: 100%; display: block; }
 .wrap { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
 .pixel { image-rendering: pixelated; }
 
-header { border-bottom: 1px solid var(--line); }
-header .wrap { display: flex; align-items: center; gap: 20px; height: 56px; }
+header { position: fixed; top: 0; left: 0; right: 0; z-index: 20; transition: background .3s, border-color .3s; border-bottom: 1px solid transparent; }
+header.solid { background: rgba(23, 17, 13, .86); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-color: var(--line); }
+header .bar { display: flex; align-items: center; gap: 20px; height: 56px; padding: 0 max(20px, calc((100vw - 1200px) / 2)); }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; color: var(--fg); text-decoration: none; }
 .brand img { width: 28px; height: 28px; border-radius: 6px; }
-header nav { margin-left: auto; display: flex; gap: 20px; font-size: 14px; }
+header nav { margin-left: auto; display: flex; align-items: center; gap: 20px; font-size: 14px; }
 header nav a { color: var(--muted); text-decoration: none; }
 header nav a:hover { color: var(--fg); }
+header nav a.btn { color: #22160a; padding: 6px 14px; font-size: 14px; }
+.prog { position: absolute; left: 0; bottom: -1px; height: 2px; width: 100%; background: var(--gold); transform-origin: 0 50%; transform: scaleX(var(--prog, 0)); opacity: .8; }
 
-.hero-art { width: 100%; aspect-ratio: 7 / 3; border-bottom: 1px solid var(--line); background: #0d0907; }
-.intro { padding: 40px 0 8px; }
-.intro h1 { margin: 0 0 12px; font-size: clamp(32px, 5vw, 48px); line-height: 1.2; letter-spacing: -0.02em; }
-.intro p { margin: 0; max-width: 620px; font-size: 18px; color: var(--muted); }
-.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-top: 24px; }
 .btn { display: inline-block; padding: 10px 18px; border-radius: 6px; background: var(--gold); color: #22160a; font-weight: 700; text-decoration: none; }
-.actions .sub { font-size: 14px; color: var(--muted); }
+.btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
 
-section { padding: 64px 0 0; }
+/* ---------- story: one sticky stage, the map scrolls under the copy ---------- */
+.story { position: relative; }
+.js .story { height: calc(9 * 115vh + 100vh); height: calc(9 * 115svh + 100svh); }
+.stage { position: relative; overflow: hidden; }
+.js .stage { position: sticky; top: 0; height: 100vh; height: 100svh; }
+#world { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.static .stage, html:not(.js) .stage { background: #0d0907 url(img/banner.jpg) center / cover no-repeat; }
+.scrim { position: absolute; inset: 0; pointer-events: none; transition: opacity .6s;
+  background: linear-gradient(90deg, rgba(23,17,13,.94) 0, rgba(23,17,13,.8) 28%, rgba(23,17,13,0) 54%); }
+.stage[data-ch="0"] .scrim { background: radial-gradient(ellipse 60% 55% at 50% 52%, rgba(23,17,13,.88) 0, rgba(23,17,13,.55) 60%, rgba(23,17,13,.15) 100%); }
+
+.chap { padding: 120px 20px 40px; }
+.js .chap { position: absolute; z-index: 2; left: max(24px, calc((100vw - 1200px) / 2)); top: 50%; width: min(440px, 40vw); padding: 0;
+  opacity: 0; transform: translateY(calc(-50% + 18px)); transition: opacity .45s, transform .6s cubic-bezier(.2,.7,.2,1); pointer-events: none; }
+.js .chap.on { opacity: 1; transform: translateY(-50%); pointer-events: auto; }
+.num { font: 600 13px var(--mono); color: var(--gold); letter-spacing: .08em; }
+.chap h2 { margin: 8px 0 12px; font-size: clamp(30px, 3.3vw, 46px); line-height: 1.18; letter-spacing: -0.02em; }
+.chap > p { margin: 0; color: var(--muted); font-size: 16px; }
+.chap > p + p { margin-top: 10px; }
+
+.js .chap.hero { left: 50%; width: min(760px, calc(100vw - 40px)); text-align: center; transform: translate(-50%, calc(-50% + 18px)); }
+.js .chap.hero.on { transform: translate(-50%, -50%); }
+.hero h1 { margin: 0 0 16px; font-size: clamp(38px, 5.6vw, 72px); line-height: 1.12; letter-spacing: -0.03em; }
+.hero p { margin: 0 auto; max-width: 600px; font-size: 18px; color: var(--muted); }
+.hero .actions { justify-content: center; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; margin-top: 26px; }
+.actions .sub { flex-basis: 100%; font-size: 13px; color: var(--muted); }
+.scroll-hint { margin-top: 34px; font: 600 12px var(--mono); letter-spacing: .14em; color: var(--muted); }
+.scroll-hint::after { content: ""; display: block; width: 1px; height: 36px; margin: 10px auto 0; background: linear-gradient(var(--gold), transparent); animation: drip 1.8s ease-in-out infinite; }
+@keyframes drip { 0% { transform: scaleY(0); transform-origin: top; } 50% { transform: scaleY(1); transform-origin: top; } 51% { transform-origin: bottom; } 100% { transform: scaleY(0); transform-origin: bottom; } }
+
+/* mock panels: small pieces of the app's UI next to the copy */
+.mock { margin-top: 22px; background: rgba(16, 11, 7, .93); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 14px; line-height: 1.55; box-shadow: 0 18px 40px rgba(0,0,0,.35); }
+.mock .lbl { font-size: 12px; color: var(--muted); }
+.mock code { font-family: var(--mono); font-size: 12.5px; background: var(--code); border-radius: 4px; padding: 1px 5px; }
+.field { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.field:last-of-type { border-bottom: 0; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: 12.5px; }
+.seg span { padding: 2px 10px; color: var(--muted); }
+.seg span.on { background: var(--gold); color: #22160a; font-weight: 700; }
+.mock .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.check { font-size: 12.5px; color: var(--muted); }
+.check::before { content: ""; display: inline-block; width: 11px; height: 11px; margin-right: 6px; border: 1px solid var(--muted); border-radius: 3px; vertical-align: -1px; }
+.kbd { font: 600 12px var(--mono); padding: 3px 9px; border-radius: 5px; background: var(--gold); color: #22160a; }
+
+.dlg { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; }
+.dlg img { width: 64px; height: 85px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.who { font-weight: 700; font-size: 13px; }
+.who span { font-weight: 400; color: var(--muted); }
+.you { margin: 6px 0 8px; padding: 6px 10px; border-radius: 8px; background: var(--panel); color: var(--fg); font-size: 13px; }
+.stream { min-height: 4.6em; color: var(--fg); font-size: 13.5px; }
+.stream .tool { display: block; margin-top: 6px; font: 12px var(--mono); color: var(--gold); }
+.caret { display: inline-block; width: 7px; height: 1em; margin-left: 1px; background: var(--gold); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.ask h4 { margin: 2px 0 8px; font-size: 14px; }
+.opts { list-style: none; margin: 10px 0 0; padding: 0; }
+.opts li { padding: 5px 8px; border-radius: 5px; color: var(--muted); font-size: 13px; }
+.opts li.cur { background: var(--panel); color: var(--fg); }
+.opts li.cur::before { content: "› "; color: var(--gold); font-weight: 700; }
+.opts li.done { background: rgba(232, 180, 76, .16); color: var(--fg); }
+.opts li.done::after { content: " · 보냄"; color: var(--gold); font-size: 12px; }
+.badge { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--red); color: #fff; font-weight: 800; font-size: 12px; text-align: center; margin-right: 6px; }
+
+.odo { display: inline-flex; font-variant-numeric: tabular-nums; }
+.od { display: inline-block; height: 1em; overflow: hidden; }
+.od > span { display: flex; flex-direction: column; transition: transform .35s cubic-bezier(.2,.7,.2,1); }
+.od i { font-style: normal; display: block; height: 1em; line-height: 1; }
+.timer { display: flex; align-items: baseline; gap: 10px; }
+.timer .big { font: 700 40px/1 var(--mono); letter-spacing: -0.02em; }
+.tiers { list-style: none; margin: 12px 0 0; padding: 0; }
+.tiers li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; transition: color .3s; }
+.tiers li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line); transition: background .3s; }
+.tiers li.on { color: var(--fg); }
+.tiers li.on::before { background: var(--gold); box-shadow: 0 0 10px var(--gold); }
+.tiers li span { font-size: 12px; }
+
+.bank { display: flex; align-items: center; gap: 10px; }
+.bank img { width: 34px; height: 34px; }
+.bank .big { font: 700 34px/1 var(--mono); }
+.bank .lbl { margin-left: auto; text-align: right; }
+.src { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.src span { padding: 2px 9px; border: 1px solid var(--line); border-radius: 20px; font-size: 12px; color: var(--muted); transition: all .3s; }
+.src span.on { border-color: var(--gold); color: var(--fg); }
+.heroes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.heroes figure { margin: 0; text-align: center; font-size: 12px; color: var(--muted); }
+.heroes img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); filter: grayscale(1) brightness(.45); transition: filter .5s, border-color .5s; }
+.heroes figure.on img { filter: none; border-color: var(--gold); }
+.heroes figure.on { color: var(--fg); }
+
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 20px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+canvas.wave { display: block; width: 100%; height: 44px; margin: 10px 0 6px; }
+.lines p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); transition: color .3s, opacity .3s; }
+.lines p b { color: var(--fg); }
+.lines p.off { opacity: .25; }
+
+.phone { position: absolute; z-index: 2; right: max(24px, calc((100vw - 1200px) / 2 + 40px)); top: 50%; width: min(300px, 24vw); aspect-ratio: 9 / 19.5; border-radius: 36px; padding: 10px; background: #0b0806; border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0,0,0,.6);
+  opacity: 0; transform: translateY(calc(-50% + 40px)); transition: opacity .5s, transform .7s cubic-bezier(.2,.7,.2,1); pointer-events: none; }
+.phone.on { opacity: 1; transform: translateY(-50%); }
+.phone div { position: relative; width: 100%; height: 100%; border-radius: 27px; overflow: hidden; background: #0d0907; }
+.phone img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top; transition: opacity .5s; }
+html:not(.js) .phone { display: none; }
+
+/* ---------- reference sections below the story ---------- */
+main.wrap { position: relative; z-index: 3; background: var(--bg); }
+section { padding: 72px 0 0; }
 h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
 .section-note { margin: 0 0 28px; color: var(--muted); }
-
-.features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 40px; }
-.feature { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 16px; align-items: start; }
-.feature img { width: 64px; height: 64px; }
-.feature h3 { margin: 4px 0 4px; font-size: 18px; }
-.feature p { margin: 0; color: var(--muted); font-size: 15px; }
 
 .voice { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 40px; align-items: start; }
 .voice ol { margin: 0; padding-left: 22px; }
@@ -83,17 +189,9 @@ h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
 .chapters button:hover, .chapters button:focus-visible { background: var(--panel); }
 .chapters img { width: 32px; height: 32px; }
 .chapters img.photo { object-fit: cover; border-radius: 6px; }
-.chapters .t { font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--gold); }
+.chapters .t { font: 600 13px var(--mono); color: var(--gold); }
 .chapters b { font-weight: 700; }
 .chapters span.d { display: block; font-size: 14px; color: var(--muted); line-height: 1.5; }
-.zones { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 15px; }
-.zones th, .zones td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.zones th { color: var(--muted); font-weight: 600; font-size: 13px; }
-.zones td:first-child { font-weight: 700; white-space: nowrap; }
-
-.shot { border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-.roster { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px; }
-.roster img { border-radius: 6px; aspect-ratio: 3/4; object-fit: cover; width: 100%; }
 
 .install { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; }
 .install-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
@@ -103,7 +201,7 @@ h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.01em; }
 .install li { margin: 0 0 12px; }
 .install p { color: var(--muted); font-size: 15px; margin: 14px 0 0; }
 pre { margin: 6px 0 0; background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 13.5px; }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+code { font-family: var(--mono); }
 :not(pre) > code { font-size: .9em; background: var(--code); border-radius: 4px; padding: 1px 5px; }
 
 .tester { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; align-items: start; }
@@ -116,48 +214,182 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .phones img { width: 100%; border: 1px solid var(--line); border-radius: 10px; }
 .phones figcaption { margin-top: 6px; font-size: 12px; color: var(--muted); text-align: center; }
 
-footer { margin-top: 72px; border-top: 1px solid var(--line); padding: 24px 0 40px; font-size: 14px; color: var(--muted); }
+footer { position: relative; z-index: 3; background: var(--bg); margin-top: 72px; border-top: 1px solid var(--line); padding: 24px 0 40px; font-size: 14px; color: var(--muted); }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
 @media (max-width: 760px) {
-  header nav { display: none; }
+  header nav a:not(.btn) { display: none; }
+  .scrim, .stage[data-ch="0"] .scrim { background: linear-gradient(0deg, rgba(23,17,13,.97) 0, rgba(23,17,13,.88) 40%, rgba(23,17,13,0) 62%); }
+  .js .chap, .js .chap.hero { left: 16px; right: 16px; width: auto; top: auto; bottom: 18px; text-align: left; transform: translateY(18px); }
+  .js .chap.on, .js .chap.hero.on { transform: none; }
+  .chap h2 { font-size: 25px; margin: 4px 0 8px; }
+  .chap > p { font-size: 14.5px; line-height: 1.6; }
+  .hero h1 { font-size: 32px; margin-bottom: 10px; }
+  .hero p { font-size: 15px; }
+  .hero .actions { justify-content: flex-start; margin-top: 18px; }
+  .scroll-hint { display: none; }
+  .mock { margin-top: 14px; padding: 10px 12px; font-size: 13px; }
+  .mock .opt, .tiers li span { display: none; }
+  .stream { min-height: 3.2em; }
+  .dlg { grid-template-columns: 44px minmax(0, 1fr); }
+  .dlg img { width: 44px; height: 58px; }
+  .timer .big { font-size: 30px; }
+  .heroes { grid-template-columns: repeat(3, 64px); }
+  .phone { right: 50%; top: 84px; width: 150px; transform: translate(50%, 30px); }
+  .phone.on { transform: translate(50%, 0); }
   .features, .install, .voice, .tester { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .phones { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vid, .videos.en .vid[data-lang="en"] { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .vid figure { max-width: 320px; }
-  .roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   section { padding-top: 52px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .js .chap, .phone, .heroes img, .tiers li { transition: none; }
+  .caret, .pill i, .scroll-hint::after { animation: none; }
 }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="wrap">
-    <a class="brand" href="#"><img src="img/icon.png" alt="">수혁</a>
+  <div class="bar">
+    <a class="brand" href="#top"><img src="img/icon.png" alt="">수혁</a>
     <nav>
       <a href="#video">영상</a>
-      <a href="#features">기능</a>
-      <a href="#install">설치</a>
+      <a href="#voice">음성</a>
       <a href="#tester">Android 테스터</a>
       <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
+      <a class="btn" href="#install">설치하기</a>
     </nav>
   </div>
+  <div class="prog"></div>
 </header>
 
-<img class="hero-art pixel" src="img/banner.jpg" alt="위에서 본 길드홀. 왼쪽 작업대에서 모험가들이 일하고, 가운데 선술집에서 기다리고, 오른쪽 라운지에서 잠을 잔다">
+<div class="story" id="top">
+  <div class="stage" data-ch="0">
+    <canvas id="world" aria-hidden="true"></canvas>
+    <div class="scrim"></div>
 
-<main class="wrap">
+    <div class="chap hero on">
+      <h1>에이전트가 지금 뭘 하는지,<br>지도 한 장에서 봅니다.</h1>
+      <p>여러 터미널에서 돌아가는 Claude Code와 Codex 세션이 캐릭터가 되어 한 지도에 모입니다. 누가 일하고 누가 답을 기다리는지 바로 보이고, 그 자리에서 지시를 보냅니다.</p>
+      <div class="actions">
+        <a class="btn" href="#install">설치하기</a>
+        <a class="btn ghost" href="#video">1분 영상 보기</a>
+        <span class="sub">버전 0.2.3 · Apple Silicon Mac, macOS 14 이상 · Android 비공개 테스트 중</span>
+      </div>
+      <div class="scroll-hint">SCROLL</div>
+    </div>
 
-<div class="intro">
-  <h1>수혁</h1>
-  <p>여러 터미널에서 돌아가는 Claude Code와 Codex 세션을 길드홀 지도 한 장에 모아 보여 줍니다. 어느 에이전트가 일하는 중이고 어느 에이전트가 답을 기다리는지 바로 보이고, 그 자리에서 지시를 보낼 수 있습니다.</p>
-  <div class="actions">
-    <a class="btn" href="#install">설치하기</a>
-    <a href="#tester">Android 비공개 테스터 모집 중</a>
-    <span class="sub">버전 0.2.3 · Apple Silicon Mac, macOS 14 이상</span>
+    <div class="chap">
+      <div class="num">01 소환</div>
+      <h2>세션을 열면 캐릭터가 소환됩니다.</h2>
+      <p>⌘N으로 작업 폴더와 첫 지시를 정합니다. 세션 하나에 캐릭터 한 명이 배정되고 캠프에 나타납니다. 세션은 전용 tmux 서버에서 돌아서 수혁을 꺼도 끊기지 않습니다.</p>
+      <div class="mock">
+        <div class="field"><span class="lbl">작업 폴더</span><code>~/project/shop</code></div>
+        <div class="field"><span class="lbl">에이전트</span><span class="seg"><span class="on">Claude Code</span><span>Codex</span></span></div>
+        <div class="field"><span class="lbl">첫 지시</span><span>쿠폰이 두 번 적용되는 버그 고쳐 줘</span></div>
+        <div class="row"><span class="check opt">새 워크트리에서 시작</span><span class="kbd">시작 ⌘↩</span></div>
+      </div>
+    </div>
+
+    <div class="chap">
+      <div class="num">02 작업</div>
+      <h2>일하는 동안 보스와 싸웁니다.</h2>
+      <p>답변을 쓰거나 명령을 실행하는 동안 캐릭터는 사냥터로 걸어가 공격합니다. 캐릭터를 누르면 대화창이 열리고, 답변이 작성되는 동안에도 내용이 보입니다.</p>
+      <div class="mock dlg">
+        <img src="img/w/knight-portrait.webp" alt="">
+        <div>
+          <div class="who">가웨인 <span>· shop · Claude Code</span></div>
+          <div class="you">쿠폰이 두 번 적용되는 버그 고쳐 줘</div>
+          <div class="stream" data-full="applyCoupon이 제출 버튼 클릭과 Enter 키에서 한 번씩, 모두 두 번 불립니다. 제출 중에는 다시 부르지 않게 막고 테스트를 추가하겠습니다." data-tool="Edit  src/checkout/coupon.ts"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chap">
+      <div class="num">03 선택</div>
+      <h2>답을 기다리면 머리 위에 !가 뜹니다.</h2>
+      <p>권한 확인이 필요한 세션은 빨간 느낌표로 표시되고 알림이 옵니다. 대화창에서 화살표와 숫자 키로 답하고, Esc로 작업을 멈춥니다.</p>
+      <div class="mock ask">
+        <h4><span class="badge">!</span>가웨인이 묻습니다</h4>
+        <div>명령을 실행할까요? <code>npm test -- coupon</code></div>
+        <ul class="opts">
+          <li class="cur">1. 예</li>
+          <li class="opt">2. 예, 이 명령은 다시 묻지 않기</li>
+          <li>3. 아니요 (Esc)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="chap">
+      <div class="num">04 사냥터</div>
+      <h2>오래 일할수록 강한 보스와 싸웁니다.</h2>
+      <p>쉬지 않고 일한 시간에 따라 사냥터가 바뀝니다. 1시간 넘게 쉬면 시간은 처음부터 다시 셉니다.</p>
+      <div class="mock">
+        <div class="timer"><span class="big odo" data-odo="timer">00:42</span><span class="lbl">연속 작업 시간</span></div>
+        <ul class="tiers">
+          <li class="on">숲의 슬라임 왕 <span>5시간 미만</span></li>
+          <li>수정 동굴 골렘 <span>24시간 미만</span></li>
+          <li>화염 용왕 <span>24시간 이상</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="chap">
+      <div class="num">05 결정</div>
+      <h2>일한 만큼 결정이 쌓입니다.</h2>
+      <p>일한 시간, 끝낸 턴, 커밋 수만큼 결정이 모입니다. 결정으로 새 용병을 영입하거나 캐릭터 마켓에서 다른 사용자가 만든 캐릭터를 삽니다. 결정은 앱 안에서만 쓰고 현금으로 바꿀 수 없습니다.</p>
+      <div class="mock">
+        <div class="bank"><img class="pixel" src="img/i/crystal.png" alt=""><span class="big odo" data-odo="bank">000</span><span class="lbl">결정<br>화면 예시</span></div>
+        <div class="src"><span>일한 시간</span><span>끝낸 턴</span><span>커밋</span></div>
+        <div class="heroes">
+          <figure><img class="pixel" src="img/p/archer.jpg" alt=""><figcaption>라이라</figcaption></figure>
+          <figure><img class="pixel" src="img/p/cat.jpg" alt=""><figcaption>모찌</figcaption></figure>
+          <figure><img class="pixel" src="img/p/alchemist.jpg" alt=""><figcaption>니코</figcaption></figure>
+        </div>
+      </div>
+    </div>
+
+    <div class="chap">
+      <div class="num">06 음성</div>
+      <h2>말로 시키고, 답을 듣습니다.</h2>
+      <p>"수혁아" 다음에 캐릭터 이름과 지시를 말하면 그 세션으로 전달됩니다. 답변이 끝나면 누가 무엇을 했는지 짧게 요약해 읽어 줍니다.</p>
+      <div class="mock">
+        <span class="pill"><i></i><span class="vstate">듣고 있어요</span></span>
+        <canvas class="wave" aria-hidden="true"></canvas>
+        <div class="lines">
+          <p><b>나</b> 수혁아, 가웨인 커밋해 줘</p>
+          <p class="off"><b>수혁</b> 가웨인이 쿠폰 중복 적용 버그를 고치고 커밋했습니다.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="chap">
+      <div class="num">07 휴대폰</div>
+      <h2>자리를 비워도 폰으로 지휘합니다.</h2>
+      <p>Mac의 QR을 찍고 Mac에서 허용하면 연결됩니다. 휴대폰에서 지도와 대화를 보고, 지시를 보내고, 선택지에 답합니다.</p>
+      <div class="actions"><a class="btn ghost" href="#tester">Android 테스터로 참여하기</a></div>
+    </div>
+
+    <div class="chap">
+      <div class="num">08 휴식</div>
+      <h2>일이 끝나면 캠프로 돌아와 쉽니다.</h2>
+      <p>1시간 넘게 조용한 세션은 캠프 모닥불 옆에서 잠듭니다. 세션 상태는 이 Mac의 <code>~/.claude</code>와 <code>~/.codex</code> 파일에서 읽고, tmux·Orca·cmux 터미널 화면도 그대로 읽어 옵니다.</p>
+      <div class="actions">
+        <a class="btn" href="#install">설치하기</a>
+        <a class="btn ghost" href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
+      </div>
+    </div>
+
+    <div class="phone" aria-hidden="true"><div>
+      <img src="img/phone/1-sessions.jpg" alt="" loading="lazy">
+      <img src="img/phone/2-chat.jpg" alt="" loading="lazy" style="opacity:0">
+    </div></div>
   </div>
 </div>
+
+<main class="wrap">
 
 <section id="video">
   <h2>영상으로 보기</h2>
@@ -227,70 +459,6 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   </script>
 </section>
 
-<section id="features">
-  <h2>기능</h2>
-  <p class="section-note">세션 하나에 캐릭터 한 명이 배정됩니다.</p>
-
-  <div class="features">
-    <div class="feature">
-      <img class="pixel" src="img/i/world.png" alt="">
-      <div>
-        <h3>길드홀 지도</h3>
-        <p>이 Mac의 모든 세션이 캐릭터로 지도에 나옵니다. 작업 중인 캐릭터는 쓰는 도구에 따라 타자를 치거나 망치질을 합니다. 마우스를 올리면 세션 제목, 프로젝트, 마지막 지시가 보입니다.</p>
-      </div>
-    </div>
-    <div class="feature">
-      <img class="pixel" src="img/i/session.png" alt="">
-      <div>
-        <h3>세션 만들기와 이어 하기</h3>
-        <p>⌘N으로 작업 폴더와 첫 지시를 정해 새 세션을 엽니다. 세션은 전용 tmux 서버에서 돌아서 수혁을 꺼도 끊기지 않습니다. cmux, Orca, tmux에서 쓰던 세션도 대화 기록을 그대로 가지고 옮길 수 있습니다.</p>
-      </div>
-    </div>
-    <div class="feature">
-      <img class="pixel" src="img/i/dialogue.png" alt="">
-      <div>
-        <h3>대화창</h3>
-        <p>캐릭터 일러스트 옆에 답변과 지시가 대화처럼 쌓입니다. 답변이 작성되는 동안에도 내용이 보입니다. 권한 확인 메뉴는 화살표와 숫자 키로 답하고, Esc로 작업을 멈춥니다.</p>
-      </div>
-    </div>
-    <div class="feature">
-      <img class="pixel" src="img/i/terminal.png" alt="">
-      <div>
-        <h3>쓰던 터미널 그대로</h3>
-        <p>tmux, Orca, cmux 세션은 터미널 화면을 직접 읽습니다. Ghostty, Warp, 에디터 내장 터미널처럼 화면을 읽을 수 없는 곳은 대화 기록 파일로 보여 줍니다.</p>
-      </div>
-    </div>
-    <div class="feature">
-      <img class="pixel" src="img/i/voice.png" alt="">
-      <div>
-        <h3>음성 지시</h3>
-        <p>"수혁아" 다음에 에이전트 이름과 지시를 말하면 그 세션으로 전달됩니다. 끝난 답변은 짧게 요약해 읽어 줍니다. <a href="#voice">자세히</a></p>
-      </div>
-    </div>
-    <div class="feature">
-      <img class="pixel" src="img/i/phone.png" alt="">
-      <div>
-        <h3>휴대폰 연결</h3>
-        <p>휴대폰에서 지도와 대화를 보고 지시를 보냅니다. 새 기기는 QR을 찍고 Mac에서 허용해야 연결됩니다. Android 앱은 Google Play 비공개 테스트 중입니다. <a href="#tester">테스터로 참여하기</a></p>
-      </div>
-    </div>
-    <div class="feature">
-      <img class="pixel" src="img/i/crystal.png" alt="">
-      <div>
-        <h3>결정과 캐릭터 마켓</h3>
-        <p>에이전트가 일한 시간, 끝낸 턴, 커밋 수만큼 결정이 쌓입니다. 결정으로 새 용병을 영입하거나, 다른 사용자가 만들어 운영진 심사를 통과한 캐릭터를 삽니다. 결정은 앱 안에서만 쓰는 재화이고 현금으로 바꿀 수 없습니다.</p>
-      </div>
-    </div>
-    <div class="feature">
-      <img class="pixel" src="img/i/local.png" alt="">
-      <div>
-        <h3>데이터는 이 Mac에서</h3>
-        <p>세션 상태는 <code>~/.claude</code>와 <code>~/.codex</code>의 파일에서 읽습니다. 밖으로 나가는 통신은 휴대폰 연결을 켰을 때의 Cloudflare 터널, 결정 정산, 업데이트 확인입니다.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
 <section id="voice">
   <h2>말로 지시하기</h2>
   <p class="section-note">설정(⌘,)에서 <b>"수혁아"로 음성 지시</b>를 켜면 수혁이 "수혁아"를 기다립니다. 키보드에 손을 대지 않고 에이전트에게 일을 시키고 답을 들을 수 있습니다.</p>
@@ -306,41 +474,9 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
       <p>음성 인식은 가능하면 Mac 안에서 처리하고, 답변 요약은 Mac 안의 Apple 모델이 합니다. 읽어 주는 목소리는 Supertonic 모델(약 400MB)을 처음 쓸 때 내려받으며, 받는 동안에는 macOS 기본 음성으로 읽습니다. macOS 설정의 받아쓰기가 켜져 있어야 하고, 처음 쓸 때 마이크와 음성 인식 권한을 허용해야 합니다.</p>
     </div>
     <figure>
-      <img src="img/talk.png" alt="음성 상태 표시: 이름을 불러 주세요, 펠릭스에게 보냄, 듣고 있어요, 말하는 중">
+      <img src="img/talk.png" alt="음성 상태 표시: 이름을 불러 주세요, 펠릭스에게 보냄, 듣고 있어요, 말하는 중" loading="lazy">
       <figcaption>창 위쪽 상태 표시. 지금 누구에게 말하는 중인지, 듣는 중인지 읽는 중인지 보여 줍니다.</figcaption>
     </figure>
-  </div>
-</section>
-
-<section id="zones">
-  <h2>캐릭터가 서 있는 곳</h2>
-  <p class="section-note">상태에 따라 캐릭터가 지도의 다른 구역으로 걸어갑니다.</p>
-  <table class="zones">
-    <tr><th>상태</th><th>구역</th><th>조건</th></tr>
-    <tr><td>작업 중</td><td>왼쪽 작업대</td><td>답변을 쓰거나 명령을 실행하는 중</td></tr>
-    <tr><td>대기 중</td><td>가운데 선술집</td><td>답변이 끝난 지 10분이 안 됨</td></tr>
-    <tr><td>휴식 중</td><td>오른쪽 라운지</td><td>10분 넘게 조용함. 기준 시간은 바꿀 수 있음</td></tr>
-  </table>
-</section>
-
-<section id="hunt">
-  <h2>보스 사냥</h2>
-  <p class="section-note">쉬지 않고 일한 시간이 5시간 미만이면 숲의 슬라임 왕, 24시간 미만이면 수정 동굴 골렘, 그보다 길면 화염 용왕과 싸웁니다.</p>
-  <div class="shot"><img class="pixel" src="img/bosses.jpg" alt="보스 세 종류의 공격, 포효, 특수기 동작" loading="lazy"></div>
-</section>
-
-<section id="roster">
-  <h2>캐릭터 32명</h2>
-  <p class="section-note">궁수, 음유시인, 대장장이, 연금술사, 천문학자, 고양이 마법사, 요리사, 성직자 등</p>
-  <div class="roster">
-    <img class="pixel" src="img/p/archer.jpg" alt="궁수" loading="lazy">
-    <img class="pixel" src="img/p/bard.jpg" alt="음유시인" loading="lazy">
-    <img class="pixel" src="img/p/blacksmith.jpg" alt="대장장이" loading="lazy">
-    <img class="pixel" src="img/p/alchemist.jpg" alt="연금술사" loading="lazy">
-    <img class="pixel" src="img/p/astronomer.jpg" alt="천문학자" loading="lazy">
-    <img class="pixel" src="img/p/cat.jpg" alt="고양이 마법사" loading="lazy">
-    <img class="pixel" src="img/p/chef.jpg" alt="요리사" loading="lazy">
-    <img class="pixel" src="img/p/cleric.jpg" alt="성직자" loading="lazy">
   </div>
 </section>
 
@@ -410,5 +546,346 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   </div>
 </footer>
 
+<script>
+// Scroll story: one knight walks the hunting-ground map. Each chapter sets a camera pose and a
+// knight target; scroll interpolates between them and springs smooth the motion (Arca Ring style).
+(function () {
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var story = $('.story'), stage = $('.stage'), cv = $('#world'), ctx = cv.getContext('2d');
+  var header = $('header'), chaps = $$('.chap', stage), N = chaps.length, phone = $('.phone');
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var mobileQ = matchMedia('(max-width: 760px)');
+
+  var WH = 9 / 16, AV = 0.04;                       // map height and knight height, in map widths
+  var clamp = function (v, a, b) { return Math.min(b === undefined ? 1 : b, Math.max(a || 0, v)); };
+  var ease = function (t) { return t * t * (3 - 2 * t); };
+  var seg = function (t, a, b) { return clamp((t - a) / (b - a)); };
+
+  // World coordinates from the app's walkmap.json: x and y are both fractions of the map width.
+  var P = { camp: [0.2995, 0.1745], slime: [0.675, 0.1434], golem: [0.335, 0.4191], dragon: [0.65, 0.4303] };
+  var BOSS = { low: { c: [0.75, 0.1434], h: 0.0422 }, mid: { c: [0.255, 0.4191], h: 0.0478 }, high: { c: [0.735, 0.4303], h: 0.0534 } };
+  var X = [0.4925, 0.272];                          // crossroads
+  function route(pts) {
+    var L = [0];
+    for (var i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    return function (t) {
+      var d = clamp(t) * L[L.length - 1], i = 1;
+      while (i < pts.length - 1 && L[i] < d) i++;
+      var k = (d - L[i - 1]) / (L[i] - L[i - 1] || 1), a = pts[i - 1], b = pts[i];
+      return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+    };
+  }
+  var R = {
+    toSlime: route([P.camp, [0.262, 0.245], [0.34, 0.272], X, [0.575, 0.268], [0.625, 0.205], P.slime]),
+    toGolem: route([P.slime, [0.625, 0.205], [0.575, 0.268], X, [0.4925, 0.37], [0.42, 0.405], P.golem]),
+    toDragon: route([P.golem, [0.42, 0.405], [0.4925, 0.37], [0.565, 0.405], P.dragon]),
+    toCamp: route([P.dragon, [0.565, 0.405], [0.4925, 0.37], X, [0.34, 0.272], [0.262, 0.245], P.camp])
+  };
+  var at = function (p, mode, boss, extra) { var o = { p: p, mode: mode, boss: boss }; for (var k in extra) o[k] = extra[k]; return o; };
+  var walk = function (r, t) { return at(r(ease(t)), 'walk'); };
+
+  // Where the knight should be at scroll position u (chapter index + local progress).
+  function track(u) {
+    var i = Math.floor(u), t = u - i;
+    switch (i) {
+      case 0: return at(P.camp, 'hidden');
+      case 1: return at(P.camp, t < 0.22 ? 'hidden' : 'stand');
+      case 2: return t < 0.5 ? walk(R.toSlime, seg(t, 0.06, 0.5)) : at(P.slime, 'attack', 'low');
+      case 3: return at(P.slime, t < 0.62 ? 'guard' : 'attack', 'low', { ask: t < 0.62 });
+      case 4:
+        if (t < 0.2) return at(P.slime, 'attack', 'low');
+        if (t < 0.4) return walk(R.toGolem, seg(t, 0.2, 0.4));
+        if (t < 0.6) return at(P.golem, 'attack', 'mid');
+        if (t < 0.8) return walk(R.toDragon, seg(t, 0.6, 0.8));
+        return at(P.dragon, 'attack', 'high');
+      case 5: case 6: case 7: return at(P.dragon, 'attack', 'high');
+      default: return t < 0.6 ? walk(R.toCamp, seg(t, 0.05, 0.6)) : at(P.camp, 'sleep');
+    }
+  }
+
+  // Camera pose per chapter: focus point, visible span (map widths across the screen), dim.
+  var WHOLE = { f: [0.5, WH / 2], span: 1 };
+  var SPAN = [1, 0.32, 0.42, 0.3, 0.42, 0.5, 0.32, 1, 0.42];
+  function pose(i, u) {
+    if (i === 0) return { f: WHOLE.f, span: 1, dim: 0 };
+    if (i === 7) return { f: WHOLE.f, span: 1, dim: 0.55 };
+    if (i === 1) return { f: [P.camp[0], P.camp[1] - 0.02], span: SPAN[1], dim: 0 };
+    var k = track(u), f = k.boss ? [(k.p[0] + BOSS[k.boss].c[0]) / 2, (k.p[1] + BOSS[k.boss].c[1]) / 2 - 0.012] : [k.p[0], k.p[1] - 0.015];
+    return { f: f, span: SPAN[i], dim: 0 };
+  }
+  function camAt(u) {
+    var i = Math.floor(u), t = u - i, a = pose(i, u);
+    if (i >= N - 1 || t < 0.78) return a;
+    var b = pose(i + 1, i + 1), w = ease(seg(t, 0.78, 1));
+    return { f: [a.f[0] + (b.f[0] - a.f[0]) * w, a.f[1] + (b.f[1] - a.f[1]) * w], span: Math.exp(Math.log(a.span) + (Math.log(b.span) - Math.log(a.span)) * w), dim: a.dim + (b.dim - a.dim) * w };
+  }
+
+  // ---------- assets ----------
+  var big = !mobileQ.matches;
+  function load(src) { var im = new Image(); im.decoding = 'async'; im.src = src; return im; }
+  var map = load(big ? 'img/w/field.webp' : 'img/w/field-2k.webp');
+  var knight = load('img/w/knight.webp'), crystal = load('img/i/crystal.png');
+  var bossImg = { low: load('img/w/boss-low.webp'), mid: load('img/w/boss-mid.webp'), high: load('img/w/boss-high.webp') };
+  var KC = [145, 128], BC = { low: [242, 256], mid: [200, 256], high: [185, 256] };
+  map.onerror = function () { document.documentElement.classList.add('static'); cv.style.display = 'none'; };
+
+  // ---------- state ----------
+  var W = 0, H = 0, dpr = 1, chH = 1, storyTop = 0, storyEnd = 1;
+  function measure() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = stage.clientWidth; H = stage.clientHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    storyTop = story.getBoundingClientRect().top + scrollY;
+    chH = (story.offsetHeight - H) / N;
+    storyEnd = storyTop + story.offsetHeight - H;
+  }
+  measure();
+  addEventListener('resize', measure);
+
+  var cam = null, camV = { x: 0, y: 0, z: 0, d: 0 };
+  var kp = null, kv = [0, 0], facing = 'down', walked = 0, shown = 0, appearAt = -9, wasHidden = true;
+  var time = 0, last = performance.now(), parts = [], lastBeat = -1, cur = -1;
+  var odo = {}; $$('[data-odo]').forEach(function (el) { odo[el.dataset.odo] = el; });
+
+  function spring(x, v, target, k, c, dt) { v += (k * (target - x) - c * v) * dt; return [x + v * dt, v]; }
+
+  // ---------- drawing ----------
+  var view = { left: 0, top: 0, scale: 1 };
+  function toScreen(x, y) { return [(x - view.left) * view.scale, (y - view.top) * view.scale]; }
+  function drawMap(c) {
+    var m = mobileQ.matches, ax = m ? 0.5 : 0.66, ay = m ? 0.3 : 0.52;
+    var span = m ? c.span * 0.5 : c.span;
+    var s = Math.max(W / span, W, H / WH), vw = W / s, vh = H / s;
+    view.scale = s;
+    view.left = clamp(c.x - ax * vw, 0, 1 - vw);
+    // On phones the copy sheet covers the lower part of the screen, so the camera may run past
+    // the bottom edge of the map by that much; the empty strip stays under the sheet.
+    view.top = clamp(c.y - ay * vh, 0, Math.max(0, WH - vh * (m ? 0.55 : 1)));
+    var px = map.naturalWidth, sh = Math.min(vh, WH - view.top), edge = sh * s;
+    ctx.imageSmoothingEnabled = s * dpr / px < 1.6;
+    ctx.imageSmoothingQuality = 'high';
+    if (edge < H) { ctx.fillStyle = '#17110d'; ctx.fillRect(0, 0, W, H); }
+    ctx.drawImage(map, view.left * px, view.top * px, vw * px, sh * px, 0, 0, W, edge);
+    if (edge < H - 1) {
+      var g = ctx.createLinearGradient(0, edge - 60, 0, edge);
+      g.addColorStop(0, 'rgba(23,17,13,0)'); g.addColorStop(1, 'rgba(23,17,13,1)');
+      ctx.fillStyle = g; ctx.fillRect(0, edge - 60, W, 60);
+    }
+  }
+  function shadow(x, y, w) {
+    ctx.fillStyle = 'rgba(0,0,0,.32)';
+    ctx.beginPath(); ctx.ellipse(x, y, w / 2, w * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  function sprite(img, cell, col, row, x, y, h, flip, alpha) {
+    var w = h * cell[0] / cell[1];
+    ctx.save(); ctx.globalAlpha = alpha === undefined ? 1 : alpha; ctx.translate(x, y);
+    if (flip) ctx.scale(-1, 1);
+    ctx.drawImage(img, col * cell[0], row * cell[1], cell[0], cell[1], -w / 2, -h, w, h);
+    ctx.restore();
+  }
+  // Knight swing timing from the app (Avatar.attackBeat): one swing per 1.2 s, impact on frame 3.
+  var BEAT = [0, 0, 1, 1, 2, 3, 3, 4, 5, 5, 0, 0];
+  function drawBoss(tier, target, beatIdx) {
+    var b = BOSS[tier], h = 2 * b.h * 1.25 * view.scale, p = toScreen(b.c[0], b.c[1]);
+    if (p[0] < -h || p[0] > W + h || p[1] < -h || p[1] > H + h) return;
+    var cyc = reduce ? 0 : time % 4.2, row = 0, col = reduce ? 0 : Math.floor(time * 8) % 6;
+    if (target && cyc > 3.2) { row = 1; col = Math.min(5, Math.floor((cyc - 3.2) / 1.0 * 6)); }
+    var hop = !reduce && tier === 'low' && row === 0 ? Math.abs(Math.sin(time * 3)) * h * 0.04 : 0;
+    shadow(p[0], p[1] + h * 0.42, h * 0.7);
+    sprite(bossImg[tier], BC[tier], col, row, p[0], p[1] + h * 0.5 - hop, h, false);
+    if (target && (beatIdx === 5 || beatIdx === 6)) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      sprite(bossImg[tier], BC[tier], col, row, p[0], p[1] + h * 0.5 - hop, h, false, 0.45);
+      ctx.restore();
+    }
+  }
+  function bubble(x, y, h, text, bg, fg) {
+    var r = h * 0.16, w = text === '!' ? r * 2 : r * 2.6;
+    ctx.fillStyle = bg; ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x - w / 2, y - r, w, r * 2, r); else ctx.rect(x - w / 2, y - r, w, r * 2);
+    ctx.fill();
+    ctx.fillStyle = fg; ctx.font = '800 ' + Math.round(r * 1.5) + 'px Pretendard, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + r * 0.06);
+  }
+
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now; time += dt;
+    requestAnimationFrame(frame);
+    var y = scrollY;
+    header.classList.toggle('solid', y > 40);
+    header.style.setProperty('--prog', clamp((y - storyTop) / (storyEnd - storyTop)).toFixed(4));
+    if (y > storyEnd + H) return;                                  // story scrolled away: skip drawing
+
+    var u = clamp((y - storyTop) / chH, 0, N - 0.0001), i = Math.floor(u), t = u - i;
+    if (i !== cur) {
+      cur = i; stage.dataset.ch = i;
+      chaps.forEach(function (c, k) { c.classList.toggle('on', k === i); });
+      phone.classList.toggle('on', i === 7);
+    }
+    chapterUI(i, t);
+
+    // targets → springs (snap when reduced motion or on first frame)
+    var k = track(u), c = camAt(u), snap = reduce || !cam;
+    if (snap) { cam = { x: c.f[0], y: c.f[1], z: Math.log(c.span), d: c.dim }; }
+    else {
+      var r;
+      r = spring(cam.x, camV.x, c.f[0], 60, 15, dt); cam.x = r[0]; camV.x = r[1];
+      r = spring(cam.y, camV.y, c.f[1], 60, 15, dt); cam.y = r[0]; camV.y = r[1];
+      r = spring(cam.z, camV.z, Math.log(c.span), 60, 15, dt); cam.z = r[0]; camV.z = r[1];
+      cam.d += (c.dim - cam.d) * Math.min(1, dt * 5);
+    }
+    var hidden = k.mode === 'hidden';
+    if (!kp || snap || hidden) { kp = k.p.slice(); kv = [0, 0]; }
+    else {
+      var a = spring(kp[0], kv[0], k.p[0], 90, 19, dt), b = spring(kp[1], kv[1], k.p[1], 90, 19, dt);
+      kp = [a[0], b[0]]; kv = [a[1], b[1]];
+    }
+    if (wasHidden && !hidden) appearAt = time;
+    wasHidden = hidden;
+    shown = hidden ? 0 : reduce ? 1 : clamp((time - appearAt) / 0.35);
+
+    if (!map.complete || !map.naturalWidth) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawMap({ x: cam.x, y: cam.y, span: Math.exp(cam.z) });
+    ctx.imageSmoothingEnabled = false;
+
+    // knight frame
+    var speed = Math.hypot(kv[0], kv[1]), moving = speed > 0.03 && !snap;
+    if (moving) {
+      walked += speed * dt;
+      facing = Math.abs(kv[0]) > Math.abs(kv[1]) ? (kv[0] > 0 ? 'right' : 'left') : (kv[1] > 0 ? 'down' : 'up');
+    }
+    var beatIdx = reduce ? 0 : Math.floor((time * 10) % 12), col = 2, row = 0, flip = false;
+    var fighting = !moving && k.mode === 'attack';
+    if (moving) {
+      col = Math.floor(walked / (AV * 0.2)) % 6;
+      row = facing === 'down' ? 0 : facing === 'up' ? 2 : 1; flip = facing === 'right';
+    } else if (k.boss && (k.mode === 'attack' || k.mode === 'guard')) {
+      flip = kp[0] < BOSS[k.boss].c[0];
+      if (fighting) { row = 3; col = BEAT[beatIdx]; } else { row = 1; col = 2; }
+    }
+    if (fighting && beatIdx === 5 && lastBeat !== 5 && !reduce) {          // a blow lands: a crystal pops out
+      var bc = BOSS[k.boss].c;
+      parts.push({ x: bc[0], y: bc[1] - BOSS[k.boss].h, vx: (Math.random() - 0.5) * 0.05, vy: -0.09, life: 0, to: i === 5 ? 'bank' : null });
+    }
+    lastBeat = beatIdx;
+
+    // bosses, then the knight, sorted by depth
+    ['low', 'mid', 'high'].forEach(function (tier) { drawBoss(tier, fighting && k.boss === tier, beatIdx); });
+    var kh = AV * view.scale, ks = toScreen(kp[0], kp[1]);
+    var bob = k.mode === 'sleep' && !reduce ? Math.sin(time * 1.2) * kh * 0.012 : 0;
+    if (shown > 0) {
+      shadow(ks[0], ks[1], kh * 0.45);
+      sprite(knight, KC, col, row, ks[0], ks[1] + bob, kh, flip, shown);
+    }
+    if (!reduce && time - appearAt < 0.9) {                                // summon flash
+      var q = (time - appearAt) / 0.9;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = 'rgba(255, 214, 120,' + (1 - q) + ')'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(ks[0], ks[1], kh * (0.3 + q * 0.9), kh * (0.1 + q * 0.3), 0, 0, Math.PI * 2); ctx.stroke();
+      var g = ctx.createLinearGradient(0, ks[1] - kh * 2.4, 0, ks[1]);
+      g.addColorStop(0, 'rgba(255,214,120,0)'); g.addColorStop(1, 'rgba(255,214,120,' + 0.55 * (1 - q) + ')');
+      ctx.fillStyle = g; ctx.fillRect(ks[0] - kh * 0.32, ks[1] - kh * 2.4, kh * 0.64, kh * 2.4);
+      ctx.restore();
+    }
+    var head = ks[1] - kh * 1.08;
+    if (k.ask && !moving) bubble(ks[0] + kh * 0.22, head, kh, '!', '#e5484d', '#fff');
+    if (k.mode === 'sleep' && !moving) {
+      for (var z = 0; z < 3; z++) {
+        var zt = reduce ? z / 3 : (time * 0.5 + z / 3) % 1;
+        ctx.globalAlpha = Math.sin(zt * Math.PI); ctx.fillStyle = '#fff';
+        ctx.font = '800 ' + Math.round(kh * (0.16 + zt * 0.1)) + 'px Pretendard, sans-serif';
+        ctx.fillText('z', ks[0] + kh * (0.2 + zt * 0.2), head + kh * 0.1 - zt * kh * 0.5);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // crystal particles: hop out of the boss; in chapter 05 they fly into the counter
+    var bank = odo.bank.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    var cs = Math.max(14, AV * 0.45 * view.scale);
+    parts = parts.filter(function (p) {
+      p.life += dt;
+      if (p.life > 1.4) return false;
+      var s = toScreen(p.x, p.y);
+      if (p.to && p.life > 0.35) {
+        var q = ease(clamp((p.life - 0.35) / 0.9)), tx = bank.left - sr.left + 17, ty = bank.top - sr.top + 17;
+        p.sx = p.sx || s[0]; p.sy = p.sy || s[1];
+        s = [p.sx + (tx - p.sx) * q, p.sy + (ty - p.sy) * q - Math.sin(q * Math.PI) * 120];
+        if (q >= 1) { bankHits++; return false; }
+      } else { p.vy += 0.25 * dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+      ctx.globalAlpha = p.to ? 1 : 1 - clamp((p.life - 0.8) / 0.6);
+      ctx.drawImage(crystal, s[0] - cs / 2, s[1] - cs / 2, cs, cs);
+      ctx.globalAlpha = 1;
+      return true;
+    });
+
+    if (cam.d > 0.01) { ctx.fillStyle = 'rgba(13,9,7,' + cam.d.toFixed(3) + ')'; ctx.fillRect(0, 0, W, H); }
+  }
+
+  // ---------- chapter UI driven by local progress ----------
+  function setOdo(el, s) {
+    if (el.dataset.v === s) return;
+    if (!el.dataset.v || el.dataset.v.length !== s.length) {
+      el.innerHTML = s.split('').map(function (ch) {
+        return /\d/.test(ch) ? '<span class="od"><span>' + '0123456789'.split('').map(function (d) { return '<i>' + d + '</i>'; }).join('') + '</span></span>' : '<span>' + ch + '</span>';
+      }).join('');
+    }
+    el.dataset.v = s;
+    Array.prototype.forEach.call(el.children, function (c, n) { if (c.classList.contains('od')) c.firstChild.style.transform = 'translateY(' + (-Number(s[n]) * 10) + '%)'; });
+  }
+  var pad = function (n, w) { n = String(n); while (n.length < w) n = '0' + n; return n; };
+  var stream = $('.stream'), opts = $$('.opts li'), tiers = $$('.tiers li'), srcs = $$('.src span'), heroes = $$('.heroes figure');
+  var vstate = $('.vstate'), lines = $$('.lines p'), wave = $('canvas.wave'), wctx = wave.getContext('2d');
+  var phoneImgs = $$('img', phone), bankHits = 0;
+  function chapterUI(i, t) {
+    if (i === 2) {
+      var full = stream.dataset.full, n = Math.round(seg(t, 0.5, 0.92) * full.length);
+      stream.innerHTML = full.slice(0, n) + (n < full.length ? '<span class="caret"></span>' : '<span class="tool">' + stream.dataset.tool + '</span>');
+    }
+    if (i === 3) {
+      opts[0].classList.toggle('done', t >= 0.62);
+      opts[0].classList.toggle('cur', t < 0.62);
+    }
+    if (i === 4) {
+      // continuous work time: 0:42 → 4:59 at the slime, 5:00 → 23:59 at the golem, 24:00+ at the dragon
+      var m = t < 0.2 ? 42 + seg(t, 0, 0.2) * 255 : t < 0.4 ? 297 + seg(t, 0.2, 0.4) * 3 : t < 0.6 ? 300 + seg(t, 0.4, 0.6) * 1139 : t < 0.8 ? 1439 + seg(t, 0.6, 0.8) * 1 : 1440 + seg(t, 0.8, 1) * 150;
+      m = Math.floor(m);
+      setOdo(odo.timer, pad(Math.floor(m / 60), 2) + ':' + pad(m % 60, 2));
+      var tier = m < 300 ? 0 : m < 1440 ? 1 : 2;
+      tiers.forEach(function (li, n) { li.classList.toggle('on', n === tier); });
+    }
+    if (i === 5) {
+      var v = Math.round(seg(t, 0.05, 0.85) * 120) + bankHits;
+      setOdo(odo.bank, pad(Math.min(v, 999), 3));
+      srcs.forEach(function (s, n) { s.classList.toggle('on', t > 0.08 + n * 0.18); });
+      heroes.forEach(function (h, n) { h.classList.toggle('on', v >= 40 * (n + 1)); });
+    } else bankHits = 0;
+    if (i === 6) {
+      var st = t < 0.3 ? '듣고 있어요' : t < 0.55 ? '가웨인에게 보냄' : t < 0.72 ? '가웨인이 일하는 중' : '말하는 중';
+      if (vstate.textContent !== st) vstate.textContent = st;
+      lines[1].classList.toggle('off', t < 0.72);
+      drawWave(t < 0.3 || t >= 0.72);
+    }
+    if (i === 7) { phoneImgs[1].style.opacity = t > 0.5 ? 1 : 0; }
+  }
+  function drawWave(active) {
+    var w = wave.clientWidth, h = wave.clientHeight;
+    if (wave.width !== Math.round(w * dpr)) { wave.width = Math.round(w * dpr); wave.height = Math.round(h * dpr); }
+    wctx.setTransform(dpr, 0, 0, dpr, 0, 0); wctx.clearRect(0, 0, w, h);
+    var n = Math.floor(w / 5);
+    for (var j = 0; j < n; j++) {
+      var x = j * 5, e = active && !reduce ? 0.2 + 0.8 * Math.abs(Math.sin(time * 7 + j * 0.45) * Math.sin(time * 2.3 + j * 0.13)) : 0.06;
+      var bh = Math.max(2, e * h * 0.9);
+      wctx.globalAlpha = 0.35 + 0.65 * (j / n);
+      wctx.fillStyle = active ? '#e8b44c' : '#b3a088';
+      wctx.fillRect(x, (h - bh) / 2, 2, bh);
+    }
+    wctx.globalAlpha = 1;
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
 </body>
 </html>
