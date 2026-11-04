@@ -134,8 +134,10 @@ struct Backdrop: View {
 
     var body: some View {
         if let img = Art.image("backdrop") {
-            Image(nsImage: img).resizable().scaledToFill().opacity(opacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity).clipped().allowsHitTesting(false)
+            // Filled inside an overlay, so the picture never sizes the view itself: a fill-scaled image in a short
+            // pane (the dialogue above the bottom terminal) otherwise overhangs it and takes clicks above it.
+            Color.clear.overlay { Image(nsImage: img).resizable().scaledToFill().opacity(opacity) }
+                .clipped().allowsHitTesting(false)
         }
     }
 }
