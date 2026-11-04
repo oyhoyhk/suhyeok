@@ -1,0 +1,130 @@
+<title>수혁 마켓 캐릭터</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Gowun+Dodum&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a field-roster sheet — summary bar, one motion switch for all, then a two-column grid of character cards
+   whose sprite stands on a grass-tile stage like the app's hunting field. */
+:root {
+  --bg: #eef1ec; --card: #ffffff; --line: #d5dbd2; --fg: #1d2420; --muted: #5d685f;
+  --accent: #2f6f5a; --accent-fg: #ffffff; --warn: #9a5b12; --warn-bg: #fbf1e2;
+  --grass-a: #6f9a5a; --grass-b: #659151; --stage-line: #4d7240;
+  --display: "Do Hyeon", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --body: "Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141a17; --card: #1c2420; --line: #2e3a33; --fg: #e6ece7; --muted: #9aa89f;
+  --accent: #6fc3a2; --accent-fg: #0f1a15; --warn: #f0b467; --warn-bg: #2b2216;
+  --grass-a: #3f5e33; --grass-b: #39572e; --stage-line: #2c4423; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141a17; --card: #1c2420; --line: #2e3a33; --fg: #e6ece7; --muted: #9aa89f;
+  --accent: #6fc3a2; --accent-fg: #0f1a15; --warn: #f0b467; --warn-bg: #2b2216;
+  --grass-a: #3f5e33; --grass-b: #39572e; --stage-line: #2c4423; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 48px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 22px; }
+header { display: grid; gap: 10px; }
+h1 { font-family: var(--display); font-weight: 400; font-size: clamp(28px, 5vw, 40px); line-height: 1.15; margin: 0; text-wrap: balance; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 18px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.facts b { color: var(--fg); font-weight: 500; }
+.switch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.switch span { font-size: 12px; letter-spacing: .06em; color: var(--muted); margin-right: 4px; }
+.switch button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); color: var(--fg);
+  padding: 6px 14px; border-radius: 999px; cursor: pointer; }
+.switch button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.switch button:focus-visible, .stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); gap: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; display: grid;
+  grid-template-columns: 150px minmax(0, 1fr); gap: 16px; padding: 14px; }
+.portrait { width: 150px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 6px; max-width: 100%; }
+.info { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.name { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.name h2 { font-family: var(--display); font-weight: 400; font-size: 24px; margin: 0; line-height: 1.2; }
+.name .en { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.role { font-size: 13px; color: var(--accent); }
+.stage { height: 150px; border-radius: 6px; border: 1px solid var(--stage-line); display: flex; align-items: flex-end; justify-content: center;
+  padding-bottom: 10px; cursor: pointer; position: relative;
+  background: repeating-conic-gradient(var(--grass-a) 0 25%, var(--grass-b) 0 50%) 0 0 / 24px 24px; }
+.stage img { image-rendering: pixelated; height: 128px; width: auto; }
+.stage .fps { position: absolute; top: 6px; left: 8px; font-family: var(--mono); font-size: 11px; color: #f2f6ef;
+  background: rgba(0,0,0,.35); padding: 1px 6px; border-radius: 4px; }
+.strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.strip img { image-rendering: pixelated; width: 100%; height: 52px; object-fit: contain; background: var(--bg); border-radius: 4px; }
+.tone { margin: 0; font-size: 13.5px; color: var(--fg); }
+.meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.note { font-size: 12.5px; color: var(--warn); background: var(--warn-bg); padding: 6px 10px; border-radius: 6px; }
+@media (max-width: 520px) {
+  .card { grid-template-columns: 1fr; }
+  .portrait { width: 100%; max-height: 360px; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>수혁 마켓 캐릭터 <!--COUNT-->명</h1>
+    <div class="facts"><!--FACTS--></div>
+    <div class="switch" role="group" aria-label="동작">
+      <span>동작</span>
+      <button id="m-walk_down" data-m="walk_down" aria-pressed="true">앞으로 걷기</button>
+      <button id="m-walk_left" data-m="walk_left" aria-pressed="false">옆으로 걷기</button>
+      <button id="m-walk_up" data-m="walk_up" aria-pressed="false">뒤로 걷기</button>
+      <button id="m-attack" data-m="attack" aria-pressed="false">공격</button>
+    </div>
+  </header>
+  <main class="grid" id="grid"></main>
+</div>
+
+<script>
+const CHARS = /*DATA*/[];
+const LABEL = { walk_down: "앞으로 걷기", walk_left: "옆으로 걷기", walk_up: "뒤로 걷기", attack: "공격" };
+let motion = "walk_down";
+const grid = document.getElementById("grid");
+const cards = CHARS.map((c) => {
+  const el = document.createElement("article");
+  el.className = "card";
+  el.innerHTML = `
+    <img class="portrait" alt="${c.p.ko} 일러스트" src="${c.portrait}">
+    <div class="info">
+      <div class="name"><h2>${c.p.ko}</h2><span class="en">${c.name} · ${c.id}</span></div>
+      <div class="role">${c.p.role}</div>
+      <div class="stage" tabindex="0" title="누르면 다음 동작"><span class="fps"></span><img alt="${c.p.ko} 동작"></div>
+      <div class="strip"></div>
+      <p class="tone">${c.p.tone}</p>
+      <div class="meta"><span>공격: ${c.p.weapon}</span><span>팩 ${c.kb}KB · ${c.files}파일</span></div>
+      ${c.note ? `<div class="note">${c.note}</div>` : ""}
+    </div>`;
+  grid.appendChild(el);
+  const stage = el.querySelector(".stage");
+  const next = () => { const ks = Object.keys(LABEL); c.own = ks[(ks.indexOf(c.own || motion) + 1) % ks.length]; drawStrip(c); };
+  stage.addEventListener("click", next);
+  stage.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); next(); } });
+  return { c, img: stage.querySelector("img"), fps: stage.querySelector(".fps"), strip: el.querySelector(".strip") };
+});
+function drawStrip(c) {
+  const k = cards.find((x) => x.c === c);
+  const m = c.own || motion;
+  k.strip.innerHTML = c.frames[m].map((src, i) => `<img alt="${LABEL[m]} ${i + 1}" src="${src}">`).join("");
+  k.fps.textContent = `${LABEL[m]} · 6프레임 · 10fps`;
+}
+cards.forEach((k) => drawStrip(k.c));
+document.querySelectorAll(".switch button").forEach((b) => b.addEventListener("click", () => {
+  motion = b.dataset.m;
+  document.querySelectorAll(".switch button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  cards.forEach((k) => { k.c.own = null; drawStrip(k.c); });
+}));
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let t = 0;
+function tick() {
+  cards.forEach((k) => {
+    const m = k.c.own || motion;
+    // Attack: hold the ready stance, then play the swing (as the app does, one swing every 1.2 s).
+    const f = m === "attack" ? Math.max(0, (t % 12) - 6) : t % 6;
+    k.img.src = k.c.frames[m][still ? 2 : f];
+  });
+  t++;
+}
+tick();
+if (!still) setInterval(tick, 100);
+</script>

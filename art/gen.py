@@ -1,12 +1,15 @@
 """Generate Agent Deck art via Higgsfield CLI.
 usage: python3 gen.py sprite|portrait|map <model> [ids...]
 """
-import json, re, subprocess, sys, urllib.request
+import json, re, subprocess, sys, threading, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).parent
 ROSTER = {c["id"]: c for c in json.loads((ROOT / "roster.json").read_text())}
+# Market characters (sold, not bundled) live in the gitignored art/market/profiles.json.
+if (ROOT / "market/profiles.json").exists():
+    ROSTER |= {c["id"]: c for c in json.loads((ROOT / "market/profiles.json").read_text())}
 
 SPRITE = ("16-bit pixel art RPG game character sprite, single character, full body, standing, "
           "front view facing the viewer, chibi proportions with a big head, crisp pixels, limited palette, "
@@ -168,8 +171,14 @@ VIEWS = {"down": "walking toward the viewer, seen from the front",
          "left": "walking to the left, seen from the side, facing left",
          "up": "walking away from the viewer, seen from the back"}
 
+_upload_lock = threading.Lock()  # worker threads share logs/uploads.json; unlocked writes corrupted it
+
 def upload(path):
     """Upload once and remember the media id (logs/uploads.json)."""
+    with _upload_lock:
+        return _upload(path)
+
+def _upload(path):
     cache_path = ROOT / "logs/uploads.json"
     cache = json.loads(cache_path.read_text()) if cache_path.exists() else {}
     if path.name in cache:
