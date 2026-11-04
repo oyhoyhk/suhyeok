@@ -234,7 +234,8 @@ final class CrystalBank: ObservableObject {
         case MarketService.Failure.invalidPack(let codes): return String(localized: "캐릭터 팩 규격 오류: \(codes.joined(separator: ", "))")
         case AssetLibrary.Failure.invalid(let codes): return String(localized: "받은 파일 검증 실패 (\(codes.joined(separator: ", "))) — 다시 받기")
         case AssetLibrary.Failure.io: return String(localized: "설치 중 파일 오류 — 다시 받기")
-        case is URLError: return String(localized: "서버에 연결할 수 없음")
+        // The code (e.g. -1001 timed out, -1005 connection lost) says which network failure it was.
+        case let e as URLError: return String(localized: "서버에 연결할 수 없음") + " (\(e.code.rawValue) \(e.localizedDescription))"
         default: return "\(error)"
         }
     }

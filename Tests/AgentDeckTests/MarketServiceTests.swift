@@ -20,6 +20,9 @@ private final class FakeMarket {
     var submitted = false
     var withdrawn = false
     var failPath: String?
+    /// Files whose upload drops on the network this many more times before it gets through (URLError, like a timeout).
+    var dropTimes: [String: Int] = [:]
+    var fileAttempts: [String: Int] = [:]
     var times: [Int] = []
 
     init(packDir: URL) { self.packDir = packDir }
@@ -96,6 +99,8 @@ private final class FakeMarket {
             }
             if req.httpMethod == "PUT", path.hasPrefix("/market/drafts/D1/files/") {
                 let file = String(path.dropFirst("/market/drafts/D1/files/".count))
+                fileAttempts[file, default: 0] += 1
+                if let n = dropTimes[file], n > 0 { dropTimes[file] = n - 1; throw URLError(.timedOut) }
                 if file == failPath { return try ok(["error": "internal"], 500) }
                 let data = req.httpBody ?? Data()
                 let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -134,7 +139,9 @@ final class MarketServiceTests: XCTestCase {
     private func service() async throws -> MarketService {
         let sync = LedgerSync(ledger: ledger, stateURL: dir.appendingPathComponent("sync.json"), transport: server.transport, pinnedKey: "")
         try await sync.register(code: "C")
-        return MarketService(sync: sync, ledger: ledger, library: library)
+        let m = MarketService(sync: sync, ledger: ledger, library: library)
+        m.retryDelays = [.zero, .zero]
+        return m
     }
 
     private func listing(_ m: MarketService) async throws -> MarketService.Listing { try await m.listings()[0] }
@@ -206,6 +213,41 @@ final class MarketServiceTests: XCTestCase {
         do { try await m.upload(folder: pack, price: 300, alias: "", description: ""); XCTFail("expected an error") } catch {}
         XCTAssertTrue(server.withdrawn)  // the draft does not stay open against the seller's limit
         XCTAssertFalse(server.submitted)
+    }
+
+    func testDroppedFileUploadIsRetriedAndTheUploadFinishes() async throws {
+        let m = try await service()
+        server.dropTimes = ["sprite.png": 2]  // the last allowed retry gets through
+        let id = try await m.upload(folder: pack, price: 300, alias: "", description: "")
+        XCTAssertEqual(id, "D1")
+        XCTAssertTrue(server.submitted)
+        XCTAssertFalse(server.withdrawn)
+        XCTAssertNotNil(server.uploaded["sprite.png"])
+        XCTAssertEqual(server.fileAttempts["sprite.png"], 3)
+        XCTAssertEqual(server.fileAttempts["portrait.jpg"], 1)  // the others go once
+    }
+
+    func testFileThatKeepsDroppingWithdrawsAndReportsTheNetworkError() async throws {
+        let m = try await service()
+        server.dropTimes = ["sprite.png": 9]
+        do { try await m.upload(folder: pack, price: 300, alias: "", description: ""); XCTFail("expected an error") } catch {
+            XCTAssertEqual((error as? URLError)?.code, .timedOut)  // the cause stays visible to the caller
+        }
+        XCTAssertEqual(server.fileAttempts["sprite.png"], 3)
+        XCTAssertTrue(server.withdrawn)
+        XCTAssertFalse(server.submitted)
+    }
+
+    func testServerRefusalIsNotRetried() async throws {
+        let m = try await service()
+        server.failPath = "sprite.png"
+        do { try await m.upload(folder: pack, price: 300, alias: "", description: ""); XCTFail("expected an error") } catch {}
+        XCTAssertEqual(server.fileAttempts["sprite.png"], 1)  // a 500 answer is the server's verdict, not a dropped request
+    }
+
+    func testDescribeNamesTheNetworkErrorCode() {
+        let text = CrystalBank.describe(URLError(.timedOut))
+        XCTAssertTrue(text.contains("-1001"), text)
     }
 
     func testInvalidFolderNeverReachesTheServer() async throws {

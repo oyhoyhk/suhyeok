@@ -102,7 +102,9 @@ enum Snapshot {
                 print("listing \(id) \(status)")
                 exit(0)
             } catch {
-                print("FAILED", CrystalBank.describe(error)); exit(1)
+                print("FAILED", CrystalBank.describe(error))
+                if let u = error as? URLError { print("  request:", u.failureURLString ?? "-") }  // which of the 27 requests
+                exit(1)
             }
         }
         RunLoop.main.run()

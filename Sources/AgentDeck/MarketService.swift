@@ -39,6 +39,9 @@ final class MarketService {
     let ledger: Ledger
     let library: AssetLibrary
     private var lastTime = 0
+    /// Waits before each retry of a file upload that dropped on the network (URLError). An upload is 26+ requests
+    /// with a 30 s timeout each, so one slow request used to fail the whole pack. Tests set these to zero.
+    var retryDelays: [Duration] = [.seconds(2), .seconds(5)]
 
     init(sync: LedgerSync, ledger: Ledger, library: AssetLibrary) {
         self.sync = sync
@@ -137,11 +140,20 @@ final class MarketService {
         for (i, path) in missing.enumerated() where AssetPack.classify(path) != nil {
             progress(i, missing.count)
             let data = try Data(contentsOf: folder.appendingPathComponent(path))
-            let ft = Int(Date().timeIntervalSince1970)
-            let fs = try sync.signed("market.file", [("listingId", listingId), ("path", path), ("sha256", Self.sha(data))], time: ft)
-            _ = try await sync.call("PUT", "/market/drafts/\(listingId)/files/\(path)", body: data,
-                                    contentType: "application/octet-stream",
-                                    headers: ["x-ledger-device": fs.device, "x-ledger-time": String(ft), "x-ledger-sig": fs.sig])
+            // File uploads are idempotent (content-pinned), so a dropped one is safe to send again; a server
+            // answer (4xx/5xx) is a verdict and is not retried.
+            for attempt in 0... {
+                do {
+                    let ft = Int(Date().timeIntervalSince1970)
+                    let fs = try sync.signed("market.file", [("listingId", listingId), ("path", path), ("sha256", Self.sha(data))], time: ft)
+                    _ = try await sync.call("PUT", "/market/drafts/\(listingId)/files/\(path)", body: data,
+                                            contentType: "application/octet-stream",
+                                            headers: ["x-ledger-device": fs.device, "x-ledger-time": String(ft), "x-ledger-sig": fs.sig])
+                    break
+                } catch is URLError where attempt < retryDelays.count {
+                    try await Task.sleep(for: retryDelays[attempt])
+                }
+            }
         }
         progress(missing.count, missing.count)
 
