@@ -167,7 +167,7 @@ final class CrystalBank: ObservableObject {
             return
         }
         switch await AnchorVerifier().verify(proof: proof, expectedDigest: digest) {
-        case .confirmed(let h): anchorResults[a.id] = String(localized: "비트코인 #\(h) 확정")
+        case .confirmed(let h): anchorResults[a.id] = String(localized: "공증 확정 · 블록 #\(h)")
         case .pending: anchorResults[a.id] = String(localized: "캘린더 대기 (보통 몇 시간)")
         case .mismatch: anchorResults[a.id] = "⚠︎ " + String(localized: "블록과 불일치")
         case .unreachable: anchorResults[a.id] = String(localized: "블록 탐색기 응답 없음")
@@ -265,12 +265,13 @@ extension CrystalBank {
     }
 
     /// Renders the guild (or market) page offscreen into a PNG (does not start paying or touch the keychain).
-    static func snapshot(path: String, market: Bool = false) -> Never {
+    /// `height` defaults to a window's worth; pass more to see the bottom sections of the scroll view.
+    static func snapshot(path: String, market: Bool = false, height: CGFloat = 1100) -> Never {
         preview = true
         let page = market ? AnyView(MarketView()) : AnyView(GuildView())
-        let host = NSHostingView(rootView: page.frame(width: 860, height: 1100).background(Color(nsColor: .windowBackgroundColor)))
-        host.frame = NSRect(x: 0, y: 0, width: 860, height: 1100)
-        let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 860, height: 1100), styleMask: [.borderless], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: page.frame(width: 860, height: height).background(Color(nsColor: .windowBackgroundColor)))
+        host.frame = NSRect(x: 0, y: 0, width: 860, height: height)
+        let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 860, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         RunLoop.main.run(until: Date().addingTimeInterval(0.8))
         if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
@@ -422,41 +423,62 @@ struct GuildView: View {
         .hoverInfo(enabled: open && dragging == nil) { CharacterInfo(character: c) }
     }
 
+    /// A grouped block under a section title: same fill and radius as the hiring cards above.
+    private func panel<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10, content: content)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     private var server: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("pickuma 결정 서버").font(.title3.bold())
-            Toggle("서버와 정산 (suhyeok.pickuma.com)", isOn: $bank.syncEnabled)
-            Text("pickuma 생태계에서는 서버가 서명한 잔액만 인정함. 켜면 영입도 서버 확인을 받아야 확정됨.")
-                .font(.caption).foregroundStyle(.secondary)
-            if bank.syncEnabled {
-                if bank.registered {
-                    Text(bank.syncLine.isEmpty ? String(localized: "등록됨 · 정산 대기") : bank.syncLine).font(.callout)
-                    if let r = bank.lastReceipt, r.pending > 0 {
-                        Text("이관분 \(r.pending) 결정은 관리자 승인 대기").font(.caption).foregroundStyle(.secondary)
-                    }
-                } else {
-                    HStack {
-                        TextField("등록 코드 (XXXX-XXXX-XXXX)", text: $code).textFieldStyle(.roundedBorder).frame(maxWidth: 260)
-                        Button("등록") { Task { message = await bank.register(code: code) } }.disabled(code.isEmpty)
+            panel {
+                HStack(alignment: .firstTextBaseline) {
+                    Toggle("서버와 정산 (suhyeok.pickuma.com)", isOn: $bank.syncEnabled)
+                    Spacer()
+                    if bank.syncEnabled {
+                        Badge(text: bank.registered ? String(localized: "등록됨") : String(localized: "미등록"),
+                              color: bank.registered ? .green : .orange)
                     }
                 }
-                anchorList
+                Text("pickuma 생태계에서는 서버가 서명한 잔액만 인정함. 켜면 영입도 서버 확인을 받아야 확정됨.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if bank.syncEnabled {
+                    Divider()
+                    if bank.registered {
+                        Text(bank.syncLine.isEmpty ? String(localized: "정산 대기") : bank.syncLine).font(.callout)
+                        if let r = bank.lastReceipt, r.pending > 0 {
+                            Text("이관분 \(r.pending) 결정은 관리자 승인 대기").font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        HStack {
+                            TextField("등록 코드 (XXXX-XXXX-XXXX)", text: $code).textFieldStyle(.roundedBorder).frame(maxWidth: 260)
+                            Button("등록") { Task { message = await bank.register(code: code) } }.disabled(code.isEmpty)
+                        }
+                    }
+                }
             }
+            anchorList
         }
     }
 
     private var anchorList: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("비트코인 공증").font(.headline)
+        panel {
+            HStack(alignment: .firstTextBaseline) {
+                Text("장부 공증").font(.headline)
                 Spacer()
                 Button("새로고침") { Task { await bank.loadAnchors() } }.controlSize(.small)
             }
+            Text("서버가 하루 한 번 서버 장부의 해시를 공개 타임스탬프에 기록함. 기록된 뒤에는 운영자도 그날까지의 장부를 몰래 고칠 수 없음.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let e = bank.anchorError { Text(e).font(.caption).foregroundStyle(.orange) }
             if bank.anchors.isEmpty && bank.anchorError == nil {
-                Text("아직 공증 기록 없음 (서버가 하루 1회 서버 장부 해시를 비트코인에 기록)").font(.caption).foregroundStyle(.secondary)
+                Text("아직 공증 기록 없음").font(.callout).foregroundStyle(.secondary)
             }
-            ForEach(bank.anchors.prefix(10)) { a in
+            ForEach(Array(bank.anchors.prefix(10).enumerated()), id: \.element.id) { n, a in
+                if n > 0 { Divider() }
                 HStack {
                     Text("서버 장부 #\(a.seq)").font(.callout.monospacedDigit())
                     Text(Date(timeIntervalSince1970: TimeInterval(a.submittedAt)).formatted(date: .abbreviated, time: .shortened))
@@ -470,27 +492,57 @@ struct GuildView: View {
     }
 
     private var guarantees: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("이 장부가 막는 것과 못 막는 것").font(.title3.bold())
-            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
-                ForEach(Self.guarantees, id: \.0) { row in
+            panel {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
                     GridRow {
-                        Text(row.0).font(.callout)
-                        Text(row.1).font(.callout.bold())
-                        Text(row.2).font(.caption).foregroundStyle(.secondary)
+                        Text("위협").gridColumnAlignment(.leading)
+                        Text("결과")
+                        Text("근거")
+                    }
+                    .font(.caption.bold()).foregroundStyle(.secondary)
+                    ForEach(Self.guarantees, id: \.threat) { row in
+                        Divider().gridCellUnsizedAxes(.horizontal)
+                        GridRow(alignment: .firstTextBaseline) {
+                            Text(row.threat).font(.callout).fixedSize(horizontal: false, vertical: true)
+                            Badge(text: row.level.label, color: row.level.color)
+                            Text(row.why).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)  // the reason column takes the spare width
+                        }
                     }
                 }
             }
         }
     }
 
-    static let guarantees: [(String, String, String)] = [
-        (String(localized: "장부 항목 수정·삭제·순서 변경"), String(localized: "✅ 탐지"), String(localized: "해시 사슬이 깨짐")),
-        (String(localized: "해시를 다시 계산해 장부 바꿔치기"), String(localized: "✅ 탐지"), String(localized: "보안칩 서명을 다시 만들 수 없음")),
-        (String(localized: "장부·키를 지우고 새로 시작"), String(localized: "서버만 ✅"), String(localized: "서버가 기기별 잔액을 보관")),
-        (String(localized: "고친 앱이 가짜 활동을 보고"), String(localized: "서버 상한까지"), String(localized: "시간당 상한을 넘는 지급은 서버가 잘라냄")),
-        (String(localized: "대화 기록 파일 위조"), String(localized: "서버 상한까지"), String(localized: "입력이 로컬 파일이라 막을 수 없음")),
-        (String(localized: "운영자가 서버 잔액 수정"), String(localized: "✅ 탐지"), String(localized: "서버 장부 해시 사슬 + 비트코인 공증")),
+    /// How far the ledger holds against a threat: caught outright, caught only with the server, or limited.
+    enum Protection {
+        case detected, serverDetected, capped
+
+        var label: String {
+            switch self {
+            case .detected: return String(localized: "탐지")
+            case .serverDetected: return String(localized: "서버로 탐지")
+            case .capped: return String(localized: "서버 상한까지")
+            }
+        }
+        var color: Color {
+            switch self {
+            case .detected: return .green
+            case .serverDetected: return .blue
+            case .capped: return .orange
+            }
+        }
+    }
+
+    static let guarantees: [(threat: String, level: Protection, why: String)] = [
+        (String(localized: "장부 항목 수정·삭제·순서 변경"), .detected, String(localized: "해시 사슬이 깨짐")),
+        (String(localized: "해시를 다시 계산해 장부 바꿔치기"), .detected, String(localized: "보안칩 서명을 다시 만들 수 없음")),
+        (String(localized: "장부·키를 지우고 새로 시작"), .serverDetected, String(localized: "서버가 기기별 잔액을 보관")),
+        (String(localized: "고친 앱이 가짜 활동을 보고"), .capped, String(localized: "시간당 상한을 넘는 지급은 서버가 잘라냄")),
+        (String(localized: "대화 기록 파일 위조"), .capped, String(localized: "입력이 로컬 파일이라 막을 수 없음")),
+        (String(localized: "운영자가 서버 잔액 수정"), .detected, String(localized: "서버 장부 해시 사슬 + 장부 공증")),
     ]
 }
 
@@ -514,5 +566,18 @@ private struct LineupDrop: DropDelegate {
         dragging = nil
         Lineup.save(lineup)
         return true
+    }
+}
+
+/// A small colored label for a state (registered, detected, …): tinted fill, same color text.
+private struct Badge: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text).font(.caption.bold()).foregroundStyle(color)
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(color.opacity(0.15), in: Capsule())
+            .fixedSize()
     }
 }

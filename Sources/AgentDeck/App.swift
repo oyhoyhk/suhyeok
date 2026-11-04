@@ -162,9 +162,11 @@ struct AgentDeckApp: App {
             sem.wait()
             exit(0)
         }
-        // `AgentDeck --ledger`: crystal ledger check (read only). `--snapshot-guild out.png`: the guild page offscreen.
+        // `AgentDeck --ledger`: crystal ledger check (read only). `--snapshot-guild out.png [height]`: the guild page offscreen.
         if args.contains("--ledger") { CrystalBank.report(); exit(0) }
-        if let i = args.firstIndex(of: "--snapshot-guild"), i + 1 < args.count { CrystalBank.snapshot(path: args[i + 1]) }
+        if let i = args.firstIndex(of: "--snapshot-guild"), i + 1 < args.count {
+            CrystalBank.snapshot(path: args[i + 1], height: args.dropFirst(i + 2).first.flatMap { Double($0) }.map { CGFloat($0) } ?? 1100)
+        }
         if let i = args.firstIndex(of: "--snapshot-market"), i + 1 < args.count { CrystalBank.snapshot(path: args[i + 1], market: true) }
         // Talking to a live session from the command line (same paths as the dialogue view):
         //   --send <id> <text>   --press <id> <up|down|enter|escape|1|2|3>   --migrate <id>   --snapshot-dialogue <id> out.png   --clear <id> [out.png]
