@@ -576,6 +576,18 @@ enum Snapshot {
                 print("field:", fields(host).first(where: \.isEditable)?.stringValue ?? "-")
                 pb.releaseGlobally()
             }
+            // SUHYEOK_TEST_SUBMIT=<text>: type that into the input and press Enter (it is really sent), then wait 4 s.
+            if let text = ProcessInfo.processInfo.environment["SUHYEOK_TEST_SUBMIT"] {
+                func fields(_ v: NSView) -> [NSTextField] { ((v as? NSTextField).map { [$0] } ?? []) + v.subviews.flatMap(fields) }
+                if let field = fields(host).first(where: \.isEditable) {
+                    window.makeFirstResponder(field)
+                    field.currentEditor()?.insertText(text)
+                    RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+                    // A key event does not reach a never-shown window; Return in the field editor is this command.
+                    field.currentEditor()?.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+                }
+                RunLoop.main.run(until: Date().addingTimeInterval(4))
+            }
             // SUHYEOK_SNAPSHOT_SCROLL=top: scroll the conversation up first (shows the "맨 아래로" button).
             if ProcessInfo.processInfo.environment["SUHYEOK_SNAPSHOT_SCROLL"] == "top" {
                 func scrollViews(_ v: NSView) -> [NSScrollView] { (v as? NSScrollView).map { [$0] } ?? v.subviews.flatMap(scrollViews) }

@@ -794,12 +794,16 @@ struct DialogueView: View {
         pending.append(p)
         let blockedByMenu = menu != nil
         let closesPanel = panelOpen
+        // Codex does not log slash commands (0.167: /status leaves nothing in the rollout) and they start no turn,
+        // so the bubble would wait for the log forever and the agent would look busy. Once delivered, it is done.
+        let unlogged = text.hasPrefix("/") && s.agent != .claude
         let send = Task.detached { SessionInput.send(s, text: full) }
-        sentAt = Date()
+        if !unlogged { sentAt = Date() }
         sending = send
         Task {
             let ok = await send.value
             if !ok, let i = pending.firstIndex(where: { $0.id == p.id }) { pending[i].failed = true }
+            if ok, unlogged { pending.removeAll { $0.id == p.id } }
             notice = !ok ? String(localized: "보내지 못함 — 터미널 접근이 거부됨 (cmux는 재시작 후 가능)")
                 : blockedByMenu ? String(localized: "에이전트가 선택을 기다리는 중이라 메시지가 메뉴 뒤에 대기함 — 위 선택지를 먼저 고를 것")
                 : closesPanel ? String(localized: "터미널에 열려 있던 창을 닫고 보냄") : nil
