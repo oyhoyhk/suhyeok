@@ -252,6 +252,7 @@ struct WorkspaceView: View {
                     ForEach(store.children(of: s)) { c in
                         ChildSessionRow(session: c, store: store).tag(store.pane(for: c))
                     }
+                    ForEach(s.subagents) { w in SubagentRow(work: w) }
                 }
             }
         }
@@ -289,6 +290,23 @@ struct ChildSessionRow: View {
             // The last action is only news while it runs; a finished child would keep saying "답변 작성 중".
             Text("- " + (session.activity == .working ? session.action?.detail ?? session.name : session.name))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .padding(.leading, 12)
+    }
+}
+
+/// An Agent-tool subagent working inside its parent's process: no session to open, so it only says what it is doing.
+struct SubagentRow: View {
+    let work: SubagentWork
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("ㄴ").foregroundStyle(.secondary)
+            Image(systemName: work.action?.symbol ?? "person.2.fill").font(.caption2).foregroundStyle(Activity.working.color)
+            Text(work.title).font(.caption.bold()).lineLimit(1).layoutPriority(1)
+            if let a = work.action {
+                Text("- " + a.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
         .padding(.leading, 12)
     }

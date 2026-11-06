@@ -101,8 +101,17 @@ struct AgentSession: Identifiable {
     var parentId: String? = nil
     /// With status "shell": whether a background shell runs real work (true) or only wait loops (false); nil when unknown.
     var backgroundWork: Bool? = nil
+    /// Claude Agent-tool subagents running inside this session's process (they have no session of their own).
+    var subagents: [SubagentWork] = []
 
     var project: String { Worktree.project(of: cwd) }
+}
+
+/// What a running Agent-tool subagent is doing: its task description and newest tool call.
+struct SubagentWork: Identifiable {
+    let id: String
+    let title: String
+    let action: AgentAction?
 }
 
 /// Reads the trailing JSONL lines of a file without loading the whole transcript.

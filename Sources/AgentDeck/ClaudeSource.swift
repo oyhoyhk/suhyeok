@@ -17,6 +17,7 @@ enum ClaudeSource {
                   let sessionId = obj["sessionId"] as? String
             else { return nil }
             let cwd = obj["cwd"] as? String ?? ""
+            let transcript = transcriptPath(sessionId: sessionId, cwd: cwd)
             let info = transcriptInfo(sessionId: sessionId, cwd: cwd)
             let registryName = obj["name"] as? String ?? String(sessionId.prefix(8))
             // A user-set name wins; otherwise the AI title beats the derived "project-8f" style name.
@@ -41,10 +42,11 @@ enum ClaudeSource {
                 estimated: false,
                 pid: pid,
                 action: info.action,
-                transcriptPath: transcriptPath(sessionId: sessionId, cwd: cwd),
+                transcriptPath: transcript,
                 hostedName: hostedName(pid: pid),
                 conversationId: sessionId,
-                backgroundWork: backgroundWork
+                backgroundWork: backgroundWork,
+                subagents: transcript.map { subagents(transcript: $0) } ?? []
             )
         }
         return sessions
@@ -133,6 +135,49 @@ enum ClaudeSource {
             if user != nil, assistant != nil { break }
         }
         return (title, user, assistant, action)
+    }
+
+    /// A subagent log that has not grown for this long is gone (a stopped subagent never writes end_turn).
+    static let subagentStale: TimeInterval = 10 * 60
+    /// Newest work per subagent log (nil once finished), reused while the file's size and mtime stay the same.
+    /// Entries go once their log is stale, so finished subagents do not pile up over days.
+    private static var subagentCache: [String: (stamp: String, modified: Date, work: SubagentWork?)] = [:]
+
+    /// Agent-tool subagents still running in this conversation. They run inside the parent's process, so they have no
+    /// registry entry: only logs at <transcript>/subagents/agent-<id>.jsonl, with the task description in agent-<id>.meta.json.
+    static func subagents(transcript: String) -> [SubagentWork] {
+        let fm = FileManager.default
+        let dir = String(transcript.dropLast(".jsonl".count)) + "/subagents"
+        guard let files = try? fm.contentsOfDirectory(atPath: dir) else { return [] }
+        subagentCache = subagentCache.filter { -$0.value.modified.timeIntervalSinceNow < subagentStale }
+        return files.filter { $0.hasPrefix("agent-") && $0.hasSuffix(".jsonl") }.sorted().compactMap { file in
+            let path = dir + "/" + file
+            let attrs = (try? fm.attributesOfItem(atPath: path)) ?? [:]
+            guard let modified = attrs[.modificationDate] as? Date, -modified.timeIntervalSinceNow < subagentStale else { return nil }
+            // Read every time, not cached: "finished": true lands in the meta file without the log changing.
+            let meta = fm.contents(atPath: String(path.dropLast(".jsonl".count)) + ".meta.json")
+                .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+            if meta?["finished"] as? Bool == true { return nil }
+            let stamp = "\(attrs[.size] ?? "")|\(modified.timeIntervalSince1970)"
+            if let hit = subagentCache[path], hit.stamp == stamp { return hit.work }
+            let title = (meta?["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "서브에이전트")
+            let work = subagentWork(path: path, id: String(file.dropLast(".jsonl".count)), title: title)
+            subagentCache[path] = (stamp, modified, work)
+            return work
+        }
+    }
+
+    private static func subagentWork(path: String, id: String, title: String) -> SubagentWork? {
+        // Request records can fill the tail, so widen the window until the newest assistant entry shows up.
+        var message: [String: Any]?
+        for maxBytes in [64 * 1024, 512 * 1024, 4 * 1024 * 1024] where message == nil {
+            message = JSONLTail.lines(path: path, maxBytes: maxBytes).last {
+                $0["type"] as? String == "assistant" && $0["isMeta"] as? Bool != true
+            }?["message"] as? [String: Any]
+        }
+        // Not started yet counts as running; a turn that ended is finished.
+        if message?["stop_reason"] as? String == "end_turn" { return nil }
+        return SubagentWork(id: id, title: title, action: AgentAction.fromClaude(message?["content"]))
     }
 
     /// Plain text only; skips tool results and harness-injected <tags>.

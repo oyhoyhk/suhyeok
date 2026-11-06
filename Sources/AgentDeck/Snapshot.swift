@@ -149,10 +149,13 @@ enum Snapshot {
         let store = loadedStore()
         let until = Date().addingTimeInterval(40)
         while store.sessions.isEmpty, Date() < until { RunLoop.main.run(until: Date().addingTimeInterval(0.2)) }
+        // A blank picture looks like a rendering bug; say what happened instead (seen once, cause unknown).
+        guard !store.sessions.isEmpty else { fputs("no sessions loaded within 70 s; nothing written\n", stderr); exit(1) }
         let view = VStack(alignment: .leading, spacing: 10) {
             ForEach(store.sessions.filter { $0.parentId == nil }.prefix(12)) { s in
                 SessionRow(title: s.name, subtitle: s.agent.rawValue + " · " + s.project, session: s, store: store)
                 ForEach(store.children(of: s)) { c in ChildSessionRow(session: c, store: store) }
+                ForEach(s.subagents) { w in SubagentRow(work: w) }
             }
         }
         .padding(14).frame(width: 300, alignment: .leading).background(Color(nsColor: .windowBackgroundColor))

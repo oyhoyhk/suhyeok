@@ -437,6 +437,8 @@
 "업데이트 %@ 설치 (현재 %@)" = "Install update %1$@ (current %2$@)";
 "업데이트 중… 끝나면 다시 열림" = "Updating… the app reopens when done";
 "ㄴ" = "↳";
+"서브에이전트" = "Subagent";
+"ㄴ 서브에이전트 %lld개 더" = "↳ %lld more subagents";
 "%lld명" = "%lld agents";
 "대화 중: %@" = "Talking with: %@";
 "마지막 동작 %@" = "Last activity %@";

@@ -652,6 +652,12 @@ struct DialogueView: View {
     private func inputBar(_ s: AgentSession) -> some View {
         let canSend = SessionInput.canSend(s)
         return VStack(alignment: .leading, spacing: 6) {
+            // Subagents run inside this agent and have no conversation of their own here: say what each is doing.
+            // Capped so a wide fan-out does not push the conversation away.
+            ForEach(s.subagents.prefix(3)) { w in SubagentRow(work: w) }
+            if s.subagents.count > 3 {
+                Text("ㄴ 서브에이전트 \(s.subagents.count - 3)개 더").font(.caption).foregroundStyle(.secondary).padding(.leading, 12)
+            }
             if let notice { Text(LocalizedStringKey(notice)).font(.caption).foregroundStyle(.orange) }  // markdown: feedback links
             if let e = dictation.error { Text(e).font(.caption).foregroundStyle(.orange) }
             if dictation.listening {
