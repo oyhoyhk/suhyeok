@@ -31,6 +31,9 @@ enum CodexSource {
             // Codex's own subagents record their parent thread as JSON in `source`.
             let spawn = ((try? JSONSerialization.jsonObject(with: Data(source.utf8))) as? [String: Any])?["subagent"]
             let parentThread = ((spawn as? [String: Any])?["thread_spawn"] as? [String: Any])?["parent_thread_id"] as? String
+            let pid = running[rolloutPath] ?? (spawn == nil && source != "exec" ? SessionTree.codexProcess(
+                cwd: column(stmt, 2) ?? "", startedAt: Date(timeIntervalSince1970: Double(sqlite3_column_int64(stmt, 4)) / 1000),
+                excluding: Set(sessions.compactMap(\.pid)).union(running.values)) : nil)
             sessions.append(AgentSession(
                 id: "codex-\(id)",
                 agent: .codex,
@@ -42,11 +45,10 @@ enum CodexSource {
                 lastUser: rollout.user,
                 lastAssistant: rollout.assistant,
                 estimated: true,
-                pid: running[rolloutPath] ?? (spawn == nil && source != "exec" ? SessionTree.codexProcess(
-                    cwd: column(stmt, 2) ?? "", startedAt: Date(timeIntervalSince1970: Double(sqlite3_column_int64(stmt, 4)) / 1000),
-                    excluding: Set(sessions.compactMap(\.pid)).union(running.values)) : nil),
+                pid: pid,
                 action: rollout.action,
                 transcriptPath: column(stmt, 1),
+                hostedName: pid.flatMap(ClaudeSource.hostedName),
                 conversationId: id,
                 parentId: parentThread.map { "codex-\($0)" }
             ))

@@ -24,7 +24,8 @@ enum AntigravitySource {
                 id: "antigravity-\(s.id)",
                 agent: .antigravity,
                 name: s.title.isEmpty ? String(s.id.prefix(8)) : oneLine(s.title, limit: 60),
-                cwd: s.cwd,
+                // workspace_uris can be empty (a `-i` start in a folder, agy 1.4.12); the process still runs in the folder.
+                cwd: s.cwd.isEmpty ? SessionTree.processCwd(pid) ?? "" : s.cwd,
                 // A permission prompt is still RUNNING here; the menu on screen is what tells it apart.
                 status: s.status == "CASCADE_RUN_STATUS_RUNNING" ? .busy : .idle,
                 startedAt: SessionTree.processStart(pid),
@@ -145,7 +146,12 @@ enum AntigravitySource {
     private static func query(_ path: String, _ sql: String, _ row: (OpaquePointer?) -> Void) {
         guard FileManager.default.fileExists(atPath: path) else { return }
         var db: OpaquePointer?
-        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else { sqlite3_close(db); return }
+        // These are WAL databases. agy removes -wal and -shm once idle (seen with 1.4.12), and a read-only connection cannot
+        // open a WAL database without -shm ("unable to open database file"). With no -wal the main file holds
+        // everything, so read it as immutable then.
+        let wal = FileManager.default.fileExists(atPath: path + "-wal")
+        let uri = URL(fileURLWithPath: path).absoluteString + (wal ? "?mode=ro" : "?immutable=1")
+        guard sqlite3_open_v2(uri, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK else { sqlite3_close(db); return }
         defer { sqlite3_close(db) }
         sqlite3_busy_timeout(db, 200)  // the CLI writes these files while it runs
         var stmt: OpaquePointer?

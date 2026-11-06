@@ -134,7 +134,7 @@ enum SessionTree {
         return proc_name(parent, &name, UInt32(name.count)) > 0 && String(cString: name) == "codex" && parentPid(parent) <= 1
     }
 
-    private static func processCwd(_ pid: Int32) -> String? {
+    static func processCwd(_ pid: Int32) -> String? {
         var info = proc_vnodepathinfo()
         guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, Int32(MemoryLayout<proc_vnodepathinfo>.size)) > 0 else { return nil }
         return withUnsafeBytes(of: info.pvi_cdir.vip_path) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }

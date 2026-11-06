@@ -146,7 +146,7 @@ struct AgentDeckApp: App {
                 print(UsageInfo.codex(args[i + 1]).map { String(describing: $0) } ?? "-"); exit(0)
             }
             for s in Snapshot.loadedStorePublic().sessions {
-                print(s.agent.rawValue, s.id, "pid=" + (s.pid.map { String($0) } ?? "-"), "parent=" + (s.parentId ?? "-"), UsageInfo.load(s).map { String(describing: $0) } ?? "-")
+                print(s.agent.rawValue, s.id, "pid=" + (s.pid.map { String($0) } ?? "-"), "parent=" + (s.parentId ?? "-"), "hosted=" + (s.hostedName ?? "-"), UsageInfo.load(s).map { String(describing: $0) } ?? "-")
             }
             exit(0)
         }

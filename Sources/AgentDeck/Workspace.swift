@@ -458,7 +458,7 @@ struct HostedSessionView: View {
                             // .id: a new session gets fresh state (messages, draft, pending bubbles), never the previous one's.
                             DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).id(s.id).padding(10)
                         } else {
-                            // Codex sessions and agents still starting have no registry entry yet: terminal only.
+                            // Agents not yet sent a message (no Codex thread or agy summary yet) and still starting: terminal only.
                             EmbeddedTerminal(name: name).id(name)
                         }
                     }
