@@ -1,7 +1,8 @@
 import Foundation
 import SQLite3
 
-/// Codex has no live-session registry, so "live" means a thread updated within `window`.
+/// Codex has no live-session registry, so "live" means a thread updated within `window` (and, for an interactive
+/// thread, a codex process still running it).
 enum CodexSource {
     static let dbPath = FileManager.default.homeDirectoryForCurrentUser.path + "/.codex/state_5.sqlite"
     static let window: TimeInterval = 30 * 60
@@ -34,6 +35,9 @@ enum CodexSource {
             let pid = running[rolloutPath] ?? (spawn == nil && source != "exec" ? SessionTree.codexProcess(
                 cwd: column(stmt, 2) ?? "", startedAt: Date(timeIntervalSince1970: Double(sqlite3_column_int64(stmt, 4)) / 1000),
                 excluding: Set(sessions.compactMap(\.pid)).union(running.values)) : nil)
+            // An interactive thread whose process is gone has ended (its tab or 수혁 session was closed); without this
+            // it stayed listed for the whole recency window. Finished `codex exec` and subagent threads stay, under their parent.
+            if pid == nil, spawn == nil, source != "exec" { continue }
             sessions.append(AgentSession(
                 id: "codex-\(id)",
                 agent: .codex,
