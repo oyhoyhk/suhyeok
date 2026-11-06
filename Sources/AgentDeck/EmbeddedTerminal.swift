@@ -23,7 +23,9 @@ final class TerminalHost: NSObject, LocalProcessTerminalViewDelegate {
     func view(for name: String) -> LocalProcessTerminalView {
         if let v = views[name] { return v }
         let v = CopyingTerminalView(frame: NSRect(x: 0, y: 0, width: 900, height: 600))
-        v.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        // Medium strokes and an opaque default color: the stock textColor draws at 85 % opacity in dark mode and looked dim.
+        v.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+        v.nativeForegroundColor = Self.foreground
         v.processDelegate = self
         var env = ProcessInfo.processInfo.environment
         env["TERM"] = "xterm-256color"
@@ -36,6 +38,11 @@ final class TerminalHost: NSObject, LocalProcessTerminalViewDelegate {
         }
         views[name] = v
         return v
+    }
+
+    /// Default text color, resolved per appearance at draw time.
+    static let foreground = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 0.95, alpha: 1) : NSColor(white: 0.08, alpha: 1)
     }
 
     func drop(_ name: String) {

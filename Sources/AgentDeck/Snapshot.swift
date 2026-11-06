@@ -332,6 +332,7 @@ enum Snapshot {
     }
 
     static func hosted(name: String, path: String) {
+        AppAppearance.current.apply()  // the terminal's default colors follow it, as in the app
         let term = TerminalHost.shared.view(for: name)
         // Never ordered front: the window exists only so the view gets a backing store.
         let window = NSWindow(contentRect: NSRect(x: -5000, y: -5000, width: 1000, height: 640),
