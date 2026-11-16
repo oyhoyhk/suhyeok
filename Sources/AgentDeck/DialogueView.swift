@@ -956,8 +956,17 @@ struct MobileSettings: View {
                                 server.pairingSecret == nil ? server.beginPairing() : server.cancelPairing()
                             }
                             .disabled(tunnel.url == nil)
+                            // PCs have no camera: the same one-time secret as a link, opening the desktop page (/desk).
+                            if let url = tunnel.url, let secret = server.pairingSecret {
+                                Button("PC용 링크 복사") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(url + "/desk#pair=" + secret, forType: .string)
+                                }
+                            }
                         }
                         Text("폰 카메라로 QR을 찍으면 이 Mac에 허용 창이 뜸 → 허용을 눌러야 연결됨. QR은 한 번만 쓸 수 있음.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        Text("PC(윈도우 수혁·브라우저)는 'PC용 링크 복사'로 받은 링크를 60초 안에 붙여넣기. 링크도 한 번만 쓸 수 있음.")
                             .font(.caption2).foregroundStyle(.secondary)
                         ForEach(server.devices) { d in
                             HStack(spacing: 6) {

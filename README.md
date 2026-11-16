@@ -22,6 +22,15 @@ suhyeok                            # 앱 실행
 - 요구 사항: Apple Silicon 맥, macOS 14 이상, Claude Code 또는 Codex CLI
 - Launchpad·Spotlight에 넣기: `ln -sf "$(brew --prefix)/opt/suhyeok/수혁.app" ~/Applications/수혁.app`
 
+### 윈도우 (원격 클라이언트)
+
+윈도우 수혁은 맥 수혁의 세션을 보고 조작하는 창. 세션 실행은 맥에서 함.
+
+- 설치: [릴리스](https://github.com/oyhoyhk/suhyeok/releases)의 `Suhyeok_<버전>_x64-setup.exe` (서명 없음 → SmartScreen에서 "추가 정보 → 실행")
+- 연결: 맥 수혁 설정 → 모바일 접속 → 연결 시작 → "PC용 링크 복사" → 60초 안에 윈도우 수혁에 붙여넣기 → 맥에서 허용
+- 맥 수혁 0.2.5 이상, 모바일 접속이 켜져 있어야 함. 브라우저로는 `<맥 주소>/desk`
+- 소스: `windows/` (Tauri 2), 빌드: `.github/workflows/windows.yml` (릴리스 게시 시 설치 파일 첨부)
+
 ## 작업 공간 — 수혁 안에서 세션 만들고 운영
 
 - ＋ 새 세션(⌘N) → 에이전트(Claude Code·Codex) · 작업 폴더 · 첫 지시 → 수혁 전용 tmux 서버에서 실행

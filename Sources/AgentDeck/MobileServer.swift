@@ -342,6 +342,9 @@ final class MobileServer: ObservableObject {
         switch (r.method, r.path) {
         case ("GET", "/"), ("GET", "/index.html"):
             return (200, "text/html; charset=utf-8", Data(MobilePage.html.utf8), [:])
+        // The desktop page (Windows 수혁 and PC browsers): same API and pairing, laid out for a wide screen.
+        case ("GET", "/desk"):
+            return (200, "text/html; charset=utf-8", Data(DesktopPage.html.utf8), [:])
         case ("POST", "/pair"):
             return pair(r)
         case ("GET", "/pair/status"):
