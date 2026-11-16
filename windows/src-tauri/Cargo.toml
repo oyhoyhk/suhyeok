@@ -1,0 +1,18 @@
+[package]
+name = "suhyeok-desktop"
+version = "0.2.5"
+description = "수혁 for Windows: a window onto the 수혁 server running on your Mac"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수혁</title>
+<style>
+  :root { --bg:#120f1c; --panel:#1d1829; --line:#3a3150; --gold:#e0b44a; --fg:#ece6f5; --muted:#a99fbb; --warn:#e5534b; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+               font:14px system-ui, "Segoe UI", "Malgun Gothic", -apple-system, "Apple SD Gothic Neo", sans-serif; }
+  body { display:grid; place-items:center; padding:24px; }
+  .box { width:min(560px, 100%); background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px; display:grid; gap:14px; }
+  h1 { margin:0; color:var(--gold); font-size:22px; }
+  ol { margin:0; padding-left:20px; color:var(--muted); line-height:1.7; }
+  b { color:var(--fg); }
+  input { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:9px 10px; width:100%; }
+  input:focus { outline:none; border-color:var(--gold); }
+  button { font:inherit; border-radius:6px; padding:8px 14px; cursor:pointer; border:1px solid var(--line); background:#251f34; color:var(--fg); }
+  button.primary { background:var(--gold); color:#1a1408; border-color:var(--gold); font-weight:600; }
+  .btns { display:flex; gap:8px; justify-content:flex-end; }
+  #err { color:var(--warn); min-height:1.2em; }
+  #saved { color:var(--muted); font-size:12px; }
+</style></head><body>
+<div class="box" id="box" hidden>
+  <h1>수혁 연결</h1>
+  <ol>
+    <li>Mac의 수혁에서 <b>설정(⌘,) → 모바일 접속</b>을 켭니다.</li>
+    <li><b>연결 시작</b>을 누른 뒤 <b>PC용 링크 복사</b>를 누릅니다.</li>
+    <li>60초 안에 아래 칸에 붙여넣고 <b>연결</b>을 누른 뒤, Mac에 뜬 창에서 <b>허용</b>을 누릅니다.</li>
+  </ol>
+  <input id="link" placeholder="https://…/desk#pair=…" autocomplete="off" spellcheck="false">
+  <div id="err"></div>
+  <div id="saved"></div>
+  <div class="btns"><button id="again" hidden>저장된 주소로 다시 연결</button><button class="primary" id="go">연결</button></div>
+</div>
+<script>
+// The Mac's address is kept here; the pairing token is a cookie of the Mac's own page, kept by the webview.
+const KEY = "server";
+const read = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
+const saved = read();
+if (saved && !new URLSearchParams(location.search).has("setup")) location.replace(saved + "/desk");
+else {
+  document.getElementById("box").hidden = false;
+  if (saved) {
+    document.getElementById("saved").textContent = "저장된 주소: " + saved;
+    const again = document.getElementById("again");
+    again.hidden = false; again.onclick = () => location.replace(saved + "/desk");
+  }
+  const link = document.getElementById("link"), err = document.getElementById("err");
+  link.focus();
+  function go() {
+    let u;
+    try { u = new URL(link.value.trim()); } catch (e) { err.textContent = "링크 형식이 아님 — Mac에서 'PC용 링크 복사'로 받은 링크를 붙여넣기"; return; }
+    const local = u.hostname === "127.0.0.1" || u.hostname === "localhost";
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) { err.textContent = "https 주소만 연결할 수 있음"; return; }
+    const pair = /^#pair=[0-9a-f]{32}$/.test(u.hash) ? u.hash : "";
+    try { localStorage.setItem(KEY, u.origin); } catch (e) {}
+    location.href = u.origin + "/desk" + pair;
+  }
+  document.getElementById("go").onclick = go;
+  link.onkeydown = e => { if (e.key === "Enter") go(); };
+}
+</script>
+</body></html>
