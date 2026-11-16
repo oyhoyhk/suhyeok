@@ -353,7 +353,8 @@ final class MobileServer: ObservableObject {
         }
         // Static art does not need auth (it is the same art shipped in the public app).
         if r.method == "GET", r.path.hasPrefix("/art/"), let data = asset(String(r.path.dropFirst(5))) {
-            return (200, r.path.hasSuffix(".png") ? "image/png" : "image/jpeg", data, ["Cache-Control": "max-age=86400"])
+            let type = r.path.hasSuffix(".png") ? "image/png" : r.path.hasSuffix(".woff2") ? "font/woff2" : "image/jpeg"
+            return (200, type, data, ["Cache-Control": "max-age=86400"])
         }
         guard authorized(r) else { return json(["error": "pair"], 401) }
         // Characters bought on the market are not public art: paired phones only.
@@ -434,6 +435,12 @@ final class MobileServer: ObservableObject {
             }
             return json(["home": NSHomeDirectory(), "folders": MobileFiles.roots(store.knownFolders)])
         // New session from the phone's ＋ button (NewSessionSheet in Workspace.swift): recent folders, then start.
+        // The desktop page's sidebar (DesktopAPI): the Mac's sections in its order, and "이어서" on a recent conversation.
+        case ("GET", "/api/sidebar"):
+            return json(DesktopAPI.sidebar(store, sort: r.query["sort"], ascending: r.query["asc"] == "1"))
+        case ("POST", "/api/resume"):
+            guard let id = body["id"] as? String else { return json(["ok": false], 400) }
+            return json(["ok": DesktopAPI.resume(store, id: id)])
         case ("GET", "/api/folders"):
             return json(["home": NSHomeDirectory(), "folders": store.knownFolders])
         case ("POST", "/api/new"):
@@ -571,7 +578,7 @@ final class MobileServer: ObservableObject {
                 "canSend": SessionInput.canSend(s),
                 // What the long-press menu on the phone may offer (same rules as the Mac's context menu).
                 "hosted": s.hostedName != nil, "canClone": s.conversationId != nil, "canFork": s.agent.canFork,
-            ]
+            ].merging(DesktopAPI.extras(store, s)) { mine, _ in mine }
         }
         let bosses: [[String: Any]] = Hunt.Tier.allCases.map { t in
             let r = World.boss(t)
@@ -610,6 +617,8 @@ final class MobileServer: ObservableObject {
                 if let m = u.model { usage["model"] = m }
                 if let e = u.effort { usage["effort"] = e }
                 if let p = u.contextPercent { usage["contextPercent"] = p }
+                if let c = u.contextUsed { usage["contextUsed"] = c }
+                if let w = u.contextWindow { usage["contextWindow"] = w }
                 out["usage"] = usage
             }
             if let pid = s.pid, case .text(let t, _) = TerminalSource.read(pid: pid, lines: 60) {
