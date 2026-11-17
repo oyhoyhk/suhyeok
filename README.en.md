@@ -26,14 +26,14 @@ suhyeok                            # launch the app
 - Requirements: Apple Silicon Mac, macOS 14 or later, Claude Code or Codex CLI
 - Add to Launchpad and Spotlight: `ln -sf "$(brew --prefix)/opt/suhyeok/수혁.app" ~/Applications/수혁.app`
 
-### Windows (remote client)
+### Windows and Linux (desktop app)
 
-Suhyeok for Windows is a window onto the Mac's sessions: you view and operate them there, but the sessions run on the Mac.
+Suhyeok for Windows and Linux runs the Suhyeok server on this computer and also connects to Suhyeok on other computers (Macs included). Closing the window keeps it in the tray, and the server, which holds the sessions, keeps running after you quit the app (tray → Stop server turns it off).
 
-- Install: `Suhyeok_<version>_x64-setup.exe` from [Releases](https://github.com/oyhoyhk/suhyeok/releases) (unsigned → in SmartScreen choose "More info → Run anyway")
-- Connect: Suhyeok on the Mac → Settings → Mobile access → Start pairing → "PC용 링크 복사" (Copy link for PC; not yet translated in the app) → paste into Suhyeok on Windows within 60 seconds → allow on the Mac
-- Needs Suhyeok 0.2.5 or later on the Mac with Mobile access on. In a browser, open `<Mac address>/desk`
-- Source: `windows/` (Tauri 2), build: `.github/workflows/windows.yml` (attaches the installer when a release is published)
+- Install: `Suhyeok_<version>_x64-setup.exe` (Windows; unsigned → in SmartScreen choose "More info → Run anyway"), `Suhyeok_<version>_amd64.AppImage` or `.deb` (Linux) from [Releases](https://github.com/oyhoyhk/suhyeok/releases)
+- Connect to another computer: get a pairing link from Suhyeok there (Mac: Settings → Mobile access → Start pairing → "PC용 링크 복사" (Copy link for PC; not yet translated in the app); Windows/Linux: Suhyeok menu → Connect another device…) → within 60 seconds paste it into Server menu → Add another server… → allow on that computer
+- To connect to a Mac: Suhyeok 0.2.5 or later on the Mac with Mobile access on. In a browser, open `<Mac address>/desk`
+- Source: `desktop/` (Tauri 2; the server is `server-rs/`), build: `.github/workflows/desktop.yml` (attaches the installers when a release is published)
 
 ## Workspace — create and run sessions inside Suhyeok
 

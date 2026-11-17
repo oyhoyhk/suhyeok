@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수혁</title>
+<style>
+  :root { --bg:#120f1c; --panel:#1d1829; --line:#3a3150; --gold:#e0b44a; --fg:#ece6f5; --muted:#a99fbb; --warn:#e5534b; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+               font:14px system-ui, "Segoe UI", "Malgun Gothic", -apple-system, "Apple SD Gothic Neo", "Noto Sans CJK KR", sans-serif; }
+  body { display:grid; place-items:center; padding:24px; }
+  .box { width:min(560px, 100%); background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:24px; display:grid; gap:14px; }
+  h1 { margin:0; color:var(--gold); font-size:22px; }
+  ol { margin:0; padding-left:20px; color:var(--muted); line-height:1.7; }
+  p { margin:0; color:var(--muted); line-height:1.6; white-space:pre-wrap; }
+  b { color:var(--fg); }
+  input { font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:9px 10px; width:100%; }
+  input:focus { outline:none; border-color:var(--gold); }
+  button { font:inherit; border-radius:6px; padding:8px 14px; cursor:pointer; border:1px solid var(--line); background:#251f34; color:var(--fg); }
+  button.primary { background:var(--gold); color:#1a1408; border-color:var(--gold); font-weight:600; }
+  .btns { display:flex; gap:8px; justify-content:flex-end; }
+  .err { color:var(--warn); min-height:1.2em; }
+  ul { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+  li { display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  li span { flex:1; }
+  li small { display:block; color:var(--muted); }
+</style></head><body>
+<div class="box" id="box"></div>
+<script>
+// The app's own page (the only one allowed to call the app's commands). Views:
+//   starting · error&msg= · add (pairing link of another computer) · devices (devices paired with this computer)
+const ko = (navigator.language || "").toLowerCase().startsWith("ko");
+const T = (k, e) => ko ? k : e;
+document.documentElement.lang = ko ? "ko" : "en";
+const invoke = (cmd, args) => window.__TAURI_INTERNALS__.invoke(cmd, args || {});
+const q = new URLSearchParams(location.search);
+const box = document.getElementById("box");
+const el = (tag, props, ...kids) => { const n = Object.assign(document.createElement(tag), props || {}); n.append(...kids); return n; };
+
+// The old app kept one server address in localStorage: move it into the app's list once.
+try {
+  const old = localStorage.getItem("server");
+  if (old) invoke("add_server", { link: old, open: false }).finally(() => localStorage.removeItem("server"));
+} catch (e) {}
+
+const view = q.get("view") || "starting";
+if (view === "starting") {
+  box.append(el("h1", { textContent: "수혁" }), el("p", { textContent: T("이 컴퓨터의 수혁 서버를 여는 중…", "Opening the 수혁 server on this computer…") }));
+} else if (view === "error") {
+  const retry = el("button", { className: "primary", textContent: T("다시 시도", "Try again"), onclick: () => invoke("retry_local") });
+  box.append(el("h1", { textContent: T("이 컴퓨터의 수혁", "수혁 on this computer") }),
+    el("p", { className: "err", textContent: q.get("msg") || "" }),
+    el("p", { textContent: T("다른 컴퓨터의 수혁은 '서버' 메뉴에서 열 수 있음.", "You can open 수혁 on another computer from the Server menu.") }),
+    el("div", { className: "btns" }, retry));
+} else if (view === "add") {
+  const link = el("input", { placeholder: "https://…/desk#pair=…", autocomplete: "off", spellcheck: false });
+  const err = el("div", { className: "err" });
+  const go = () => invoke("add_server", { link: link.value, open: true }).catch(e => { err.textContent = String(e); });
+  link.onkeydown = e => { if (e.key === "Enter") go(); };
+  box.append(el("h1", { textContent: T("다른 서버 추가", "Add another server") }),
+    el("ol", {}, ...(ko
+      ? ["다른 컴퓨터의 수혁에서 <b>연결 시작</b>(맥: 설정 → 모바일 접속, 윈도우·리눅스: 수혁 메뉴 → 다른 기기 연결)을 누름",
+         "받은 링크를 60초 안에 아래 칸에 붙여넣고 <b>연결</b>",
+         "그 컴퓨터에 뜬 창에서 <b>허용</b>"]
+      : ["On the other computer's 수혁, start pairing (Mac: Settings → Mobile access; Windows/Linux: Suhyeok menu → Connect another device)",
+         "Paste the link below within 60 seconds and press <b>Connect</b>",
+         "Press <b>Allow</b> in the window that appears on that computer"]).map(h => el("li", { innerHTML: h, style: "display:list-item;border:0;padding:0" }))),
+    link, err,
+    el("div", { className: "btns" }, el("button", { className: "primary", textContent: T("연결", "Connect"), onclick: go })));
+  link.focus();
+} else if (view === "devices") {
+  const list = el("ul"), err = el("div", { className: "err" });
+  const when = s => new Date(s * 1000).toLocaleString();
+  async function load() {
+    list.replaceChildren();
+    try {
+      const { devices } = await invoke("devices");
+      if (!devices.length) list.append(el("li", {}, el("span", { textContent: T("연결된 기기 없음", "No connected devices") })));
+      for (const d of devices) {
+        const name = d.owner ? `${d.name} (${T("이 앱", "this app")})` : d.name;
+        // Two presses: the first asks, the second disconnects.
+        const forget = el("button", { textContent: T("연결 끊기", "Disconnect"), onclick: async () => {
+          if (!forget.dataset.sure) { forget.dataset.sure = "1"; forget.textContent = T("정말 끊기", "Really disconnect"); forget.className = "primary"; return; }
+          try { await invoke("forget_device", { hash: d.hash }); load(); } catch (e) { err.textContent = String(e); }
+        } });
+        list.append(el("li", {}, el("span", {}, name, el("small", { textContent: T("마지막 사용 ", "Last used ") + when(d.lastUsed) })), forget));
+      }
+    } catch (e) { err.textContent = T("이 컴퓨터의 수혁 서버에 연결하지 못함: ", "Could not reach the 수혁 server on this computer: ") + e; }
+  }
+  box.append(el("h1", { textContent: T("연결된 기기", "Connected devices") }), list, err,
+    el("div", { className: "btns" }, el("button", { textContent: T("새로 고침", "Refresh"), onclick: load })));
+  load();
+}
+</script>
+</body></html>

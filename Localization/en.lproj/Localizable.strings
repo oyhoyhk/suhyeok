@@ -558,3 +558,15 @@
 "여는 중…" = "Opening…";
 "모두 다시 열기" = "Reopen all";
 "다시 열지 않음 — 대화는 '최근 대화'에 남아 있음" = "Don't reopen — the chats stay under Recent chats";
+
+/* RemoteServers.swift */
+"다른 컴퓨터의 수혁…" = "수혁 on Another Computer…";
+"다른 컴퓨터의 수혁" = "수혁 on Another Computer";
+"서버" = "Servers";
+"서버 추가" = "Add a server";
+"연결" = "Connect";
+"목록에서 지우기" = "Remove from list";
+"왼쪽에서 서버를 고르거나 연결 링크를 붙여넣기" = "Pick a server on the left or paste a pairing link";
+"다른 컴퓨터(윈도우·리눅스·다른 Mac)의 수혁에서 '다른 기기 연결…'을 누르고, 60초 안에 받은 링크를 붙여넣은 뒤 그 컴퓨터에서 허용" = "On the other computer's 수혁 (Windows, Linux or another Mac) choose 'Connect another device…', paste the link within 60 seconds, then allow it on that computer";
+"링크 형식이 아님 — 다른 컴퓨터의 수혁에서 '다른 기기 연결…'로 받은 링크를 붙여넣기" = "Not a link — paste the one from 'Connect another device…' on the other computer's 수혁";
+"https 주소이거나 같은 망의 주소여야 함" = "Must be an https address or one on your own network";

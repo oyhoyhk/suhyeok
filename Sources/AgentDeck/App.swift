@@ -338,6 +338,8 @@ struct AgentDeckApp: App {
         }
         .commands {
             CommandGroup(after: .newItem) {
+                RemoteServersCommand()
+                Divider()
                 Button("세션 이름 수정…") { store.editingSummary = store.selectedSession }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(store.selectedSession == nil)
@@ -366,6 +368,8 @@ struct AgentDeckApp: App {
                     .keyboardShortcut("`")
             }
         }
+        // Other machines' 수혁 servers (RemoteServers.swift).
+        Window("다른 컴퓨터의 수혁", id: "remote") { RemoteServersView() }
         Settings { SettingsView().environmentObject(store) }
         MenuBarExtra {
             MenuBarContent(store: store)
