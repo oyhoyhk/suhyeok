@@ -867,14 +867,23 @@ mod tests {
         assert_eq!(resolve_in_home("", home), None);
     }
 
+    /// An expected path in this OS's form: the links point at real paths, which use "\\" on Windows.
+    fn native(s: &str) -> String {
+        if cfg!(windows) {
+            s.replace('/', "\\")
+        } else {
+            s.to_string()
+        }
+    }
+
     #[test]
     fn chat_paths_map_tokens_to_files_and_folders() {
         let h = make_home();
         let home = &h.home;
         let text = format!("결과물은 `out/demo.mp4`에 있고, 폴더 {home}/proj/out 와 없는 파일 nothing/here.mp4 는 링크 안 됨.");
         let paths = file_links_in(&text, &format!("{home}/proj"), home);
-        assert_eq!(paths.get("out/demo.mp4"), Some(&format!("{home}/proj/out/demo.mp4")));
-        assert_eq!(paths.get(&format!("{home}/proj/out")), Some(&format!("{home}/proj/out/")));
+        assert_eq!(paths.get("out/demo.mp4"), Some(&native(&format!("{home}/proj/out/demo.mp4"))));
+        assert_eq!(paths.get(&format!("{home}/proj/out")), Some(&native(&format!("{home}/proj/out/"))));
         assert_eq!(paths.get("nothing/here.mp4"), None);
         assert_eq!(paths.len(), 2);
     }
@@ -884,8 +893,8 @@ mod tests {
         let h = make_home();
         let home = &h.home;
         let paths = file_links_in("고친 곳: `out/demo.mp4:71-75`, old.txt:3:7", &format!("{home}/proj"), home);
-        assert_eq!(paths.get("out/demo.mp4:71-75"), Some(&format!("{home}/proj/out/demo.mp4")));
-        assert_eq!(paths.get("old.txt:3:7"), Some(&format!("{home}/proj/old.txt")));
+        assert_eq!(paths.get("out/demo.mp4:71-75"), Some(&native(&format!("{home}/proj/out/demo.mp4"))));
+        assert_eq!(paths.get("old.txt:3:7"), Some(&native(&format!("{home}/proj/old.txt"))));
     }
 
     #[test]
@@ -897,16 +906,17 @@ mod tests {
         let text = "old.txt와 ./out/demo.mp4. ~/proj/old.txt ../proj/out 그리고 /etc/hosts 및 a/b";
         let got = file_links_in(text, &cwd, home);
         let want: BTreeMap<String, String> = [
-            ("old.txt", format!("{home}/proj/old.txt")),
-            ("./out/demo.mp4", format!("{home}/proj/out/demo.mp4")),
-            ("~/proj/old.txt", format!("{home}/proj/old.txt")),
-            ("../proj/out", format!("{home}/proj/out/")),
+            ("old.txt", native(&format!("{home}/proj/old.txt"))),
+            ("./out/demo.mp4", native(&format!("{home}/proj/out/demo.mp4"))),
+            ("~/proj/old.txt", native(&format!("{home}/proj/old.txt"))),
+            ("../proj/out", native(&format!("{home}/proj/out/"))),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
         .collect();
         assert_eq!(got, want);
         // Unfiltered, /etc/hosts exists and is linked; the home filter is what drops it.
+        #[cfg(unix)]
         assert!(paths(text, &cwd, home).contains_key("/etc/hosts"));
         // Swift's lookbehind: no match may start right after a word or path character, so "~old.txt" is not "old.txt".
         assert!(file_links_in("zz~old.txt", &cwd, home).is_empty());
@@ -928,9 +938,9 @@ mod tests {
         ]);
         let v = chat_items_in(Some(f.path().to_str().unwrap()), Agent::Claude, &format!("{home}/proj"), false, home);
         let want = json!([
-            {"role": "me", "text": "look at old.txt", "files": {"old.txt": format!("{home}/proj/old.txt")}},
+            {"role": "me", "text": "look at old.txt", "files": {"old.txt": native(&format!("{home}/proj/old.txt"))}},
             {"role": "tool", "text": "Read · old.txt"},
-            {"role": "agent", "text": "It says old (out/demo.mp4 too).", "files": {"out/demo.mp4": format!("{home}/proj/out/demo.mp4")}},
+            {"role": "agent", "text": "It says old (out/demo.mp4 too).", "files": {"out/demo.mp4": native(&format!("{home}/proj/out/demo.mp4"))}},
         ]);
         assert_eq!(v, want);
         assert_eq!(chat_items_in(None, Agent::Claude, "/", false, home), json!([]));
