@@ -14,7 +14,16 @@
 <link rel="preload" as="image" href="img/w/field.webp" media="(min-width: 761px)">
 <link rel="preload" as="image" href="img/w/field-2k.webp" media="(max-width: 760px)">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<script>document.documentElement.classList.add('js');</script>
+<script>
+document.documentElement.classList.add('js');
+// English for every browser whose first language is not Korean; ?lang= and the header switch override it.
+(function () {
+  var q = /[?&]lang=(en|ko)/.exec(location.search), saved = null;
+  try { saved = localStorage.getItem('lang'); } catch (e) {}
+  var first = ((navigator.languages && navigator.languages[0]) || navigator.language || 'ko').toLowerCase();
+  document.documentElement.lang = q ? q[1] : saved || (first.indexOf('ko') === 0 ? 'ko' : 'en');
+})();
+</script>
 <style>
 :root {
   color-scheme: dark;
@@ -118,6 +127,7 @@ header nav a.btn { color: #22160a; padding: 6px 14px; font-size: 14px; }
 .opts li.cur::before { content: "› "; color: var(--gold); font-weight: 700; }
 .opts li.done { background: rgba(232, 180, 76, .16); color: var(--fg); }
 .opts li.done::after { content: " · 보냄"; color: var(--gold); font-size: 12px; }
+html[lang="en"] .opts li.done::after { content: " · sent"; }
 .badge { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 9px; background: var(--red); color: #fff; font-weight: 800; font-size: 12px; text-align: center; margin-right: 6px; }
 
 .odo { display: inline-flex; font-variant-numeric: tabular-nums; }
@@ -218,7 +228,7 @@ footer { position: relative; z-index: 3; background: var(--bg); margin-top: 72px
 footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
 @media (max-width: 760px) {
-  header nav a:not(.btn) { display: none; }
+  header nav a:not(.btn):not(.lang) { display: none; }
   .scrim, .stage[data-ch="0"] .scrim { background: linear-gradient(0deg, rgba(23,17,13,.97) 0, rgba(23,17,13,.88) 40%, rgba(23,17,13,0) 62%); }
   .js .chap, .js .chap.hero { left: 16px; right: 16px; width: auto; top: auto; bottom: 18px; text-align: left; transform: translateY(18px); }
   .js .chap.on, .js .chap.hero.on { transform: none; }
@@ -253,13 +263,14 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
 <header>
   <div class="bar">
-    <a class="brand" href="#top"><img src="img/icon.png" alt="">수혁</a>
+    <a class="brand" href="#top"><img src="img/icon.png" alt=""><span data-en="Suhyeok">수혁</span></a>
     <nav>
-      <a href="#video">영상</a>
-      <a href="#voice">음성</a>
-      <a href="#tester">Android 테스터</a>
+      <a href="#video" data-en="Video">영상</a>
+      <a href="#voice" data-en="Voice">음성</a>
+      <a href="#tester" data-en="Android testers">Android 테스터</a>
       <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
-      <a class="btn" href="#install">설치하기</a>
+      <a class="lang" href="?lang=en" lang="en">English</a>
+      <a class="btn" href="#install" data-en="Install">설치하기</a>
     </nav>
   </div>
   <div class="prog"></div>
@@ -271,113 +282,113 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
     <div class="scrim"></div>
 
     <div class="chap hero on">
-      <h1>에이전트가 지금 뭘 하는지,<br>지도 한 장에서 봅니다.</h1>
-      <p>여러 터미널에서 돌아가는 Claude Code와 Codex 세션이 캐릭터가 되어 한 지도에 모입니다. 누가 일하고 누가 답을 기다리는지 바로 보이고, 그 자리에서 지시를 보냅니다.</p>
+      <h1 data-en="Every agent at work,<br>on one map.">에이전트가 지금 뭘 하는지,<br>지도 한 장에서 봅니다.</h1>
+      <p data-en="Claude Code and Codex sessions running in different terminals become characters on a single map. See at a glance who is working and who is waiting for an answer, and send instructions right there.">여러 터미널에서 돌아가는 Claude Code와 Codex 세션이 캐릭터가 되어 한 지도에 모입니다. 누가 일하고 누가 답을 기다리는지 바로 보이고, 그 자리에서 지시를 보냅니다.</p>
       <div class="actions">
-        <a class="btn" href="#install">설치하기</a>
-        <a class="btn ghost" href="#video">1분 영상 보기</a>
-        <span class="sub">버전 0.2.3 · Apple Silicon Mac, macOS 14 이상 · Android 비공개 테스트 중</span>
+        <a class="btn" href="#install" data-en="Install">설치하기</a>
+        <a class="btn ghost" href="#video" data-en="Watch the video">1분 영상 보기</a>
+        <span class="sub" data-en="Version 0.2.3 · Apple Silicon Mac, macOS 14 or later · Android in closed testing">버전 0.2.3 · Apple Silicon Mac, macOS 14 이상 · Android 비공개 테스트 중</span>
       </div>
       <div class="scroll-hint">SCROLL</div>
     </div>
 
     <div class="chap">
-      <div class="num">01 소환</div>
-      <h2>세션을 열면 캐릭터가 소환됩니다.</h2>
-      <p>⌘N으로 작업 폴더와 첫 지시를 정합니다. 세션 하나에 캐릭터 한 명이 배정되고 캠프에 나타납니다. 세션은 전용 tmux 서버에서 돌아서 수혁을 꺼도 끊기지 않습니다.</p>
+      <div class="num" data-en="01 Summon">01 소환</div>
+      <h2 data-en="Open a session and a character is summoned.">세션을 열면 캐릭터가 소환됩니다.</h2>
+      <p data-en="Press ⌘N to pick a working folder and a first instruction. Each session gets one character, who appears at camp. Sessions run on their own tmux server, so they keep going even when you quit Suhyeok.">⌘N으로 작업 폴더와 첫 지시를 정합니다. 세션 하나에 캐릭터 한 명이 배정되고 캠프에 나타납니다. 세션은 전용 tmux 서버에서 돌아서 수혁을 꺼도 끊기지 않습니다.</p>
       <div class="mock">
-        <div class="field"><span class="lbl">작업 폴더</span><code>~/project/shop</code></div>
-        <div class="field"><span class="lbl">에이전트</span><span class="seg"><span class="on">Claude Code</span><span>Codex</span></span></div>
-        <div class="field"><span class="lbl">첫 지시</span><span>쿠폰이 두 번 적용되는 버그 고쳐 줘</span></div>
-        <div class="row"><span class="check opt">새 워크트리에서 시작</span><span class="kbd">시작 ⌘↩</span></div>
+        <div class="field"><span class="lbl" data-en="Folder">작업 폴더</span><code>~/project/shop</code></div>
+        <div class="field"><span class="lbl" data-en="Agent">에이전트</span><span class="seg"><span class="on">Claude Code</span><span>Codex</span></span></div>
+        <div class="field"><span class="lbl" data-en="First task">첫 지시</span><span data-en="Fix the bug where a coupon is applied twice">쿠폰이 두 번 적용되는 버그 고쳐 줘</span></div>
+        <div class="row"><span class="check opt" data-en="Start in a new worktree">새 워크트리에서 시작</span><span class="kbd" data-en="Start ⌘↩">시작 ⌘↩</span></div>
       </div>
     </div>
 
     <div class="chap">
-      <div class="num">02 작업</div>
-      <h2>일하는 동안 보스와 싸웁니다.</h2>
-      <p>답변을 쓰거나 명령을 실행하는 동안 캐릭터는 사냥터로 걸어가 공격합니다. 캐릭터를 누르면 대화창이 열리고, 답변이 작성되는 동안에도 내용이 보입니다.</p>
+      <div class="num" data-en="02 Work">02 작업</div>
+      <h2 data-en="While it works, it fights a boss.">일하는 동안 보스와 싸웁니다.</h2>
+      <p data-en="While writing an answer or running a command, the character walks to the hunting ground and attacks. Click the character to open the chat; you can read the answer while it is being written.">답변을 쓰거나 명령을 실행하는 동안 캐릭터는 사냥터로 걸어가 공격합니다. 캐릭터를 누르면 대화창이 열리고, 답변이 작성되는 동안에도 내용이 보입니다.</p>
       <div class="mock dlg">
         <img src="img/w/knight-portrait.webp" alt="">
         <div>
-          <div class="who">가웨인 <span>· shop · Claude Code</span></div>
-          <div class="you">쿠폰이 두 번 적용되는 버그 고쳐 줘</div>
-          <div class="stream" data-full="applyCoupon이 제출 버튼 클릭과 Enter 키에서 한 번씩, 모두 두 번 불립니다. 제출 중에는 다시 부르지 않게 막고 테스트를 추가하겠습니다." data-tool="Edit  src/checkout/coupon.ts"></div>
+          <div class="who"><span data-en="Gawain">가웨인</span> <span>· shop · Claude Code</span></div>
+          <div class="you" data-en="Fix the bug where a coupon is applied twice">쿠폰이 두 번 적용되는 버그 고쳐 줘</div>
+          <div class="stream" data-full="applyCoupon이 제출 버튼 클릭과 Enter 키에서 한 번씩, 모두 두 번 불립니다. 제출 중에는 다시 부르지 않게 막고 테스트를 추가하겠습니다." data-tool="Edit  src/checkout/coupon.ts" data-full-en="applyCoupon runs twice: once on the submit click and once on Enter. I’ll block repeat calls while the form is submitting and add a test."></div>
         </div>
       </div>
     </div>
 
     <div class="chap">
-      <div class="num">03 선택</div>
-      <h2>답을 기다리면 머리 위에 !가 뜹니다.</h2>
-      <p>권한 확인이 필요한 세션은 빨간 느낌표로 표시되고 알림이 옵니다. 대화창에서 화살표와 숫자 키로 답하고, Esc로 작업을 멈춥니다.</p>
+      <div class="num" data-en="03 Choice">03 선택</div>
+      <h2 data-en="When it needs an answer, a ! appears overhead.">답을 기다리면 머리 위에 !가 뜹니다.</h2>
+      <p data-en="A session that needs permission gets a red exclamation mark and sends a notification. Answer in the chat with the arrow and number keys, or press Esc to stop the task.">권한 확인이 필요한 세션은 빨간 느낌표로 표시되고 알림이 옵니다. 대화창에서 화살표와 숫자 키로 답하고, Esc로 작업을 멈춥니다.</p>
       <div class="mock ask">
-        <h4><span class="badge">!</span>가웨인이 묻습니다</h4>
-        <div>명령을 실행할까요? <code>npm test -- coupon</code></div>
+        <h4 data-en="<span class=&quot;badge&quot;>!</span>Gawain is asking"><span class="badge">!</span>가웨인이 묻습니다</h4>
+        <div data-en="Run this command? <code>npm test -- coupon</code>">명령을 실행할까요? <code>npm test -- coupon</code></div>
         <ul class="opts">
-          <li class="cur">1. 예</li>
-          <li class="opt">2. 예, 이 명령은 다시 묻지 않기</li>
-          <li>3. 아니요 (Esc)</li>
+          <li class="cur" data-en="1. Yes">1. 예</li>
+          <li class="opt" data-en="2. Yes, and don’t ask again for this command">2. 예, 이 명령은 다시 묻지 않기</li>
+          <li data-en="3. No (Esc)">3. 아니요 (Esc)</li>
         </ul>
       </div>
     </div>
 
     <div class="chap">
-      <div class="num">04 사냥터</div>
-      <h2>오래 일할수록 강한 보스와 싸웁니다.</h2>
-      <p>쉬지 않고 일한 시간에 따라 사냥터가 바뀝니다. 1시간 넘게 쉬면 시간은 처음부터 다시 셉니다.</p>
+      <div class="num" data-en="04 Hunting grounds">04 사냥터</div>
+      <h2 data-en="The longer it works, the stronger the boss.">오래 일할수록 강한 보스와 싸웁니다.</h2>
+      <p data-en="The hunting ground changes with how long it has worked without a break. After more than an hour of rest, the clock starts over.">쉬지 않고 일한 시간에 따라 사냥터가 바뀝니다. 1시간 넘게 쉬면 시간은 처음부터 다시 셉니다.</p>
       <div class="mock">
-        <div class="timer"><span class="big odo" data-odo="timer">00:42</span><span class="lbl">연속 작업 시간</span></div>
+        <div class="timer"><span class="big odo" data-odo="timer">00:42</span><span class="lbl" data-en="Continuous work time">연속 작업 시간</span></div>
         <ul class="tiers">
-          <li class="on">숲의 슬라임 왕 <span>5시간 미만</span></li>
-          <li>수정 동굴 골렘 <span>24시간 미만</span></li>
-          <li>화염 용왕 <span>24시간 이상</span></li>
+          <li class="on" data-en="Forest Slime King <span>under 5 h</span>">숲의 슬라임 왕 <span>5시간 미만</span></li>
+          <li data-en="Crystal Cave Golem <span>under 24 h</span>">수정 동굴 골렘 <span>24시간 미만</span></li>
+          <li data-en="Flame Dragon King <span>24 h and more</span>">화염 용왕 <span>24시간 이상</span></li>
         </ul>
       </div>
     </div>
 
     <div class="chap">
-      <div class="num">05 결정</div>
-      <h2>일한 만큼 결정이 쌓입니다.</h2>
-      <p>일한 시간, 끝낸 턴, 커밋 수만큼 결정이 모입니다. 결정으로 새 용병을 영입하거나 캐릭터 마켓에서 다른 사용자가 만든 캐릭터를 삽니다. 결정은 앱 안에서만 쓰고 현금으로 바꿀 수 없습니다.</p>
+      <div class="num" data-en="05 Crystals">05 결정</div>
+      <h2 data-en="Work earns crystals.">일한 만큼 결정이 쌓입니다.</h2>
+      <p data-en="Crystals pile up with work time, finished turns and commits. Spend them to recruit new mercenaries, or buy characters other users made in the Character Market. Crystals are for use inside the app only and can’t be exchanged for cash.">일한 시간, 끝낸 턴, 커밋 수만큼 결정이 모입니다. 결정으로 새 용병을 영입하거나 캐릭터 마켓에서 다른 사용자가 만든 캐릭터를 삽니다. 결정은 앱 안에서만 쓰고 현금으로 바꿀 수 없습니다.</p>
       <div class="mock">
-        <div class="bank"><img class="pixel" src="img/i/crystal.png" alt=""><span class="big odo" data-odo="bank">000</span><span class="lbl">결정<br>화면 예시</span></div>
-        <div class="src"><span>일한 시간</span><span>끝낸 턴</span><span>커밋</span></div>
+        <div class="bank"><img class="pixel" src="img/i/crystal.png" alt=""><span class="big odo" data-odo="bank">000</span><span class="lbl" data-en="Crystals<br>sample screen">결정<br>화면 예시</span></div>
+        <div class="src"><span data-en="Work time">일한 시간</span><span data-en="Finished turns">끝낸 턴</span><span data-en="Commits">커밋</span></div>
         <div class="heroes">
-          <figure><img class="pixel" src="img/p/archer.jpg" alt=""><figcaption>라이라</figcaption></figure>
-          <figure><img class="pixel" src="img/p/cat.jpg" alt=""><figcaption>모찌</figcaption></figure>
-          <figure><img class="pixel" src="img/p/alchemist.jpg" alt=""><figcaption>니코</figcaption></figure>
+          <figure><img class="pixel" src="img/p/archer.jpg" alt=""><figcaption data-en="Lyra">라이라</figcaption></figure>
+          <figure><img class="pixel" src="img/p/cat.jpg" alt=""><figcaption data-en="Mochi">모찌</figcaption></figure>
+          <figure><img class="pixel" src="img/p/alchemist.jpg" alt=""><figcaption data-en="Niko">니코</figcaption></figure>
         </div>
       </div>
     </div>
 
     <div class="chap">
-      <div class="num">06 음성</div>
-      <h2>말로 시키고, 답을 듣습니다.</h2>
-      <p>"수혁아" 다음에 캐릭터 이름과 지시를 말하면 그 세션으로 전달됩니다. 답변이 끝나면 누가 무엇을 했는지 짧게 요약해 읽어 줍니다.</p>
+      <div class="num" data-en="06 Voice">06 음성</div>
+      <h2 data-en="Speak an order, hear the answer.">말로 시키고, 답을 듣습니다.</h2>
+      <p data-en="Say “수혁아” (Suhyeok), a character’s name and an instruction, and it goes to that session. When the answer is done, Suhyeok reads a short summary of who did what. Voice understands Korean only for now.">"수혁아" 다음에 캐릭터 이름과 지시를 말하면 그 세션으로 전달됩니다. 답변이 끝나면 누가 무엇을 했는지 짧게 요약해 읽어 줍니다.</p>
       <div class="mock">
         <span class="pill"><i></i><span class="vstate">듣고 있어요</span></span>
         <canvas class="wave" aria-hidden="true"></canvas>
         <div class="lines">
-          <p><b>나</b> 수혁아, 가웨인 커밋해 줘</p>
-          <p class="off"><b>수혁</b> 가웨인이 쿠폰 중복 적용 버그를 고치고 커밋했습니다.</p>
+          <p data-en="<b>You</b> 수혁아, 가웨인 커밋해 줘 (“Suhyeok, Gawain, commit it”)"><b>나</b> 수혁아, 가웨인 커밋해 줘</p>
+          <p class="off" data-en="<b>Suhyeok</b> Gawain fixed the double coupon bug and committed."><b>수혁</b> 가웨인이 쿠폰 중복 적용 버그를 고치고 커밋했습니다.</p>
         </div>
       </div>
     </div>
 
     <div class="chap">
-      <div class="num">07 휴대폰</div>
-      <h2>자리를 비워도 폰으로 지휘합니다.</h2>
-      <p>Mac의 QR을 찍고 Mac에서 허용하면 연결됩니다. 휴대폰에서 지도와 대화를 보고, 지시를 보내고, 선택지에 답합니다.</p>
-      <div class="actions"><a class="btn ghost" href="#tester">Android 테스터로 참여하기</a></div>
+      <div class="num" data-en="07 Phone">07 휴대폰</div>
+      <h2 data-en="Away from your desk, lead from your phone.">자리를 비워도 폰으로 지휘합니다.</h2>
+      <p data-en="Scan the QR code on the Mac and allow it on the Mac to connect. On the phone you see the map and the chats, send instructions and answer choices.">Mac의 QR을 찍고 Mac에서 허용하면 연결됩니다. 휴대폰에서 지도와 대화를 보고, 지시를 보내고, 선택지에 답합니다.</p>
+      <div class="actions"><a class="btn ghost" href="#tester" data-en="Join the Android test">Android 테스터로 참여하기</a></div>
     </div>
 
     <div class="chap">
-      <div class="num">08 휴식</div>
-      <h2>일이 끝나면 캠프로 돌아와 쉽니다.</h2>
-      <p>1시간 넘게 조용한 세션은 캠프 모닥불 옆에서 잠듭니다. 세션 상태는 이 Mac의 <code>~/.claude</code>와 <code>~/.codex</code> 파일에서 읽고, tmux·Orca·cmux 터미널 화면도 그대로 읽어 옵니다.</p>
+      <div class="num" data-en="08 Rest">08 휴식</div>
+      <h2 data-en="When the work is done, they rest at camp.">일이 끝나면 캠프로 돌아와 쉽니다.</h2>
+      <p data-en="Sessions quiet for more than an hour fall asleep by the campfire. Session state comes from the <code>~/.claude</code> and <code>~/.codex</code> files on this Mac, and terminal screens are read straight from tmux, Orca and cmux.">1시간 넘게 조용한 세션은 캠프 모닥불 옆에서 잠듭니다. 세션 상태는 이 Mac의 <code>~/.claude</code>와 <code>~/.codex</code> 파일에서 읽고, tmux·Orca·cmux 터미널 화면도 그대로 읽어 옵니다.</p>
       <div class="actions">
-        <a class="btn" href="#install">설치하기</a>
+        <a class="btn" href="#install" data-en="Install">설치하기</a>
         <a class="btn ghost" href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
       </div>
     </div>
@@ -392,8 +403,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 <main class="wrap">
 
 <section id="video">
-  <h2>영상으로 보기</h2>
-  <p class="section-note">세션 소환부터 폰으로 지휘하기까지 1분 안에 봅니다.</p>
+  <h2 data-en="Watch the video">영상으로 보기</h2>
+  <p class="section-note" data-en="From summoning a session to leading from your phone, in under a minute.">세션 소환부터 폰으로 지휘하기까지 1분 안에 봅니다.</p>
   <div class="videos">
     <div class="vid" data-lang="ko">
       <figure>
@@ -438,11 +449,10 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
     </div>
   </div>
   <script>
-  // Korean video for browsers whose first language is Korean, English video for everyone else.
+  // The page language (set in <head>) picks the first video; the caption links switch between them.
   (function () {
     var box = document.querySelector('.videos');
-    var lang = ((navigator.languages && navigator.languages[0]) || navigator.language || 'ko').toLowerCase();
-    if (lang.indexOf('ko') !== 0) box.classList.add('en');
+    if (document.documentElement.lang === 'en') box.classList.add('en');
     box.addEventListener('click', function (e) {
       var c = e.target.closest('[data-t]');
       if (c) {
@@ -460,78 +470,78 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 </section>
 
 <section id="voice">
-  <h2>말로 지시하기</h2>
-  <p class="section-note">설정(⌘,)에서 <b>"수혁아"로 음성 지시</b>를 켜면 수혁이 "수혁아"를 기다립니다. 키보드에 손을 대지 않고 에이전트에게 일을 시키고 답을 들을 수 있습니다.</p>
+  <h2 data-en="Voice commands">말로 지시하기</h2>
+  <p class="section-note" data-en="Turn on <b>Voice commands with “수혁아”</b> in Settings (⌘,) and Suhyeok waits for its name, “수혁아”. Give agents work and hear their answers without touching the keyboard. <b>Voice understands Korean only for now.</b>">설정(⌘,)에서 <b>"수혁아"로 음성 지시</b>를 켜면 수혁이 "수혁아"를 기다립니다. 키보드에 손을 대지 않고 에이전트에게 일을 시키고 답을 들을 수 있습니다.</p>
   <div class="voice">
     <div>
       <ol>
-        <li><span class="say">"수혁아, 펠릭스 커밋해 줘"</span>처럼 호출어 뒤에 에이전트 이름과 지시를 말합니다. 지시는 펠릭스의 세션으로 전달됩니다.</li>
-        <li>대답이 오가고 1분 동안은 호출어 없이 바로 말해도 됩니다. 이름을 빼면 마지막으로 말을 건 에이전트에게 갑니다.</li>
-        <li>에이전트가 답을 마치면 수혁이 읽어 줍니다. 누가, 어떤 요청에, 무엇을 했는지 먼저 말하고 결론을 짧게 전합니다. 여러 에이전트가 동시에 끝나면 차례로 읽습니다.</li>
-        <li><span class="say">"그만"</span>이나 <span class="say">"고마워"</span>라고 하면 대화가 끝납니다.</li>
+        <li data-en="After the wake word, say an agent’s name and an instruction, as in <span class=&quot;say&quot;>“수혁아, 펠릭스 커밋해 줘”</span> (“Suhyeok, Felix, commit it”). The instruction goes to Felix’s session."><span class="say">"수혁아, 펠릭스 커밋해 줘"</span>처럼 호출어 뒤에 에이전트 이름과 지시를 말합니다. 지시는 펠릭스의 세션으로 전달됩니다.</li>
+        <li data-en="For a minute after each exchange you can talk without the wake word. Leave out the name and it goes to the last agent you spoke to.">대답이 오가고 1분 동안은 호출어 없이 바로 말해도 됩니다. 이름을 빼면 마지막으로 말을 건 에이전트에게 갑니다.</li>
+        <li data-en="When an agent finishes, Suhyeok reads the answer aloud: first who did what for which request, then a short conclusion. If several agents finish at once, it reads them in turn.">에이전트가 답을 마치면 수혁이 읽어 줍니다. 누가, 어떤 요청에, 무엇을 했는지 먼저 말하고 결론을 짧게 전합니다. 여러 에이전트가 동시에 끝나면 차례로 읽습니다.</li>
+        <li data-en="Say <span class=&quot;say&quot;>“그만”</span> (stop) or <span class=&quot;say&quot;>“고마워”</span> (thanks) to end the conversation."><span class="say">"그만"</span>이나 <span class="say">"고마워"</span>라고 하면 대화가 끝납니다.</li>
       </ol>
-      <p>창 위쪽의 대화 모드를 켜면 호출어 없이 계속 듣습니다. 대화창 입력칸에서는 마이크 버튼으로 받아쓰기를 합니다. 이름은 발음이 조금 달라도 알아듣습니다. 예를 들어 "필릭스"라고 들려도 펠릭스로 처리합니다.</p>
-      <p>음성 인식은 가능하면 Mac 안에서 처리하고, 답변 요약은 Mac 안의 Apple 모델이 합니다. 읽어 주는 목소리는 Supertonic 모델(약 400MB)을 처음 쓸 때 내려받으며, 받는 동안에는 macOS 기본 음성으로 읽습니다. macOS 설정의 받아쓰기가 켜져 있어야 하고, 처음 쓸 때 마이크와 음성 인식 권한을 허용해야 합니다.</p>
+      <p data-en="Turn on talk mode at the top of the window and it keeps listening without the wake word. In the chat input, the microphone button takes dictation. Names are understood even when they sound a little off: “필릭스” still goes to Felix (펠릭스).">창 위쪽의 대화 모드를 켜면 호출어 없이 계속 듣습니다. 대화창 입력칸에서는 마이크 버튼으로 받아쓰기를 합니다. 이름은 발음이 조금 달라도 알아듣습니다. 예를 들어 "필릭스"라고 들려도 펠릭스로 처리합니다.</p>
+      <p data-en="Speech recognition runs on the Mac where possible, and Apple’s on-device model writes the summaries. The reading voice uses the Supertonic model (about 400 MB), downloaded on first use; until it arrives, the default macOS voice reads. Dictation must be on in macOS Settings, and the first time you need to allow microphone and speech recognition access.">음성 인식은 가능하면 Mac 안에서 처리하고, 답변 요약은 Mac 안의 Apple 모델이 합니다. 읽어 주는 목소리는 Supertonic 모델(약 400MB)을 처음 쓸 때 내려받으며, 받는 동안에는 macOS 기본 음성으로 읽습니다. macOS 설정의 받아쓰기가 켜져 있어야 하고, 처음 쓸 때 마이크와 음성 인식 권한을 허용해야 합니다.</p>
     </div>
     <figure>
-      <img src="img/talk.png" alt="음성 상태 표시: 이름을 불러 주세요, 펠릭스에게 보냄, 듣고 있어요, 말하는 중" loading="lazy">
-      <figcaption>창 위쪽 상태 표시. 지금 누구에게 말하는 중인지, 듣는 중인지 읽는 중인지 보여 줍니다.</figcaption>
+      <img src="img/talk.png" alt="음성 상태 표시: 이름을 불러 주세요, 펠릭스에게 보냄, 듣고 있어요, 말하는 중" data-en-alt="Voice status: say a name, sent to Felix, listening, speaking" loading="lazy">
+      <figcaption data-en="The status at the top of the window: who you are talking to, and whether it is listening or reading.">창 위쪽 상태 표시. 지금 누구에게 말하는 중인지, 듣는 중인지 읽는 중인지 보여 줍니다.</figcaption>
     </figure>
   </div>
 </section>
 
 <section id="tester">
-  <h2>Android 비공개 테스터 모집</h2>
-  <p class="section-note">Google Play에 정식으로 내려면 테스터 12명이 14일 동안 앱을 설치해 두어야 합니다. Mac이 없어도 체험 모드로 참여할 수 있습니다.</p>
+  <h2 data-en="Android closed testers wanted">Android 비공개 테스터 모집</h2>
+  <p class="section-note" data-en="To launch on Google Play, 12 testers need to keep the app installed for 14 days. You can take part without a Mac in demo mode.">Google Play에 정식으로 내려면 테스터 12명이 14일 동안 앱을 설치해 두어야 합니다. Mac이 없어도 체험 모드로 참여할 수 있습니다.</p>
 
   <div class="tester">
     <div>
       <ol>
-        <li>테스터 그룹에 가입합니다. Google 계정으로 로그인한 뒤 <b>그룹 가입</b>을 누릅니다.<br>
-          <a class="btn" href="https://groups.google.com/g/suhyeok-testers">테스터 그룹 열기</a></li>
-        <li>같은 계정으로 테스트 참여 페이지를 열고 <b>테스터 되기</b>를 누릅니다.<br>
-          <a class="btn" href="https://play.google.com/apps/testing/com.pickuma.suhyeok">테스트 참여하기</a></li>
-        <li>참여 페이지의 링크로 Google Play에서 수혁을 설치합니다. 가입 직후에는 스토어에 반영되기까지 몇 분 걸릴 수 있습니다.</li>
-        <li>14일 동안 앱을 지우지 말아 주세요. Mac이 없다면 첫 화면에서 <b>Mac 없이 둘러보기</b>를 누르면 예시 세션으로 모든 화면을 볼 수 있습니다.</li>
+        <li><span data-en="Join the tester group. Sign in with your Google account and click <b>Join group</b>.">테스터 그룹에 가입합니다. Google 계정으로 로그인한 뒤 <b>그룹 가입</b>을 누릅니다.</span><br>
+          <a class="btn" href="https://groups.google.com/g/suhyeok-testers" data-en="Open the tester group">테스터 그룹 열기</a></li>
+        <li><span data-en="With the same account, open the testing page and click <b>Become a tester</b>.">같은 계정으로 테스트 참여 페이지를 열고 <b>테스터 되기</b>를 누릅니다.</span><br>
+          <a class="btn" href="https://play.google.com/apps/testing/com.pickuma.suhyeok" data-en="Join the test">테스트 참여하기</a></li>
+        <li data-en="Install Suhyeok from Google Play with the link on the testing page. Right after joining, it can take a few minutes to show up in the store.">참여 페이지의 링크로 Google Play에서 수혁을 설치합니다. 가입 직후에는 스토어에 반영되기까지 몇 분 걸릴 수 있습니다.</li>
+        <li data-en="Please keep the app for 14 days. No Mac? Tap <b>Try without a Mac</b> on the first screen to see every screen with sample sessions.">14일 동안 앱을 지우지 말아 주세요. Mac이 없다면 첫 화면에서 <b>Mac 없이 둘러보기</b>를 누르면 예시 세션으로 모든 화면을 볼 수 있습니다.</li>
       </ol>
-      <p>불편한 점은 대화 입력창에 <code>/피드백 내용</code>을 적어 보내거나 <a href="https://github.com/oyhoyhk/suhyeok/issues">GitHub 이슈</a>에 남겨 주세요. 앱은 광고가 없고, 개인정보를 수집하지 않습니다. <a href="https://suhyeok-feedback.pickuma.workers.dev/privacy">개인정보처리방침</a></p>
+      <p data-en="Send problems by typing <code>/feedback your message</code> in the chat input, or open a <a href=&quot;https://github.com/oyhoyhk/suhyeok/issues&quot;>GitHub issue</a>. The app has no ads and collects no personal data. <a href=&quot;https://suhyeok-feedback.pickuma.workers.dev/privacy&quot;>Privacy policy</a>">불편한 점은 대화 입력창에 <code>/피드백 내용</code>을 적어 보내거나 <a href="https://github.com/oyhoyhk/suhyeok/issues">GitHub 이슈</a>에 남겨 주세요. 앱은 광고가 없고, 개인정보를 수집하지 않습니다. <a href="https://suhyeok-feedback.pickuma.workers.dev/privacy">개인정보처리방침</a></p>
     </div>
     <div class="phones">
-      <figure><img src="img/phone/1-sessions.jpg" alt="세션 목록. 선택 필요, 작업 중, 다음 지시 대기, 휴식 중으로 나뉜 에이전트" loading="lazy"><figcaption>세션 목록</figcaption></figure>
-      <figure><img src="img/phone/2-chat.jpg" alt="에이전트와 주고받은 대화와 넓은 입력창" loading="lazy"><figcaption>대화</figcaption></figure>
-      <figure><img src="img/phone/3-commands.jpg" alt="더보기 서랍의 파일, 음성, 빠른 키와 Claude 명령 버튼" loading="lazy"><figcaption>모델별 명령</figcaption></figure>
-      <figure><img src="img/phone/4-menu.jpg" alt="권한 질문에 예, 아니요, 취소로 답하는 선택 카드" loading="lazy"><figcaption>선택지에 답하기</figcaption></figure>
+      <figure><img src="img/phone/1-sessions.jpg" alt="세션 목록. 선택 필요, 작업 중, 다음 지시 대기, 휴식 중으로 나뉜 에이전트" data-en-alt="Session list: agents grouped by needs a choice, working, waiting for the next task and resting" loading="lazy"><figcaption data-en="Sessions">세션 목록</figcaption></figure>
+      <figure><img src="img/phone/2-chat.jpg" alt="에이전트와 주고받은 대화와 넓은 입력창" data-en-alt="A chat with an agent and a wide input box" loading="lazy"><figcaption data-en="Chat">대화</figcaption></figure>
+      <figure><img src="img/phone/3-commands.jpg" alt="더보기 서랍의 파일, 음성, 빠른 키와 Claude 명령 버튼" data-en-alt="The More drawer with files, voice, quick keys and Claude command buttons" loading="lazy"><figcaption data-en="Commands per model">모델별 명령</figcaption></figure>
+      <figure><img src="img/phone/4-menu.jpg" alt="권한 질문에 예, 아니요, 취소로 답하는 선택 카드" data-en-alt="A choice card answering a permission question with yes, no or cancel" loading="lazy"><figcaption data-en="Answering choices">선택지에 답하기</figcaption></figure>
     </div>
   </div>
 </section>
 
 <section id="install">
-  <h2>설치</h2>
-  <p class="section-note">Mac 앱을 먼저 설치합니다. 휴대폰 연결은 필요할 때 추가합니다.</p>
+  <h2 data-en="Install">설치</h2>
+  <p class="section-note" data-en="Install the Mac app first. Add a phone connection when you need it.">Mac 앱을 먼저 설치합니다. 휴대폰 연결은 필요할 때 추가합니다.</p>
 
   <div class="install">
     <div>
       <div class="install-head"><img class="pixel" src="img/i/mac.png" alt=""><h3>Mac</h3></div>
       <ol>
-        <li>Homebrew로 설치합니다. tmux도 함께 설치됩니다.
+        <li><span data-en="Install with Homebrew. tmux comes along.">Homebrew로 설치합니다. tmux도 함께 설치됩니다.</span>
           <pre><code>brew install oyhoyhk/tap/suhyeok</code></pre></li>
-        <li>실행합니다.
+        <li><span data-en="Run it.">실행합니다.</span>
           <pre><code>suhyeok</code></pre></li>
-        <li>Launchpad와 Spotlight에서 찾으려면 링크를 만듭니다. (선택)
+        <li><span data-en="To find it in Launchpad and Spotlight, make a link. (optional)">Launchpad와 Spotlight에서 찾으려면 링크를 만듭니다. (선택)</span>
           <pre><code>ln -sf "$(brew --prefix)/opt/suhyeok/수혁.app" ~/Applications/수혁.app</code></pre></li>
       </ol>
-      <p>Claude Code나 Codex CLI가 설치되어 있어야 합니다. Homebrew가 없다면 <a href="https://brew.sh">brew.sh</a>에서 먼저 설치하세요. 새 버전이 나오면 사이드바에 업데이트 버튼이 생깁니다.</p>
+      <p data-en="You need Claude Code or the Codex CLI. No Homebrew? Install it from <a href=&quot;https://brew.sh&quot;>brew.sh</a> first. When a new version is out, an update button appears in the sidebar.">Claude Code나 Codex CLI가 설치되어 있어야 합니다. Homebrew가 없다면 <a href="https://brew.sh">brew.sh</a>에서 먼저 설치하세요. 새 버전이 나오면 사이드바에 업데이트 버튼이 생깁니다.</p>
     </div>
 
     <div>
-      <div class="install-head"><img class="pixel" src="img/i/android.png" alt=""><h3>휴대폰</h3></div>
-      <p><b>Android 앱은 비공개 테스트 중입니다.</b> <a href="#tester">테스터로 참여</a>하면 Google Play에서 설치할 수 있습니다. 테스터가 아니라면 휴대폰 브라우저로 연결합니다.</p>
+      <div class="install-head"><img class="pixel" src="img/i/android.png" alt=""><h3 data-en="Phone">휴대폰</h3></div>
+      <p data-en="<b>The Android app is in closed testing.</b> <a href=&quot;#tester&quot;>Join as a tester</a> to install it from Google Play. Otherwise, connect from your phone’s browser."><b>Android 앱은 비공개 테스트 중입니다.</b> <a href="#tester">테스터로 참여</a>하면 Google Play에서 설치할 수 있습니다. 테스터가 아니라면 휴대폰 브라우저로 연결합니다.</p>
       <ol>
-        <li>Mac의 수혁에서 설정(⌘,)을 열고 <b>모바일 접속</b>을 켭니다. QR 코드가 나옵니다. 2026년 10월 12일 이전에 수혁을 설치했다면 먼저 터미널에서 <code>brew install cloudflared</code>를 실행합니다.</li>
-        <li>휴대폰 카메라로 QR을 찍습니다. 브라우저에서 수혁 화면이 열립니다.</li>
-        <li>Mac에 뜬 창에서 <b>허용</b>을 누르면 연결됩니다.</li>
+        <li data-en="In Suhyeok on the Mac, open Settings (⌘,) and turn on <b>Mobile access</b>. A QR code appears. If you installed Suhyeok before October 12, 2026, first run <code>brew install cloudflared</code> in Terminal.">Mac의 수혁에서 설정(⌘,)을 열고 <b>모바일 접속</b>을 켭니다. QR 코드가 나옵니다. 2026년 10월 12일 이전에 수혁을 설치했다면 먼저 터미널에서 <code>brew install cloudflared</code>를 실행합니다.</li>
+        <li data-en="Scan the QR code with your phone’s camera. Suhyeok opens in the browser.">휴대폰 카메라로 QR을 찍습니다. 브라우저에서 수혁 화면이 열립니다.</li>
+        <li data-en="Click <b>Allow</b> in the window on the Mac to connect.">Mac에 뜬 창에서 <b>허용</b>을 누르면 연결됩니다.</li>
       </ol>
-      <p>QR은 한 번만 쓸 수 있고, 연결된 기기는 같은 설정 화면에서 끊을 수 있습니다. Mac에서 수혁을 다시 실행하면 접속 주소가 바뀝니다. 이때는 휴대폰에서 QR을 다시 찍어야 합니다.</p>
+      <p data-en="Each QR code works once, and you can disconnect devices on the same settings screen. Restarting Suhyeok on the Mac changes the address; scan the QR code again on your phone when that happens.">QR은 한 번만 쓸 수 있고, 연결된 기기는 같은 설정 화면에서 끊을 수 있습니다. Mac에서 수혁을 다시 실행하면 접속 주소가 바뀝니다. 이때는 휴대폰에서 QR을 다시 찍어야 합니다.</p>
     </div>
   </div>
 </section>
@@ -540,12 +550,44 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 
 <footer>
   <div class="wrap">
-    <span>만든 사람: 오윤환</span>
+    <span data-en="Made by 오윤환 (Owen)">만든 사람: 오윤환</span>
     <a href="https://github.com/oyhoyhk/suhyeok">GitHub</a>
-    <a href="https://github.com/oyhoyhk/suhyeok/releases">릴리스</a>
+    <a href="https://github.com/oyhoyhk/suhyeok/releases" data-en="Releases">릴리스</a>
   </div>
 </footer>
 
+<script>
+// Page language: every [data-en] element and [data-en-alt] image keeps its Korean copy in data-ko and
+// swaps between the two. The header link switches and remembers the choice.
+(function () {
+  var root = document.documentElement, sw = document.querySelector('header .lang');
+  function each(sel, f) { Array.prototype.forEach.call(document.querySelectorAll(sel), f); }
+  function apply(lang) {
+    var en = lang === 'en';
+    root.lang = lang;
+    document.title = en ? 'Suhyeok' : '수혁';
+    each('[data-en]', function (el) {
+      if (el.dataset.ko === undefined) el.dataset.ko = el.innerHTML;
+      el.innerHTML = en ? el.dataset.en : el.dataset.ko;
+    });
+    each('[data-en-alt]', function (el) {
+      if (el.dataset.koAlt === undefined) el.dataset.koAlt = el.alt;
+      el.alt = en ? el.dataset.enAlt : el.dataset.koAlt;
+    });
+    document.querySelector('.videos').classList.toggle('en', en);
+    sw.textContent = en ? '한국어' : 'English';
+    sw.lang = en ? 'ko' : 'en';
+    sw.href = '?lang=' + (en ? 'ko' : 'en');
+  }
+  if (root.lang === 'en') apply('en');
+  sw.addEventListener('click', function (e) {
+    e.preventDefault();
+    var next = root.lang === 'en' ? 'ko' : 'en';
+    try { localStorage.setItem('lang', next); } catch (err) {}
+    apply(next);
+  });
+})();
+</script>
 <script>
 // Scroll story: one knight walks the hunting-ground map. Each chapter sets a camera pose and a
 // knight target; scroll interpolates between them and springs smooth the motion (Arca Ring style).
@@ -838,9 +880,10 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   var stream = $('.stream'), opts = $$('.opts li'), tiers = $$('.tiers li'), srcs = $$('.src span'), heroes = $$('.heroes figure');
   var vstate = $('.vstate'), lines = $$('.lines p'), wave = $('canvas.wave'), wctx = wave.getContext('2d');
   var phoneImgs = $$('img', phone), bankHits = 0;
+  var VOICE = { ko: ['듣고 있어요', '가웨인에게 보냄', '가웨인이 일하는 중', '말하는 중'], en: ['Listening', 'Sent to Gawain', 'Gawain is working', 'Speaking'] };
   function chapterUI(i, t) {
     if (i === 2) {
-      var full = stream.dataset.full, n = Math.round(seg(t, 0.5, 0.92) * full.length);
+      var full = document.documentElement.lang === 'en' ? stream.dataset.fullEn : stream.dataset.full, n = Math.round(seg(t, 0.5, 0.92) * full.length);
       stream.innerHTML = full.slice(0, n) + (n < full.length ? '<span class="caret"></span>' : '<span class="tool">' + stream.dataset.tool + '</span>');
     }
     if (i === 3) {
@@ -862,7 +905,8 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
       heroes.forEach(function (h, n) { h.classList.toggle('on', v >= 40 * (n + 1)); });
     } else bankHits = 0;
     if (i === 6) {
-      var st = t < 0.3 ? '듣고 있어요' : t < 0.55 ? '가웨인에게 보냄' : t < 0.72 ? '가웨인이 일하는 중' : '말하는 중';
+      var vs = document.documentElement.lang === 'en' ? VOICE.en : VOICE.ko;
+      var st = t < 0.3 ? vs[0] : t < 0.55 ? vs[1] : t < 0.72 ? vs[2] : vs[3];
       if (vstate.textContent !== st) vstate.textContent = st;
       lines[1].classList.toggle('off', t < 0.72);
       drawWave(t < 0.3 || t >= 0.72);
