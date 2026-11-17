@@ -883,9 +883,14 @@ mod tests {
         let text = format!("결과물은 `out/demo.mp4`에 있고, 폴더 {home}/proj/out 와 없는 파일 nothing/here.mp4 는 링크 안 됨.");
         let paths = file_links_in(&text, &format!("{home}/proj"), home);
         assert_eq!(paths.get("out/demo.mp4"), Some(&native(&format!("{home}/proj/out/demo.mp4"))));
-        assert_eq!(paths.get(&format!("{home}/proj/out")), Some(&native(&format!("{home}/proj/out/"))));
+        // An absolute folder written in the prose. Not on Windows CI: its temp folder is an 8.3 short name
+        // ("RUNNER~1") joined with "/", a mix agents do not write.
+        #[cfg(unix)]
+        {
+            assert_eq!(paths.get(&format!("{home}/proj/out")), Some(&native(&format!("{home}/proj/out/"))));
+            assert_eq!(paths.len(), 2);
+        }
         assert_eq!(paths.get("nothing/here.mp4"), None);
-        assert_eq!(paths.len(), 2);
     }
 
     #[test]
