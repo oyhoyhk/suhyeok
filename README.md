@@ -1,5 +1,7 @@
 <p align="center"><img src="assets/logo.png" width="640" alt="SUHYEOK"></p>
 
+<p align="center"><b>한국어</b> · <a href="README.en.md">English</a></p>
+
 # 수혁 — 로컬 에이전트 세션을 한 화면에서 지휘하는 맥 앱
 
 > **수**십 명의 에이전트가 제각각 일해도
@@ -92,7 +94,7 @@ flowchart LR
     W -->|터미널 보기| T["cmux read-screen<br/>(CMUX_SURFACE_ID)"]
 ```
 
-- 모든 데이터는 로컬 파일에서 읽음. 네트워크 전송 없음
+- 세션 데이터는 로컬 파일에서만 읽고 밖으로 보내지 않음. 네트워크는 업데이트 확인, 켜 둔 경우의 모바일 접속(Cloudflare 터널)과 결정 서버 정산, `/피드백` 전송, 음성 모델 첫 다운로드에만 씀
 - Codex 세션은 레지스트리가 없어 "최근 30분 갱신"으로 추정함 (카드에 "추정" 표시)
 
 ## 실행
