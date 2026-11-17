@@ -4,7 +4,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-use tauri::{Manager, Url};
+use tauri::webview::NewWindowResponse;
+use tauri::{Manager, Url, WebviewWindowBuilder};
 
 /// Where the app's own files are served from (differs per platform in Tauri 2).
 fn local(path: &str) -> Url {
@@ -12,9 +13,40 @@ fn local(path: &str) -> Url {
     Url::parse(base).unwrap().join(path).unwrap()
 }
 
+/// Opens a web link in the system's default browser. Spawned directly (no shell), so `&` in a URL stays intact.
+fn open_in_browser(url: &Url) {
+    let (cmd, args): (&str, Vec<&str>) = if cfg!(windows) {
+        ("rundll32", vec!["url.dll,FileProtocolHandler", url.as_str()])
+    } else if cfg!(target_os = "macos") {
+        ("open", vec![url.as_str()])
+    } else {
+        ("xdg-open", vec![url.as_str()])
+    };
+    if let Err(e) = std::process::Command::new(cmd).args(args).spawn() {
+        eprintln!("[suhyeok] open {url}: {e}");
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            // The main window is built here, not from tauri.conf.json ("create": false), to handle new-window requests:
+            // links in the dialogue are target="_blank". Links to other sites open in the default browser; links to
+            // the 수혁 server itself (attached files) keep the default popup, which shares the page's session.
+            let config = app.config().app.windows.iter().find(|w| w.label == "main").cloned().expect("main window config");
+            let handle = app.handle().clone();
+            WebviewWindowBuilder::from_config(app, &config)?
+                .on_new_window(move |url, _features| {
+                    let current = handle.get_webview_window("main").and_then(|w| w.url().ok());
+                    if current.is_some_and(|c| c.origin() == url.origin()) {
+                        return NewWindowResponse::Allow;
+                    }
+                    if matches!(url.scheme(), "http" | "https") {
+                        open_in_browser(&url);
+                    }
+                    NewWindowResponse::Deny
+                })
+                .build()?;
             let reload = MenuItemBuilder::with_id("reload", "다시 연결").accelerator("F5").build(app)?;
             let setup = MenuItemBuilder::with_id("setup", "연결 주소 바꾸기").build(app)?;
             let file = SubmenuBuilder::new(app, "수혁")

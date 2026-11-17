@@ -6,7 +6,7 @@
   "build": { "frontendDist": "../ui" },
   "app": {
     "windows": [
-      { "label": "main", "title": "수혁", "url": "index.html", "width": 1280, "height": 820, "minWidth": 800, "minHeight": 560 }
+      { "label": "main", "create": false, "title": "수혁", "url": "index.html", "width": 1280, "height": 820, "minWidth": 800, "minHeight": 560 }
     ],
     "security": { "csp": null }
   },
