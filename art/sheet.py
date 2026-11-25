@@ -40,14 +40,21 @@ def cuts(sheet: Image.Image, n: int, axis: int) -> list:
     return out + [len(profile)]
 
 
-def drop_floor_shadow(img: Image.Image) -> Image.Image:
+def shadow_magenta(r, g, b, keep_pink: bool = False):
+    """Magenta-hued pixels (floor shadow, background fringe). keep_pink spares light pinks (green >= 70), for pink
+    characters whose hair or dress would match; off by default because it keeps a pink halo around effects."""
+    m = (r > g + 40) & (b > g + 40) & (abs(r - b) < 90)
+    return m & (g < 70) if keep_pink else m
+
+
+def drop_floor_shadow(img: Image.Image, keep_pink: bool = False) -> Image.Image:
     """The model paints a dark magenta floor shadow despite "no shadows"; clear magenta-hued pixels in the
     bottom strip only, so purple clothing higher up stays."""
     a = np.asarray(img).copy()
     r, g, b = (a[..., i].astype(int) for i in range(3))
     strip = np.zeros(a.shape[:2], bool)
     strip[int(a.shape[0] * 0.92):] = True
-    magenta = (r > g + 40) & (b > g + 40) & (abs(r - b) < 90)
+    magenta = shadow_magenta(r, g, b, keep_pink)
     a[strip & magenta, 3] = 0
     out = Image.fromarray(a, "RGBA")
     return out.crop(out.getbbox())
@@ -119,11 +126,11 @@ def components(mask):
     return label, info
 
 
-def split_strip(strip: Image.Image, n: int = 6, effects_left: bool = False):
+def split_strip(strip: Image.Image, n: int = 6, effects_left: bool = False, keep_pink: bool = False):
     """Split a strip into n frames by blobs instead of straight cuts, so a hammer or cape that reaches into the
     neighbour's column stays with its own figure. Falls back to column cuts when figures touch each other."""
     small = strip.resize((strip.width // 3, strip.height // 3), Image.LANCZOS)
-    keyed = drop_floor_shadow_full(key_background(small, crop=False))
+    keyed = drop_floor_shadow_full(key_background(small, crop=False), keep_pink)
     a = np.asarray(keyed)
     label, info = components(a[..., 3] > 0)
     bodies = sorted(range(1, len(info)), key=lambda i: -info[i][0])[:n]
@@ -161,10 +168,10 @@ def split_strip(strip: Image.Image, n: int = 6, effects_left: bool = False):
     return frames
 
 
-def drop_floor_shadow_full(img):
+def drop_floor_shadow_full(img, keep_pink: bool = False):
     a = np.asarray(img).copy()
     r, g, b = (a[..., i].astype(int) for i in range(3))
-    magenta = (r > g + 40) & (b > g + 40) & (abs(r - b) < 90)
+    magenta = shadow_magenta(r, g, b, keep_pink)
     a[magenta, 3] = 0
     return Image.fromarray(a, "RGBA")
 
@@ -319,17 +326,18 @@ def slice_work_strips(char: str, variant: str = "a"):
     return done
 
 
-def slice_strip_to(src: Path, out_dir: Path, prefix: str, height: int, by: str = "max", effects_left: bool = False):
+def slice_strip_to(src: Path, out_dir: Path, prefix: str, height: int, by: str = "max", effects_left: bool = False,
+                   keep_pink: bool = False):
     """Generic 1x6 strip -> <prefix>_{0..5}.png scaled so the tallest (or shortest) frame is `height` px."""
     strip = Image.open(src).convert("RGB")
-    cells = split_strip(strip, effects_left=effects_left)
+    cells = split_strip(strip, effects_left=effects_left, keep_pink=keep_pink)
     if cells is None:
         xs = cuts(strip, 6, axis=1)
         cells = []
         for c in range(6):
             cell = strip.crop((xs[c], 0, xs[c + 1], strip.height))
             cell = cell.resize((cell.width // 3, cell.height // 3), Image.LANCZOS)
-            cells.append(isolate(drop_floor_shadow(key_background(cell))))
+            cells.append(isolate(drop_floor_shadow(key_background(cell), keep_pink)))
     ref = max(f.height for f in cells) if by == "max" else min(f.height for f in cells)
     scale = height / ref
     frames = [f.resize((max(1, round(f.width * scale)), max(1, round(f.height * scale))), Image.NEAREST) for f in cells]

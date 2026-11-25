@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -378,13 +379,18 @@ fun ChatScreen(api: Api, agent: Agent, prefs: Prefs, onBack: () -> Unit, onUnpai
     }
 }
 
-/** Messenger bubbles: mine on the right; the agent's on the left under its face and name. */
+/**
+ * Messenger bubbles: mine on the right; the agent's on the left under its face and name.
+ * The text is selectable (long press), so a link's address can be copied: a tap on a link only opens it.
+ */
 @Composable
 private fun Bubble(api: Api, agent: Agent, item: ChatItem) {
     when (item.role) {
         "me" -> Box(Modifier.fillMaxWidth().padding(start = 48.dp), contentAlignment = Alignment.CenterEnd) {
-            Text(inline(item.text, linkColor = Color(0xFF0D2A8A), files = item.files), color = Color.Black,
-                modifier = Modifier.background(Gold, RoundedCornerShape(14.dp, 4.dp, 14.dp, 14.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+            SelectionContainer {
+                Text(inline(item.text, linkColor = Color(0xFF0D2A8A), files = item.files), color = Color.Black,
+                    modifier = Modifier.background(Gold, RoundedCornerShape(14.dp, 4.dp, 14.dp, 14.dp)).padding(horizontal = 12.dp, vertical = 9.dp))
+            }
         }
         "agent" -> Row(Modifier.fillMaxWidth()) {
             Portrait(api, agent.character, agent.name, 38.dp)
@@ -393,7 +399,7 @@ private fun Bubble(api: Api, agent: Agent, item: ChatItem) {
                 Text(agent.name, color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
                 Spacer(Modifier.height(4.dp))
                 Box(Modifier.background(Panel, RoundedCornerShape(4.dp, 14.dp, 14.dp, 14.dp)).padding(horizontal = 12.dp, vertical = 9.dp)) {
-                    Markdown(item.text, files = item.files)
+                    SelectionContainer { Markdown(item.text, files = item.files) }
                 }
             }
         }

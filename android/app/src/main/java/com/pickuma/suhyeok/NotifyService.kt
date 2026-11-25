@@ -51,7 +51,9 @@ class NotifyService : Service() {
             if (base == null || token == null) { stopSelf(); return }
             try {
                 val e = Api(base, token).events(boot, after)
-                for (ev in e.events) when {
+                // Only each agent's latest event counts: one answered elsewhere within these 15 s never shows.
+                for (ev in e.events.associateBy { it.id }.values) when {
+                    ev.kind == "cleared" -> getSystemService(NotificationManager::class.java).cancel(ev.id.hashCode())
                     ev.kind == "asking" && prefs.notifyAsking -> notify(ev, getString(R.string.notify_asking, ev.name), ev.text, CH_ASKING)
                     ev.kind == "done" && prefs.notifyDone -> notify(ev, getString(R.string.notify_done, ev.name), ev.text, CH_DONE)
                 }

@@ -30,9 +30,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// State changes the phone app fetches (/api/events): it asks every 15 s, so it would miss turns shorter
     /// than that; the Mac sees every change at its 3 s refresh and keeps the last 100 here.
+    /// Kinds: "asking", "done", and "cleared" (the agent's notification was dealt with elsewhere: take it down).
     struct Event { let seq: Int; let session: String; let name: String; let title: String; let kind: String; let text: String; let at: Date }
     private(set) var events: [Event] = []
     private(set) var seq = 0
+    /// Agents whose last event ("asking" / "done") may still be up as a notification, by session id.
+    private var pending: [String: String] = [:]
     /// Differs on every launch, so a phone holding a sequence number from before a restart starts over.
     let boot = UUID().uuidString
 
@@ -40,24 +43,48 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func observe(_ sessions: [AgentSession], store: SessionStore) {
         defer { last = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0.status) }) }
         guard !last.isEmpty else { return }
+        let viewing = NSApp.isActive ? store.selectedSession?.id : nil
         // Subagents (nested under the agent that launched them) report through their parent; no banner or phone event.
         for s in sessions where s.parentId == nil {
-            guard let before = last[s.id], before != s.status else { continue }
+            guard let before = last[s.id] else { continue }
+            let changed = before != s.status
             let name = store.agentName(for: s)
             let kind: String, text: String
-            if s.status == .waiting {
+            if changed, s.status == .waiting {
                 kind = "asking"; text = String(localized: "\(s.name) — 선택지에서 멈춰 답을 기다림")
-            } else if before == .busy, s.status == .idle || s.status == .shell {
+            } else if changed, before == .busy, s.status == .idle || s.status == .shell {
                 kind = "done"; text = s.lastAssistant.map { oneLine(Speaker.plain($0), limit: 160) } ?? s.name  // no ** or ` in a banner
-            } else { continue }
-            seq += 1
-            events.append(Event(seq: seq, session: s.id, name: name, title: s.name, kind: kind, text: text, at: Date()))
-            if events.count > 100 { events.removeFirst(events.count - 100) }
-            // Banners on the Mac; not for the agent you are looking at.
+            } else {
+                // Dealt with: answered or given new work (from any device), or its finished turn opened on this Mac.
+                if let p = pending[s.id], changed || (p == "done" && s.id == viewing) { clear(s.id, name: name, title: s.name) }
+                continue
+            }
+            // The agent you are looking at on this Mac: no banner here and nothing for the phone.
+            if s.id == viewing {
+                if pending[s.id] != nil { clear(s.id, name: name, title: s.name) }
+                continue
+            }
+            record(s.id, name: name, title: s.name, kind: kind, text: text)
+            pending[s.id] = kind
             guard authorized, kind == "asking" ? Self.asking : Self.done else { continue }
-            if NSApp.isActive, store.selectedSession?.id == s.id { continue }
             post(s, title: "\(name) · \(kind == "asking" ? String(localized: "선택 필요") : String(localized: "작업 완료"))", body: text, sound: kind == "asking")
         }
+        // Ended sessions take their notifications with them.
+        let alive = Set(sessions.map(\.id))
+        for id in pending.keys where !alive.contains(id) { clear(id, name: "", title: "") }
+    }
+
+    private func record(_ session: String, name: String, title: String, kind: String, text: String) {
+        seq += 1
+        events.append(Event(seq: seq, session: session, name: name, title: title, kind: kind, text: text, at: Date()))
+        if events.count > 100 { events.removeFirst(events.count - 100) }
+    }
+
+    /// Takes the agent's notification down: the phone on its next fetch, the banner here now.
+    private func clear(_ session: String, name: String, title: String) {
+        pending[session] = nil
+        record(session, name: name, title: title, kind: "cleared", text: "")
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [session])
     }
 
     private func post(_ s: AgentSession, title: String, body: String, sound: Bool) {

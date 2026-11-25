@@ -1,0 +1,2 @@
+# Recorded agent screens and transcripts are compared byte for byte: keep them as committed (no CRLF on Windows).
+Tests/AgentDeckTests/Fixtures/** -text

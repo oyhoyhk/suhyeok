@@ -104,7 +104,6 @@ enum RecentSource {
 struct WorkspaceView: View {
     @ObservedObject var store: SessionStore
     @ObservedObject private var updater = Updater.shared
-    @State private var showNew = false
     @State private var showMigrate = false
     @State private var showWorktrees = false
     @State private var confirmUpdate = false
@@ -175,7 +174,7 @@ struct WorkspaceView: View {
             .navigationSplitViewColumnWidth(min: 220, ideal: 260)
             .toolbar {
                 ToolbarItem {
-                    Button { showNew = true } label: { Label("새 세션", systemImage: "plus") }
+                    Button { store.showingNewSession = true } label: { Label("새 세션", systemImage: "plus") }
                         .keyboardShortcut("n")
                 }
             }
@@ -189,7 +188,7 @@ struct WorkspaceView: View {
             }
         }
         .toolbar { ToolbarItem(placement: .principal) { TalkModeToggle(store: store) } }
-        .sheet(isPresented: $showNew) { NewSessionSheet(store: store) }
+        .sheet(isPresented: $store.showingNewSession) { NewSessionSheet(store: store) }
         .sheet(isPresented: $showMigrate) { MigrationSheet(store: store) }
         .sheet(isPresented: $showWorktrees) { WorktreesSheet(store: store) }
         .endSessionDialog(store: store, ending: $store.ending, migrating: $migrating)
@@ -417,6 +416,10 @@ struct HostedSessionView: View {
     @State private var confirmKill = false
     @State private var mode: OpenMode?
     @State private var showChanges = false
+    /// Whether the session folder is in a git checkout; nil until checked. Outside one there are no changes to show.
+    @State private var inRepo: Bool?
+    /// A menu the agent shows before it has a session (the folder trust check), answered from the card above the terminal.
+    @State private var startupMenu: TerminalMenu?
     @AppStorage("changesWidth") private var changesWidth = 560.0
     @AppStorage("changesHeight") private var changesHeight = 340.0
 
@@ -436,7 +439,9 @@ struct HostedSessionView: View {
                 if h != nil {
                     Toggle(isOn: $showChanges) { Label("변경사항", systemImage: "plusminus") }
                         .toggleStyle(.button).controlSize(.small)
-                        .help("이 폴더에서 마지막 커밋 이후 바뀐 내용을 옆에 열기 — 줄에 코멘트를 달아 에이전트에게 보내고 커밋")
+                        .disabled(inRepo == false)
+                        .help(inRepo == false ? "이 폴더는 git 저장소가 아니라 볼 변경사항이 없음"
+                              : "이 폴더에서 마지막 커밋 이후 바뀐 내용을 옆에 열기 — 줄에 코멘트를 달아 에이전트에게 보내고 커밋")
                 }
                 Text((h?.cwd ?? "").replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
@@ -456,10 +461,16 @@ struct HostedSessionView: View {
                             Text("종료된 세션").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else if let s, ModePicker.effective(mode) == .dialogue {
                             // .id: a new session gets fresh state (messages, draft, pending bubbles), never the previous one's.
-                            DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).id(s.id).padding(10)
+                            DialogueView(store: store, sessionId: s.id).id(s.id).padding(10)
                         } else {
                             // Agents not yet sent a message (no Codex thread or agy summary yet) and still starting: terminal only.
-                            EmbeddedTerminal(name: name).id(name)
+                            VStack(spacing: 0) {
+                                if s == nil, let m = startupMenu { StartupMenuCard(menu: m) { i in
+                                    startupMenu = nil
+                                    Task.detached { _ = HostedMenu.choose(name, index: i) }
+                                }.padding(10) }
+                                EmbeddedTerminal(name: name).id(name)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -471,6 +482,21 @@ struct HostedSessionView: View {
                     }
                 }
             }
+        }
+        // Until the agent has a session, look for a menu on its screen (the folder trust check on a first start).
+        .task(id: s == nil && h?.agent != nil ? name : nil) {
+            guard s == nil, h?.agent != nil else { startupMenu = nil; return }
+            while !Task.isCancelled {
+                let found = await Task.detached { HostedMenu.read(name) }.value
+                if found != startupMenu { startupMenu = found }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+        .task(id: h?.cwd) {
+            guard let cwd = h?.cwd else { return }
+            let found = await Task.detached { Worktree.repoRoot(of: cwd) != nil }.value
+            inRepo = found
+            if !found { showChanges = false }
         }
         .confirmationDialog("이 세션을 종료할까요?", isPresented: $confirmKill) {
             Button("종료", role: .destructive) { store.kill(name) }
@@ -485,6 +511,41 @@ struct HostedSessionView: View {
                  ? "셸과 그 안에서 실행 중인 명령이 끝남."
                  : "에이전트 프로세스가 끝남. 대화 기록은 남아 '최근 대화'에서 이어서 열 수 있음.")
         }
+    }
+}
+
+/// The choices of a menu the agent shows before it has a session, e.g. "Yes, I trust this folder" on a first start.
+struct StartupMenuCard: View {
+    let menu: TerminalMenu
+    let onChoose: (Int) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(menu.question.map(DialogueView.translate) ?? String(localized: "에이전트가 시작 전에 확인을 기다림"),
+                  systemImage: "list.bullet.circle.fill").font(.callout.bold())
+                .foregroundStyle(Color(red: 1, green: 0.85, blue: 0.4))
+            if let c = menu.context {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    Text(c).font(.system(size: 11.5, design: .monospaced)).textSelection(.enabled).fixedSize().padding(8)
+                }
+                .background(Color.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+            }
+            ForEach(Array(menu.options.enumerated()), id: \.offset) { i, o in
+                Button { onChoose(i) } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(i + 1). \(o.label)").fontWeight(i == menu.selected ? .semibold : .regular)
+                        if let d = o.detail { Text(d).font(.caption).foregroundStyle(.secondary) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(Color.white.opacity(i == menu.selected ? 0.14 : 0.06), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(10)
+        .background(Color(red: 0.2, green: 0.16, blue: 0.05).opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(red: 0.85, green: 0.68, blue: 0.25), lineWidth: 1.5))
     }
 }
 
@@ -521,7 +582,7 @@ struct ExternalSessionView: View {
                 Text(origin(s))
                     .font(.caption).foregroundStyle(.secondary)
                 if ModePicker.effective(mode) == .dialogue {
-                    DialogueView(store: store, sessionId: s.id, onTerminal: { mode = .terminal }).id(s.id)
+                    DialogueView(store: store, sessionId: s.id).id(s.id)
                 } else {
                     TerminalPanel(session: s)
                 }

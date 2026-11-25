@@ -293,6 +293,7 @@ struct GuildView: View {
     /// Character ids in lineup order (Lineup); dragging a card reorders it.
     @State private var lineup: [String] = []
     @State private var dragging: String?
+    @AppStorage(Lineup.randomKey) private var randomAssign = false
 
     private let gold = Color(red: 0.85, green: 0.68, blue: 0.25)
 
@@ -356,8 +357,15 @@ struct GuildView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("용병 영입").font(.title3.bold())
-                Text("번호 순서대로 새 에이전트에게 배정됨 · 카드를 끌어서 순서 변경").font(.caption).foregroundStyle(.secondary)
+                Text(randomAssign ? "새 에이전트에게 쉬는 용병 중 하나를 무작위로 배정함"
+                                  : "번호 순서대로 새 에이전트에게 배정됨 · 카드를 끌어서 순서 변경")
+                    .font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                Picker("배정", selection: $randomAssign) {
+                    Text("순서대로").tag(false)
+                    Text("랜덤").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
                 if bank.unlocked.count < Art.roster.count {
                     Text("다음 영입 \(bank.nextPrice) 결정").font(.callout).foregroundStyle(.secondary)
                 }

@@ -24,7 +24,9 @@ MODEL = "seedream_5_0_flash"
 PROFILES = {c["id"]: c for c in json.loads((ROOT / "market/profiles.json").read_text())}
 # Frames the model drew facing the wrong way, checked by eye: replaced by a good frame of the same row (as sheet.py's
 # REUSE). Frames 0 and 3 are the two contact poses; a mirror would move a one-handed weapon to the other hand.
-REUSE = {"skeleton": {"walk_up_3": "walk_up_0"}}
+REUSE = {"skeleton": {"walk_up_3": "walk_up_0"}, "hoplite": {"attack_3": "attack_2"}}
+# Pink hair/dress reads as magenta shadow to the slicer and gets keyed out (sheet.shadow_magenta).
+KEEP_PINK = {"magicgirl"}
 
 
 def build(cid: str) -> dict:
@@ -41,9 +43,11 @@ def build(cid: str) -> dict:
     p.thumbnail((768, 1024), Image.LANCZOS)
     p.save(out / "portrait.jpg", quality=86)
     for view in ("down", "left", "up"):
-        slice_strip_to(RAW / f"strip_{cid}-{view}-a_{MODEL}.webp", frames, f"walk_{view}", STAND_H)
+        slice_strip_to(RAW / f"strip_{cid}-{view}-a_{MODEL}.webp", frames, f"walk_{view}", STAND_H,
+                       keep_pink=cid in KEEP_PINK)
     stand = Image.open(frames / "walk_down_2.png").height
-    slice_strip_to(RAW / f"attack_{cid}-a_{MODEL}.webp", frames, "attack", stand, by="min", effects_left=True)
+    slice_strip_to(RAW / f"attack_{cid}-a_{MODEL}.webp", frames, "attack", stand, by="min", effects_left=True,
+                   keep_pink=cid in KEEP_PINK)
     for bad, good in REUSE.get(cid, {}).items():
         shutil.copy(frames / f"{good}.png", frames / f"{bad}.png")
     counts = {}

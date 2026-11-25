@@ -7,6 +7,7 @@
   <string name="loading">불러오는 중…</string>
   <string name="cancel">취소</string>
   <string name="needs_choice">선택 필요</string>
+  <string name="startup_prompt">에이전트가 시작 전에 확인을 기다림</string>
   <string name="working">작업 중</string>
   <string name="work_done">작업 완료</string>
   <string name="send_failed">보내지 못함</string>

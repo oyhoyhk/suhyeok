@@ -158,6 +158,10 @@ enum Lineup {
     }
 
     static func save(_ ids: [String]) { UserDefaults.standard.set(ids, forKey: key) }
+
+    /// New agents take a random free character instead of the next one in the lineup (set in the guild).
+    static let randomKey = "characterAssignmentRandom"
+    static var random: Bool { UserDefaults.standard.bool(forKey: randomKey) }
 }
 
 /// Gives each live session its own character while it lives; reuses characters only past roster size.
@@ -167,8 +171,9 @@ struct CharacterAssigner {
     /// `allowed`: roster indices the crystal ledger has opened (nil: the whole roster).
     /// `pinned`: sessions whose character was chosen when 수혁 started them; they always keep it.
     /// `order`: the guild lineup; a new session takes the first character in it that no live session has.
+    /// `random`: a new session takes a free character chosen by its id's hash instead (stable across refreshes).
     mutating func update(_ sessions: [AgentSession], allowed: Set<Int>? = nil, pinned: [String: Int] = [:],
-                         order: [Int]? = nil, rosterCount: Int = Art.roster.count) -> [String: Int] {
+                         order: [Int]? = nil, random: Bool = false, rosterCount: Int = Art.roster.count) -> [String: Int] {
         let count = max(rosterCount, 1)
         let lineup = (order ?? Array(0..<count)).filter { $0 < count && allowed?.contains($0) != false }
         let pool = lineup.isEmpty ? Array(0..<count) : lineup
@@ -190,7 +195,9 @@ struct CharacterAssigner {
         for s in sessions.sorted(by: { ($0.startedAt ?? .distantPast) < ($1.startedAt ?? .distantPast) })
         where assigned[s.id] == nil {
             // Past the roster size characters repeat; the hash spreads the repeats.
-            assigned[s.id] = pool.first { !used.contains($0) } ?? pool[Int(UInt(bitPattern: stableHash(s.id)) % UInt(pool.count))]
+            let free = pool.filter { !used.contains($0) }
+            let h = UInt(bitPattern: stableHash(s.id))
+            assigned[s.id] = free.isEmpty ? pool[Int(h % UInt(pool.count))] : random ? free[Int(h % UInt(free.count))] : free[0]
             used.insert(assigned[s.id]!)
         }
         return assigned

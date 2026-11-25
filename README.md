@@ -24,14 +24,14 @@ suhyeok                            # 앱 실행
 - 요구 사항: Apple Silicon 맥, macOS 14 이상, Claude Code 또는 Codex CLI
 - Launchpad·Spotlight에 넣기: `ln -sf "$(brew --prefix)/opt/suhyeok/수혁.app" ~/Applications/수혁.app`
 
-### 윈도우 (원격 클라이언트)
+### 윈도우·리눅스 (데스크톱 앱)
 
-윈도우 수혁은 맥 수혁의 세션을 보고 조작하는 창. 세션 실행은 맥에서 함.
+윈도우·리눅스 수혁은 이 컴퓨터에서 수혁 서버를 실행하고, 다른 컴퓨터(맥 포함)의 수혁에도 연결하는 창. 창을 닫아도 트레이에 남고, 세션을 쥔 서버는 앱을 종료해도 계속 실행됨(트레이 → 서버 종료로 끔).
 
-- 설치: [릴리스](https://github.com/oyhoyhk/suhyeok/releases)의 `Suhyeok_<버전>_x64-setup.exe` (서명 없음 → SmartScreen에서 "추가 정보 → 실행")
-- 연결: 맥 수혁 설정 → 모바일 접속 → 연결 시작 → "PC용 링크 복사" → 60초 안에 윈도우 수혁에 붙여넣기 → 맥에서 허용
-- 맥 수혁 0.2.5 이상, 모바일 접속이 켜져 있어야 함. 브라우저로는 `<맥 주소>/desk`
-- 소스: `windows/` (Tauri 2), 빌드: `.github/workflows/windows.yml` (릴리스 게시 시 설치 파일 첨부)
+- 설치: [릴리스](https://github.com/oyhoyhk/suhyeok/releases)의 `Suhyeok_<버전>_x64-setup.exe` (윈도우, 서명 없음 → SmartScreen에서 "추가 정보 → 실행"), `Suhyeok_<버전>_amd64.AppImage` 또는 `.deb` (리눅스)
+- 다른 컴퓨터 연결: 그 컴퓨터의 수혁에서 연결 링크 받기(맥: 설정 → 모바일 접속 → 연결 시작 → "PC용 링크 복사", 윈도우·리눅스: 수혁 메뉴 → 다른 기기 연결…) → 60초 안에 서버 메뉴 → 다른 서버 추가…에 붙여넣기 → 그 컴퓨터에서 허용
+- 맥에 연결하려면 맥 수혁 0.2.5 이상, 모바일 접속이 켜져 있어야 함. 브라우저로는 `<맥 주소>/desk`
+- 소스: `desktop/` (Tauri 2, 서버는 `server-rs/`), 빌드: `.github/workflows/desktop.yml` (릴리스 게시 시 설치 파일 첨부)
 
 ## 작업 공간 — 수혁 안에서 세션 만들고 운영
 

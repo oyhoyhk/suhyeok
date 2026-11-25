@@ -61,6 +61,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun AgentsScreen(api: Api, openRequest: String?, onOpen: (Agent) -> Unit, onUnpaired: () -> Unit) {
     var agents by remember { mutableStateOf<List<Agent>?>(null) }
+    var prompts by remember { mutableStateOf<List<StartupPrompt>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val unreachable = stringResource(R.string.agents_unreachable)
@@ -70,7 +71,7 @@ fun AgentsScreen(api: Api, openRequest: String?, onOpen: (Agent) -> Unit, onUnpa
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 try {
-                    agents = api.state(); error = null
+                    val (a, p) = api.overview(); agents = a; prompts = p; error = null
                 } catch (e: Unpaired) {
                     onUnpaired(); return@repeatOnLifecycle
                 } catch (e: Exception) {
@@ -116,6 +117,12 @@ fun AgentsScreen(api: Api, openRequest: String?, onOpen: (Agent) -> Unit, onUnpa
             LaunchedEffect(openRequest, agents) {
                 openRequest?.let { id -> agents?.firstOrNull { it.id == id }?.let(onOpen) }
             }
+            prompts.forEach { p ->
+                StartupPromptCard(p) { i ->
+                    prompts = prompts - p
+                    scope.launch { if (!runCatching { api.chooseStartup(p.name, i) }.getOrDefault(false)) error = unreachable }
+                }
+            }
             val list = agents
             if (list == null) {
                 Text(stringResource(R.string.loading), color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(18.dp))
@@ -152,6 +159,26 @@ fun AgentsScreen(api: Api, openRequest: String?, onOpen: (Agent) -> Unit, onUnpa
             Icon(Icons.Filled.Add, stringResource(R.string.new_session))
         }
         if (creating) NewSessionDialog(api, onDismiss = { creating = false }) { creating = false; result = it }
+    }
+}
+
+/** An agent still starting that waits on a menu (the folder trust check), with its choices as buttons. */
+@Composable
+private fun StartupPromptCard(p: StartupPrompt, onChoose: (Int) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)
+        .background(Color(0x99332910), RoundedCornerShape(10.dp)).border(1.5.dp, Gold, RoundedCornerShape(10.dp)).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(p.question.ifEmpty { stringResource(R.string.startup_prompt) }, color = Gold, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        Text("${p.kind} · ${p.cwd}", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (p.context.isNotEmpty()) Text(p.context, color = Color.White.copy(alpha = 0.85f), fontSize = 11.5.sp,
+            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            modifier = Modifier.fillMaxWidth().background(Color(0x66000000), RoundedCornerShape(6.dp)).padding(8.dp))
+        p.options.forEachIndexed { i, label ->
+            Column(Modifier.fillMaxWidth().background(Color(0x14FFFFFF), RoundedCornerShape(8.dp)).clickable { onChoose(i) }.padding(10.dp)) {
+                Text("${i + 1}. $label", color = Color.White, fontSize = 14.sp)
+                p.details.getOrNull(i)?.takeIf { it.isNotEmpty() }?.let { Text(it, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp) }
+            }
+        }
     }
 }
 

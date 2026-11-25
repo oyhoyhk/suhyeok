@@ -35,6 +35,15 @@ data class Agent(
     val waitingForNext get() = isWaitingActivity(activity)
 }
 
+/**
+ * A menu an agent shows before it has a session, so it is not in the agent list: the folder trust check on a first start
+ * in a folder (MobileServer "prompts", HostedMenu.swift). Answered by the terminal's [name].
+ */
+data class StartupPrompt(
+    val name: String, val kind: String, val cwd: String, val question: String, val context: String,
+    val options: List<String>, val details: List<String>,
+)
+
 /** The Mac's activity label for "waiting for the next instruction", in whichever language the Mac runs. */
 fun isWaitingActivity(activity: String) = activity == "대기 중" || activity == "Waiting"
 
@@ -51,7 +60,7 @@ data class Terminal(val name: String, val title: String, val cwd: String, val ki
 /** A pane as lines with ANSI colors; the cursor is within the last [height] lines. */
 data class TermScreen(val lines: List<String>, val height: Int, val cx: Int, val cy: Int)
 
-data class AgentEvent(val id: String, val name: String, val title: String, val kind: String, val text: String)  // kind: asking / done
+data class AgentEvent(val id: String, val name: String, val title: String, val kind: String, val text: String)  // kind: asking / done / cleared
 data class Events(val boot: String, val seq: Int, val events: List<AgentEvent>)
 
 data class Release(val code: Int, val name: String, val sha256: String, val notes: String)
@@ -97,13 +106,24 @@ class Api(val base: String, private val token: String?) {
     /** Sample sessions without a Mac (Demo.kt). */
     val demo = base == Demo.BASE
 
-    suspend fun state(): List<Agent> = withContext(Dispatchers.IO) {
+    suspend fun state(): List<Agent> = overview().first
+
+    /** The agents and the menus of agents still starting (empty from a Mac that does not send them). */
+    suspend fun overview(): Pair<List<Agent>, List<StartupPrompt>> = withContext(Dispatchers.IO) {
         val o = request("GET", "/api/state")
         val arr = o.getJSONArray("agents")
-        (0 until arr.length()).map { i -> agent(arr.getJSONObject(i)) }
+        val prompts = o.optJSONArray("prompts") ?: JSONArray()
+        (0 until arr.length()).map { i -> agent(arr.getJSONObject(i)) } to (0 until prompts.length()).map { i ->
+            prompts.getJSONObject(i).let { p ->
+                val menu = p.optJSONArray("menu") ?: JSONArray()
+                StartupPrompt(p.getString("name"), p.optString("agent"), p.optString("cwd"), p.optString("question"),
+                    p.optString("context"), (0 until menu.length()).map { menu.getJSONObject(it).getString("label") },
+                    (0 until menu.length()).map { menu.getJSONObject(it).optString("detail") })
+            }
+        }
     }
 
-    /** The same state with positions, for the world tab. null when the Mac sends no map (demo mode). */
+    /** The same state with positions, for the world tab. null when the Mac sends no map. */
     suspend fun world(): WorldMap? = withContext(Dispatchers.IO) {
         val o = request("GET", "/api/state")
         val w = o.optJSONObject("world") ?: return@withContext null
@@ -185,6 +205,8 @@ class Api(val base: String, private val token: String?) {
 
     suspend fun send(id: String, text: String): Boolean = post("/api/send", JSONObject().put("id", id).put("text", text))
     suspend fun choose(id: String, index: Int): Boolean = post("/api/choose", JSONObject().put("id", id).put("index", index))
+    suspend fun chooseStartup(name: String, index: Int): Boolean =
+        post("/api/choose-hosted", JSONObject().put("name", name).put("index", index))
     /** Up, Down, Enter, Escape, 1, 2, 3 */
     suspend fun key(id: String, key: String): Boolean = post("/api/key", JSONObject().put("id", id).put("key", key))
 
@@ -308,6 +330,7 @@ class Api(val base: String, private val token: String?) {
 
     /** Map art (field, bosses, sprite frames). Built-in art is public; bought characters need the cookie. */
     fun art(path: String): android.graphics.Bitmap? = runCatching {
+        if (demo) return Demo.art(path)
         val c = open("GET", "/art/$path")
         if (c.responseCode != 200) return null
         c.inputStream.use { android.graphics.BitmapFactory.decodeStream(it) }

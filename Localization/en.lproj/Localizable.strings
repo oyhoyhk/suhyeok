@@ -99,6 +99,10 @@
 "새 장부 시작" = "Start a new ledger";
 "용병 영입" = "Recruit mercenaries";
 "번호 순서대로 새 에이전트에게 배정됨 · 카드를 끌어서 순서 변경" = "New agents get characters in number order · drag cards to reorder";
+"새 에이전트에게 쉬는 용병 중 하나를 무작위로 배정함" = "New agents get a random free character";
+"배정" = "Assignment";
+"순서대로" = "In order";
+"랜덤" = "Random";
 "다음 영입 %lld 결정" = "Next recruit: %lld crystals";
 "pickuma 결정 서버" = "pickuma crystal server";
 "서버와 정산 (suhyeok.pickuma.com)" = "Settle with the server (suhyeok.pickuma.com)";
@@ -553,8 +557,22 @@
 "변경사항 리뷰 코멘트 %lld개 — 반영해 줘." = "%lld review comments on your changes — please address them.";
 "(지운 줄)" = "(removed line)";
 "이 폴더에서 마지막 커밋 이후 바뀐 내용을 옆에 열기 — 줄에 코멘트를 달아 에이전트에게 보내고 커밋" = "Show what changed in this folder since the last commit — comment on lines, send them to the agent, and commit";
+"이 폴더는 git 저장소가 아니라 볼 변경사항이 없음" = "This folder is not a git repository, so there are no changes to show";
 "지난번 세션 %lld개가 닫혀 있음" = "%lld sessions from last time are closed";
 "외 %lld개" = "%lld more";
 "여는 중…" = "Opening…";
 "모두 다시 열기" = "Reopen all";
 "다시 열지 않음 — 대화는 '최근 대화'에 남아 있음" = "Don't reopen — the chats stay under Recent chats";
+"에이전트가 시작 전에 확인을 기다림" = "The agent is waiting for a confirmation before it starts";
+
+/* RemoteServers.swift */
+"다른 컴퓨터의 수혁…" = "수혁 on Another Computer…";
+"다른 컴퓨터의 수혁" = "수혁 on Another Computer";
+"서버" = "Servers";
+"서버 추가" = "Add a server";
+"연결" = "Connect";
+"목록에서 지우기" = "Remove from list";
+"왼쪽에서 서버를 고르거나 연결 링크를 붙여넣기" = "Pick a server on the left or paste a pairing link";
+"다른 컴퓨터(윈도우·리눅스·다른 Mac)의 수혁에서 '다른 기기 연결…'을 누르고, 60초 안에 받은 링크를 붙여넣은 뒤 그 컴퓨터에서 허용" = "On the other computer's 수혁 (Windows, Linux or another Mac) choose 'Connect another device…', paste the link within 60 seconds, then allow it on that computer";
+"링크 형식이 아님 — 다른 컴퓨터의 수혁에서 '다른 기기 연결…'로 받은 링크를 붙여넣기" = "Not a link — paste the one from 'Connect another device…' on the other computer's 수혁";
+"https 주소이거나 같은 망의 주소여야 함" = "Must be an https address or one on your own network";

@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val prefs = Prefs(this)
+        Demo.assets = assets
         openRequest.value = intent.getStringExtra(NotifyService.EXTRA_AGENT)
         if (BuildConfig.BACKGROUND_NOTIFY && prefs.notify && prefs.token != null) NotifyService.start(this)
         // Debug builds: `adb shell am start … --es base <url> --es token <t>` connects without the QR (UI checks).

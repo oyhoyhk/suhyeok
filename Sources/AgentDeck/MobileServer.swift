@@ -168,6 +168,8 @@ final class MobileServer: ObservableObject {
                 switch Self.parse(buf) {
                 case .ready(let req) where req.method == "GET" && req.path == "/api/file":
                     self.sendFile(c, req)
+                case .ready(let req) where req.method == "GET" && req.path == "/app/android.apk":
+                    self.sendApp(c, req)
                 case .ready(let req):
                     let (status, type, body, extra) = await self.route(req)
                     self.respond(c, status: status, type: type, body: body, headers: extra)
@@ -264,6 +266,25 @@ final class MobileServer: ObservableObject {
         streaming.insert(ObjectIdentifier(c))
         if let range { try? handle.seek(toOffset: UInt64(range.lowerBound)) }
         FileSender(c, handle, length).start(Data(head.utf8))
+    }
+
+    /// The phone app's update (paired phones only), streamed like sendFile: sent whole it outlived the 15 s connection
+    /// limit on a phone network or through the tunnel, and the phone saw "unexpected end of stream".
+    private func sendApp(_ c: NWConnection, _ r: Request) {
+        func fail(_ status: Int, _ error: String) {
+            let (_, t, d, _) = json(["error": error], status)
+            respond(c, status: status, type: t, body: d, headers: [:])
+        }
+        guard allowedHost(r) else { return fail(421, "host") }
+        guard sameOrigin(r) else { return fail(403, "origin") }
+        guard authorized(r) else { return fail(401, "pair") }
+        let path = Self.androidDir + "/suhyeok.apk"
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? NSNumber,
+              let handle = FileHandle(forReadingAtPath: path) else { return fail(404, "none") }
+        var head = "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.android.package-archive\r\nContent-Length: \(size.int64Value)\r\n"
+        head += "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n"
+        streaming.insert(ObjectIdentifier(c))
+        FileSender(c, handle, size.int64Value).start(Data(head.utf8))
     }
 
     /// Where android/publish.sh leaves the latest phone app (suhyeok.apk + version.json).
@@ -371,9 +392,6 @@ final class MobileServer: ObservableObject {
         case ("GET", "/app/android.json"):
             guard let data = FileManager.default.contents(atPath: Self.androidDir + "/version.json") else { return json(["error": "none"], 404) }
             return (200, "application/json; charset=utf-8", data, ["Cache-Control": "no-store"])
-        case ("GET", "/app/android.apk"):
-            guard let data = FileManager.default.contents(atPath: Self.androidDir + "/suhyeok.apk") else { return json(["error": "none"], 404) }
-            return (200, "application/vnd.android.package-archive", data, ["Cache-Control": "no-store"])
         // State changes since `after` (see Notifier.events); a different boot means the Mac restarted.
         case ("GET", "/api/events"):
             let n = Notifier.shared
@@ -384,7 +402,17 @@ final class MobileServer: ObservableObject {
                  "at": $0.at.timeIntervalSince1970]
             }])
         case ("GET", "/api/state"):
-            return json(state(store))
+            var out = state(store)
+            // Agents still starting that wait on a menu (the folder trust check): not in "agents" until they have a session.
+            let hosted = store.hosted, known = Set(store.sessions.compactMap(\.hostedName))
+            out["prompts"] = await Task.detached { HostedMenu.pending(hosted, known: known) }.value.map { h, m in
+                [
+                    "name": h.name, "agent": h.agent?.rawValue ?? "", "cwd": h.cwd,
+                    "question": m.question.map(DialogueView.translate) ?? "", "context": m.context ?? "",
+                    "menu": m.options.map { ["label": $0.label, "detail": $0.detail ?? ""] },
+                ] as [String: Any]
+            }
+            return json(out)
         case ("GET", "/api/chat"):
             guard let s = session(r.query["id"]) else { return json(["error": "gone"], 404) }
             return json(await Self.chat(s, screen: r.query["screen"] == "1"))
@@ -491,6 +519,11 @@ final class MobileServer: ObservableObject {
                 return SessionInput.choose(s, menu: menu, index: i)
             }.value
             return json(["ok": ok])
+        // Answers a menu from "prompts" in /api/state, by the terminal's name (the agent has no session id yet).
+        case ("POST", "/api/choose-hosted"):
+            guard let name = body["name"] as? String, let i = body["index"] as? Int,
+                  store.hosted.contains(where: { $0.name == name && $0.agent != nil }) else { return json(["ok": false], 400) }
+            return json(["ok": await Task.detached { HostedMenu.choose(name, index: i) }.value])
         case ("POST", "/api/key"):
             guard let s = session(body["id"] as? String), let k = body["key"] as? String,
                   let key = SessionInput.Key.allCases.first(where: { $0.tmux.lowercased() == k.lowercased() }) else { return json(["ok": false], 400) }

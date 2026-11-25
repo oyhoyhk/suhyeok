@@ -55,6 +55,36 @@ final class PersonaTests: XCTestCase {
         XCTAssertEqual(SessionStore.pick(lineup: [0], live: [0], starting: [0]), 0)  // more agents than characters
     }
 
+    func testRandomLaunchesTakeFreeCharactersInAnyOrder() {
+        let lineup = Array(0..<20)
+        var orders = Set<[Int]>()
+        for _ in 0..<5 {
+            var starting = Set<Int>(), picked: [Int] = []
+            for _ in lineup {
+                let i = SessionStore.pick(lineup: lineup, live: [3], starting: starting, random: true)!
+                if picked.count < lineup.count - 1 { XCTAssertNotEqual(i, 3) }  // live characters wait until all are taken
+                starting.insert(i); picked.append(i)
+            }
+            XCTAssertEqual(Set(picked).count, lineup.count)  // no repeats while free ones remain
+            orders.insert(picked)
+        }
+        XCTAssertGreaterThan(orders.count, 1)  // not the lineup order every time
+        XCTAssertEqual(SessionStore.pick(lineup: [7], live: [7], starting: [7], random: true), 7)
+    }
+
+    func testRandomAssignerSpreadsSessionsAndKeepsThem() {
+        let sessions = (0..<6).map {
+            AgentSession(id: "r\($0)", agent: .claude, name: "", cwd: "/", status: .busy,
+                         startedAt: Date(timeIntervalSince1970: Double($0)), updatedAt: nil, lastUser: nil,
+                         lastAssistant: nil, estimated: false)
+        }
+        var assigner = CharacterAssigner()
+        let first = assigner.update(sessions, random: true, rosterCount: 30)
+        XCTAssertEqual(Set(first.values).count, 6)  // no two live sessions share a character
+        XCTAssertNotEqual(first.values.sorted(), Array(0..<6))  // not simply the first six
+        XCTAssertEqual(assigner.update(sessions, random: true, rosterCount: 30), first)  // refreshes keep them
+    }
+
     func testLineupKeepsSavedOrderAndAppendsNewCharacters() {
         let roster = ["a", "b", "c", "market.x"].map { Character(id: $0, name: $0) }
         XCTAssertEqual(Lineup.order(roster, saved: ["c", "gone", "a", "c"]), [2, 0, 1, 3])

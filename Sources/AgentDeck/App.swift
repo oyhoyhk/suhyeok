@@ -275,18 +275,12 @@ struct AgentDeckApp: App {
         }
         // `--menu-hosted <tmux session> [n]`: parse (and optionally choose in) a menu on 수혁's own tmux server,
         // which also covers sessions that are not in Claude's registry yet (e.g. the folder trust prompt).
-        if let i = args.firstIndex(of: "--menu-hosted"), i + 1 < args.count, let tmux = TmuxEngine.tmux {
+        if let i = args.firstIndex(of: "--menu-hosted"), i + 1 < args.count {
             let name = args[i + 1]
-            let screen = TerminalSource.run(tmux, TmuxEngine.base + ["capture-pane", "-p", "-t", name]) ?? ""
-            guard let menu = TerminalMenu.parse(screen) else { print("no menu"); exit(0) }
+            guard let menu = HostedMenu.read(name) else { print("no menu"); exit(0) }
             for (k, o) in menu.options.enumerated() { print(k == menu.selected ? "❯" : " ", k, o.label, o.detail ?? "") }
             if let n = args.dropFirst(i + 2).first.flatMap(Int.init) {
-                let steps = n - menu.selected
-                for _ in 0..<abs(steps) {
-                    _ = TerminalSource.run(tmux, TmuxEngine.base + ["send-keys", "-t", name, steps > 0 ? "Down" : "Up"]); usleep(60_000)
-                }
-                _ = TerminalSource.run(tmux, TmuxEngine.base + ["send-keys", "-t", name, "Enter"])
-                print("chose", n)
+                print(HostedMenu.choose(name, index: n) ? "chose \(n)" : "FAILED")
             }
             exit(0)
         }
@@ -338,6 +332,10 @@ struct AgentDeckApp: App {
         }
         .commands {
             CommandGroup(after: .newItem) {
+                Button("새 세션…") { store.showingNewSession = true }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                RemoteServersCommand()
+                Divider()
                 Button("세션 이름 수정…") { store.editingSummary = store.selectedSession }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(store.selectedSession == nil)
@@ -348,7 +346,7 @@ struct AgentDeckApp: App {
                 .keyboardShortcut("c", modifiers: [.command, .shift])
                 .disabled(store.selectedSession?.agent != .claude)
                 Button("세션 종료…") { store.ending = store.selectedSession }
-                    .keyboardShortcut(.escape, modifiers: .command)
+                    .keyboardShortcut("w", modifiers: [.command, .shift])
                     .disabled(store.selectedSession == nil)
             }
             CommandGroup(after: .sidebar) {
@@ -366,6 +364,8 @@ struct AgentDeckApp: App {
                     .keyboardShortcut("`")
             }
         }
+        // Other machines' 수혁 servers (RemoteServers.swift).
+        Window("다른 컴퓨터의 수혁", id: "remote") { RemoteServersView() }
         Settings { SettingsView().environmentObject(store) }
         MenuBarExtra {
             MenuBarContent(store: store)
@@ -661,6 +661,8 @@ final class SessionStore: ObservableObject {
     @Published var editingSummary: AgentSession?
     /// Session whose end confirmation is open in the main window (right-click menu or ⌘Esc).
     @Published var ending: AgentSession?
+    /// New-session sheet in the main window (toolbar ＋, ⌘N, or ⇧⌘N from the menu).
+    @Published var showingNewSession = false
     @Published private(set) var summaries: [String: String] =
         UserDefaults.standard.dictionary(forKey: "summaries") as? [String: String] ?? [:]
 
@@ -835,15 +837,20 @@ final class SessionStore: ObservableObject {
         launching = launching.filter { Date().timeIntervalSince($0.value) < 60 }
         let open = CrystalBank.shared.unlocked
         let lineup = Lineup.order(roster).filter(open.contains)
-        guard let i = Self.pick(lineup: lineup, live: Set(assignments.values), starting: Set(launching.keys)) else { return nil }
+        guard let i = Self.pick(lineup: lineup, live: Set(assignments.values), starting: Set(launching.keys),
+                                random: Lineup.random) else { return nil }
         launching[i] = Date()
         return roster[i]
     }
 
     /// The first in the lineup nobody uses; failing that the first no starting session took; failing that the
-    /// first (more agents than characters).
-    nonisolated static func pick(lineup: [Int], live: Set<Int>, starting: Set<Int>) -> Int? {
-        lineup.first { !live.contains($0) && !starting.contains($0) } ?? lineup.first { !starting.contains($0) } ?? lineup.first
+    /// first (more agents than characters). `random` draws from the same tier instead of taking its first.
+    nonisolated static func pick(lineup: [Int], live: Set<Int>, starting: Set<Int>, random: Bool = false) -> Int? {
+        let free = lineup.filter { !live.contains($0) && !starting.contains($0) }
+        for tier in [free, lineup.filter { !starting.contains($0) }, lineup] where !tier.isEmpty {
+            return random ? tier.randomElement() : tier.first
+        }
+        return nil
     }
 
     /// Roster index per session whose character is fixed: chosen at launch (tmux `@character`) or remembered for
@@ -904,7 +911,7 @@ final class SessionStore: ObservableObject {
                 self.recordOpenSessions(hosted: hosted, sessions: all)
                 self.updateStations(all)
                 self.assignments = self.assigner.update(all, allowed: CrystalBank.shared.unlocked, pinned: self.pins(all, hosted: hosted),
-                                                          order: Lineup.order(Art.roster))
+                                                          order: Lineup.order(Art.roster), random: Lineup.random)
                 self.names = AgentNames.assign(all, assignments: self.assignments)
                 self.spokenNames = L10n.english ? AgentNames.assign(all, assignments: self.assignments, english: false) : self.names
                 self.mail = mail

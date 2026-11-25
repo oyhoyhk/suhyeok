@@ -11,11 +11,32 @@ import java.util.Locale
 object Demo {
     const val BASE = "demo:"
 
+    /** The app's assets, for the world art (set by MainActivity; null in unit tests). */
+    var assets: android.content.res.AssetManager? = null
+
+    /** World art bundled for the sample characters (assets/demo-art), in place of the Mac's /art. */
+    fun art(path: String): android.graphics.Bitmap? = runCatching {
+        assets?.open("demo-art/$path")?.use { android.graphics.BitmapFactory.decodeStream(it) }
+    }.getOrNull()
+
+    /**
+     * The Mac's map (art/out/walkmap.json, World.swift): boss rects and the standing spots in map units (width 1).
+     * Each sample agent has its own boss: it fights there while working or waits there for a choice, else it rests at camp.
+     */
+    private class Ground(val key: String, val korean: String, val english: String,
+                         val x: Double, val y: Double, val w: Double, val h: Double, val spots: List<Pair<Double, Double>>)
+    private val grounds = listOf(
+        Ground("low", "숲의 슬라임 왕", "Forest Slime King", 0.75, 0.1434, 0.09, 0.084375, listOf(0.675 to 0.1434, 0.825 to 0.1434)),
+        Ground("mid", "수정 동굴 골렘", "Crystal Cave Golem", 0.255, 0.4191, 0.1, 0.095625, listOf(0.175 to 0.4191, 0.335 to 0.4191)),
+        Ground("high", "화염 용왕", "Flame Dragon King", 0.735, 0.4303, 0.11, 0.106875, listOf(0.65 to 0.4303, 0.82 to 0.4303)),
+    )
+    private val camp = listOf(0.2474 to 0.1849, 0.2578 to 0.1016, 0.2161 to 0.1849, 0.2995 to 0.1432)
+
     private class Session(
         val id: String, val name: String, val character: String, val title: String, val project: String,
         val kind: String, var status: String, var activity: String, var action: String, var last: Double,
         val items: MutableList<ChatItem>, var menu: List<String> = emptyList(),
-        var doneAt: Double = 0.0, var reply: String = "",
+        var doneAt: Double = 0.0, var reply: String = "", val ground: String = "low",
     )
 
     private fun now() = System.currentTimeMillis() / 1000.0
@@ -36,23 +57,24 @@ object Demo {
                     ChatItem("tool", "Edit auth/session.ts"),
                 ),
                 menu = listOf(tr("예", "Yes"), tr("예, 이 명령은 다시 묻지 않기", "Yes, and don't ask again for this command"), tr("아니요", "No")),
+                ground = "mid",
             ).also { it.reply = tr("테스트 42개가 모두 통과했습니다. 만료된 쿠키를 먼저 지우도록 고쳤습니다.",
                 "All 42 tests pass. It now clears the expired cookie first.") },
             Session("demo-2", tr("노아", "Noah"), "alchemist", tr("결제 API 문서화", "Document the payments API"), "payments", "Codex", "busy",
                 tr("작업 중", "Working"), tr("README.md 작성 중", "Writing README.md"), t - 5,
                 mutableListOf(ChatItem("me", tr("결제 API 엔드포인트를 README에 정리해 줘", "List the payments API endpoints in the README")),
-                    ChatItem("tool", "Read src/routes/pay.ts"))),
+                    ChatItem("tool", "Read src/routes/pay.ts")), ground = "low"),
             Session("demo-3", tr("리오", "Rio"), "archer", tr("대시보드 차트 추가", "Add dashboard chart"), "admin", "Claude", "idle",
                 tr("대기 중", "Waiting"), "", t - 300,
                 mutableListOf(
                     ChatItem("me", tr("주간 매출 차트를 대시보드 맨 위에 추가해 줘", "Add a weekly sales chart to the top of the dashboard")),
                     ChatItem("agent", tr("## 완료\n- `WeeklySales` 차트 추가\n- 데이터는 기존 `/api/sales?range=7d` 사용\n\n확인해 보시고 색이나 크기를 바꿀 곳이 있으면 알려 주세요.",
                         "## Done\n- Added the `WeeklySales` chart\n- Data comes from the existing `/api/sales?range=7d`\n\nTake a look and tell me if you want a different color or size.")),
-                )),
+                ), ground = "high"),
             Session("demo-4", tr("하람", "Haram"), "cleric", tr("의존성 업데이트", "Update dependencies"), "web-shop", "Claude", "idle",
                 tr("휴식 중", "Resting"), "", t - 7200,
                 mutableListOf(ChatItem("me", tr("패키지 보안 업데이트 해 줘", "Apply the package security updates")),
-                    ChatItem("agent", tr("보안 업데이트 3건을 적용했고 빌드가 통과했습니다.", "Applied 3 security updates, and the build passes.")))),
+                    ChatItem("agent", tr("보안 업데이트 3건을 적용했고 빌드가 통과했습니다.", "Applied 3 security updates, and the build passes."))), ground = "low"),
         )
     }
 
@@ -63,7 +85,7 @@ object Demo {
         val id = body?.optString("id") ?: path.substringAfter("id=", "").substringBefore('&')
         val s = sessions.firstOrNull { it.id == java.net.URLDecoder.decode(id, "UTF-8") }
         return when (route) {
-            "/api/state" -> JSONObject().put("agents", JSONArray(sessions.map(::agent)))
+            "/api/state" -> state()
             "/api/chat" -> s?.let(::chat) ?: JSONObject().put("items", JSONArray())
             "/api/events" -> JSONObject().put("boot", "demo").put("seq", 0).put("events", JSONArray())
             "/api/send" -> {
@@ -115,6 +137,22 @@ object Demo {
             s.items += ChatItem("agent", s.reply)
             s.status = "idle"; s.activity = tr("대기 중", "Waiting"); s.action = ""; s.last = now(); s.doneAt = 0.0
         }
+    }
+
+    /** The session list with the world on top, as the Mac's /api/state: where each agent stands, the bosses, the crystals. */
+    private fun state(): JSONObject {
+        val placed = mutableMapOf<String?, Int>()   // ground key (null = camp) → agents placed there so far
+        val agents = sessions.map { s ->
+            val g = grounds.firstOrNull { it.key == s.ground }?.takeIf { s.status == "busy" || s.status == "waiting" }
+            val i = placed.merge(g?.key, 1, Int::plus)!! - 1
+            val (x, y) = g?.let { it.spots[i % it.spots.size] } ?: camp[i % camp.size]
+            agent(s).put("x", x).put("y", y).put("tier", g?.key ?: JSONObject.NULL)
+        }
+        return JSONObject().put("agents", JSONArray(agents))
+            .put("world", JSONObject().put("w", 1).put("h", 9.0 / 16)).put("avatar", 0.034).put("crystals", 1280)
+            .put("bosses", JSONArray(grounds.map {
+                JSONObject().put("key", it.key).put("name", tr(it.korean, it.english)).put("x", it.x).put("y", it.y).put("w", it.w).put("h", it.h)
+            }))
     }
 
     private fun agent(s: Session) = JSONObject()
